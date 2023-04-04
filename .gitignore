@@ -1,0 +1,20 @@
+# Coq related
+*.glob
+*.vo
+*.vok
+*.vos
+*.aux
+*.cache
+
+# OCaml related
+*.cmi
+*.cmo
+*.cmx
+
+# vscode related
+/.vscode/
+*.code-workspace
+
+# others
+.depend
+.DS_Store
