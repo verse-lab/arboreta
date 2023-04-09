@@ -10,6 +10,9 @@
 *.cmi
 *.cmo
 *.cmx
+_build/
+extraction/lib/*.ml
+extraction/lib/*.mli
 
 # vscode related
 /.vscode/
