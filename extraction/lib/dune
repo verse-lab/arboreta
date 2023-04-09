@@ -1,0 +1,4 @@
+(library
+  (name TClib)
+  (flags -w -39))
+ 

@@ -1,0 +1,4 @@
+(executable
+  (name main)
+  (libraries TClib)
+  (flags -w -33))
