@@ -872,8 +872,7 @@ Qed.
 (* all the nodes that are not in the gathered prefix do not need update *)
 
 Lemma tc_get_updated_nodes_join_sound : forall tc' (Hshape_tc': tc_shape_inv tc') 
-  tc (Hshape_tc: tc_shape_inv tc)
-  (Hrespect: tc_respect tc' tc)
+  tc (Hrespect: tc_respect tc' tc)
   t (Hnotin: ~ In t (map info_tid (tc_flatten (tc_get_updated_nodes_join tc tc')))), 
   tc_getclk tc' t <= tc_getclk tc t.
 Proof.
