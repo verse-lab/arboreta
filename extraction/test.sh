@@ -6,16 +6,16 @@ do
     then 
         if ((i % 100 == 0))
         then 
-            echo ${i}
+            echo "Passed" ${i} "tests."
         fi
     else
-        echo ${i} $?
+        echo "Failed on test #" ${i} "with error code" $?
         failed=1
         break
     fi
 done
 
-if (( failed == 0 ))
+if ((failed == 0))
 then
     rm a.tr
 fi
