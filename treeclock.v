@@ -1,16 +1,9 @@
 From Coq Require Import List Bool Lia ssrbool PeanoNat Sorting.
 From Coq Require ssreflect.
 Import ssreflect.SsrSyntax.
-(* From Coq Require Import List Bool Lia. *)
 
 (* Coq's list library is not very complete.  *)
 From stdpp Require list.
-
-(* Section VectorClock.
-
-Definition vectorclock := nat -> option nat.
-
-End VectorClock. *)
 
 Tactic Notation "removehead" hyp(H) :=
   let qq := fresh "nobody_will_use_this" in
@@ -103,16 +96,6 @@ Proof.
     constructor; intuition.
 Qed.
 
-(* 
-Inductive mapstop_res (A : Type) : Type :=
-  | Ok (a : A) | Stop | Nothing.
-
-Global Arguments Ok {_} _.
-Global Arguments Stop {_}.
-Global Arguments Nothing {_}.
-
-Fixpoint mapstop [A B := list  *)
-
 Section TreeClock.
 
 Context {thread : Type} (thread_eqdec : forall (t1 t2 : thread), {t1 = t2} + {t1 <> t2}).
@@ -132,7 +115,6 @@ Proof.
 Qed.
 
 Inductive treeclock : Type :=
-  (* Node (t : thread) (clk : nat) (aclk : option nat) (chn : list treeclock). *)
   Node (ni : nodeinfo) (chn : list treeclock).
 
 (* The automatically generated induction principle is useless.  *)
@@ -186,6 +168,7 @@ Fixpoint treeclock_eqb tc tc' :=
           (List.combine (map treeclock_eqb chn) chn')
         (* List.forallb (fun tcp => uncurry treeclock_eqb tcp)
         (List.combine chn chn') *)
+        (* this does not pass the decrease check *)
       else false)
   else false.
 
@@ -241,35 +224,12 @@ Proof.
     intuition congruence.
 Qed.
 
-(* Lemma treeclock_rect_2 (P : treeclock -> Prop)
-  (Hind : forall (ni : nodeinfo) (chn : list treeclock), 
-    Forall P chn -> P (Node ni chn)) : 
-  forall (tc : treeclock), P tc.
-Proof.
-  intros tc.
-  apply treeclock_ind_bounded_height with (n:=tc_height tc). 
-  - assumption.
-  - lia.
-Qed.
-
-*)
-
 Definition tc_init t := Node (mkInfo t 0 0) nil.
 
 (* return a ThrMap ? *)
 
 Fixpoint tc_flatten tc :=
   let: Node ni chn := tc in ni :: (List.flat_map tc_flatten chn).
-
-(* Search (_ -> option _) inside List. *)
-
-(* Fixpoint tc_find [A : Type] tc t (cont : thread -> nat -> option nat -> A) : option A :=
-  match tc with
-  Node t' clk aclk chn => 
-    if Thr_eqdec t t'
-    then Some (cont t clk aclk)
-    else 
-  end. *)
 
 Definition thrmap_getnode thrmap t :=
   List.find (fun ni => thread_eqdec t (info_tid ni)) thrmap.
@@ -278,17 +238,8 @@ Fact thrmap_getnode_correct thrmap t ni
   (Hres : thrmap_getnode thrmap t = Some ni) : info_tid ni = t.
 Proof. apply find_some in Hres. now destruct (thread_eqdec t (info_tid ni)). Qed.
 
-(*
-Fixpoint tc_getnode tc t :=
-  let: Node info chn := tc in
-  if thread_eqdec (info_tid info) t
-  then Some tc
-  else 
-    let: res := map (tc_getnode 
-    List.hd_error (List.filter () )
-*)
-
-(* maybe this should be defined as a recursive process on tree ... *)
+(* maybe this should be defined as a recursive process on tree ...
+    but the current one also seems well. *)
 
 Definition tc_getnode tc t :=
   thrmap_getnode (tc_flatten tc) t.
@@ -400,28 +351,6 @@ Proof.
     now destruct (tc_getnode ch t) eqn:E.
 Qed.
 
-(*
-Definition tc_getaclk tc t :=
-  match tc_getnode tc t with
-  | Some res => Some (info_aclk res)
-  | _ => None
-  end.
-
-Definition tc_getaclk_default tc t :=
-  match tc_getaclk tc t with
-  | Some res => res
-  | _ => 0
-  end.
-*)
-
-(*
-Definition option_nat_leb o1 o2 :=
-  match o1, o2 with
-  | Some n1, Some n2 => n1 <=? n2
-  | _, _ => false
-  end.
-*)
-
 Definition tid_in_tree_dec t tc :=
   in_dec thread_eqdec t (map info_tid (tc_flatten tc)). 
 
@@ -430,7 +359,8 @@ Definition tid_in_tree_dec t tc :=
     at least the root of tc' must be updated in tc
 *)
 (* considering the simulation with imperative code, maybe this process 
-    should not be too declarative ...
+    should not be too declarative. therefore takes a recursion on list
+    as a sub-procedure
 *)
 
 Fixpoint tc_get_updated_nodes_join tc tc' : treeclock :=
@@ -451,7 +381,8 @@ Fixpoint tc_get_updated_nodes_join tc tc' : treeclock :=
   Node info_u' (tc_get_updated_nodes_join_aux tc (info_tid info_u') chn_u')
 .
 
-(* TODO this is awkward. the inner aux must be an external function to work with *)
+(* TODO this is awkward. the inner aux must be an external function to work with
+    since implementing it as a mutual recursion does not pass the arg decrease check *)
 
 Fixpoint tc_get_updated_nodes_join_aux tc u' chn_u' : list treeclock :=
   match chn_u' with
@@ -480,41 +411,7 @@ Tactic Notation "tc_get_updated_nodes_join_unfold" "in_" hyp(H) :=
   cbn delta -[tc_get_updated_nodes_join] iota beta in H;
   rewrite -> tc_get_updated_nodes_join_eta in H.
 
-(* as is expected, the following cannot pass the arg decrease test. *)
-(*
-Fixpoint tc_get_updated_nodes_join_aux tc u' chn_u' : list treeclock :=
-  match chn_u' with
-  | nil => nil
-  | tc' :: chn_u'' => 
-    let: Node info_v' chn_v' := tc' in
-    let: mkInfo v' clk_v' aclk_v' := info_v' in
-    if (tc_getclk tc v') <? clk_v'
-    then (tc_get_updated_nodes_join tc tc') :: (tc_get_updated_nodes_join_aux tc u' chn_u'')
-    else 
-      (if option_nat_leb aclk_v' (tc_getaclk tc u')
-        then nil
-        else (tc_get_updated_nodes_join_aux tc u' chn_u''))
-  end
-with tc_get_updated_nodes_join tc tc' : treeclock :=
-  let: Node info_u' chn_u' := tc' in
-  Node info_u' (tc_get_updated_nodes_join_aux tc (info_tid info_u') chn_u')
-.
-*)
-
-(* Fixpoint tc_get_updated_nodes_join tc u' chn : treeclock :=
-  match chn with
-   *)
-
 (* given a tree and a list of targets, return a pivot tree and a list of splitted trees *)
-(*
-Fixpoint tc_detach_nodes targets tc : treeclock * list treeclock :=
-  let: Node ni chn := tc in
-  let: (new_chn, res) := List.split (map (tc_detach_nodes targets) chn) in
-  let: (res', new_chn') := List.partition 
-    (fun tc' => in_dec thread_eqdec (info_tid (tc_rootinfo tc')) targets)
-    new_chn in
-  (Node ni new_chn', (List.concat res) ++ res').
-*)
 
 Fixpoint tc_detach_nodes subtree_tc' tc : treeclock * list treeclock :=
   let: Node ni chn := tc in
@@ -530,7 +427,6 @@ Fixpoint tc_attach_nodes forest tc' : treeclock :=
   (* try finding a tree in the forest with the same root thread *)
   let: u_pre := List.find (fun tc => thread_eqdec (tc_roottid tc) (info_tid info_u')) forest in
   let: chn_u := (match u_pre with Some u => tc_rootchn u | None => nil end) in
-  (* TODO app or rev_app? *)
   (* for u', inherit clk and aclk anyway; prepend all children of u' *)
   Node info_u' ((map (tc_attach_nodes forest) chn') ++ chn_u).
 
@@ -540,7 +436,6 @@ Definition tc_join tc tc' :=
   then tc
   else 
     let: subtree_tc' := tc_get_updated_nodes_join tc tc' in
-    (* let: targets := map info_tid (tc_flatten subtree_tc') in *)
     let: (pivot, forest) := tc_detach_nodes subtree_tc' tc in
     let: Node (mkInfo w clk_w _) chn_w := tc_attach_nodes forest subtree_tc' in
     let: Node info_z chn_z := pivot in 
@@ -818,10 +713,7 @@ Lemma tc_get_updated_nodes_join_aux_result tc u' chn_u' (P : treeclock -> Prop)
   (* these can be derived from imono and shape_inv *)
   (Haclk_impl_P : forall tc', In tc' chn_u' -> 
     tc_rootaclk tc' <= (tc_getclk tc u') -> P tc') 
-  (* (Hclk_impl_P : forall tc', In tc' chn_u' -> 
-    tc_rootclk tc' <= (tc_getclk tc (tc_roottid tc')) -> P tc')  
-  *)
-  (* should be strong enough; otherwise not useful *)
+  (* should be strong enough (i.e., need P -> clk le); otherwise not useful *)
   (Hclk_iff_P : forall tc', In tc' chn_u' -> 
     tc_rootclk tc' <= (tc_getclk tc (tc_roottid tc')) <-> P tc') 
   (Hsorted: StronglySorted ge (map tc_rootaclk chn_u')) :
@@ -976,141 +868,6 @@ Proof.
   2: now apply aclk_decsorted, Foralltc_cons_iff in Hshape_tc'.
   now apply H.
 Qed.
-
-(* a less general result *)
-
-(*
-Corollary tc_get_updated_nodes_join_aux_result' tc u' chn_u' 
-  (* these can be derived from imono and shape_inv *)
-  (Haclk_impl_clk : forall tc', In tc' chn_u' -> 
-    tc_rootaclk tc' <= (tc_getclk tc u') -> 
-    tc_rootclk tc' <= (tc_getclk tc (tc_roottid tc'))) 
-  (Hsorted: StronglySorted ge (map tc_rootaclk chn_u')) :
-  exists chn_u'', sublist chn_u'' chn_u' /\
-    (tc_get_updated_nodes_join_aux tc u' chn_u') = map (tc_get_updated_nodes_join tc) chn_u'' /\
-    (Forall (fun tc' => In tc' chn_u'' <-> (tc_getclk tc (tc_roottid tc')) < tc_rootclk tc') chn_u').
-Proof.
-  induction chn_u' as [ | tc_v' chn_u' IH ].
-  - exists nil.
-    intuition.
-  - simpl in Haclk_impl_clk, Hsorted.
-    apply StronglySorted_inv in Hsorted.
-    destruct Hsorted as (Hsorted & Hallle).
-    destruct tc_v' as [(v', clk_v', aclk_v') chn_v'] eqn:Etc_v'.
-    simpl in Hallle.
-    rewrite <- Etc_v' in *.
-    removehead IH.
-    2:{
-      intros tc' ?.
-      specialize (Haclk_impl_clk tc').
-      apply Haclk_impl_clk.
-      intuition.
-    }
-    removehead IH.
-    2: assumption.
-    destruct IH as (chn_u'' & Hsub & Hres & Hin_clk).
-    setoid_rewrite -> Forall_cons_iff.
-    tc_get_updated_nodes_join_unfold.
-    setoid_rewrite -> Etc_v' at 2.
-    destruct (clk_v' <=? tc_getclk tc v') eqn:Ecmp_clk_v'.
-    + apply Nat.leb_le in Ecmp_clk_v'.
-      destruct (aclk_v' <=? tc_getclk tc u') eqn:Ecmp_aclk_v'.
-      * (* chu_u'' is actually nil *)
-        apply Nat.leb_le in Ecmp_aclk_v'.
-        assert (chn_u'' = nil) as ->.
-        {
-          (* Oh, a long proof *)
-          destruct chn_u'' as [ | tc_v'' chn_u'' ].
-          1: auto. 
-          apply sublist_cons_In in Hsub.
-          rename Hsub into Hin'.
-          rewrite -> Forall_map in Hallle.
-          rewrite -> List.Forall_forall in Hallle, Hin_clk.
-          specialize (Hallle _ Hin').
-          specialize (Hin_clk _ Hin').
-          specialize (Haclk_impl_clk _ (or_intror Hin')).
-          simpl in Hin_clk.
-          removehead Haclk_impl_clk.
-          2: lia.
-          apply Nat.nlt_ge in Haclk_impl_clk.
-          intuition.
-        }
-        exists nil.
-        rewrite -> Etc_v'.
-        simpl.
-        intuition (auto using sublist_nil_l).
-        lia.
-      * exists chn_u''.
-        split.
-        1: now constructor.
-        split.
-        1: assumption.
-        split.
-        2: assumption.
-        rewrite -> Etc_v' at 2 3.
-        simpl.
-        apply Nat.nlt_ge in Ecmp_clk_v'.
-        split; intros Hin'.
-        2: contradiction.
-        pose proof Hin' as Hin'_backup.
-        eapply sublist_In in Hin'.
-        2: apply Hsub.
-        rewrite -> List.Forall_forall in Hin_clk.
-        apply Hin_clk in Hin'.
-        rewrite -> Hin', -> ! Etc_v' in Hin'_backup.
-        now simpl in Hin'_backup.
-    + apply Nat.leb_gt in Ecmp_clk_v'.
-      exists (tc_v' :: chn_u'').
-      split.
-      1: now constructor.
-      split; [ | split ].
-      * rewrite -> Etc_v'.
-        tc_get_updated_nodes_join_unfold.
-        now f_equal.
-      * simpl.
-        split; intros H; [ | intuition ].
-        now rewrite -> Etc_v'.
-      * simpl.
-        eapply List.Forall_impl.
-        2: apply Hin_clk.
-        intros ch HH.
-        rewrite -> HH.
-        intuition.
-        subst ch.
-        now rewrite -> Etc_v'.
-Qed.
-*)
-
-(*
-Lemma tc_get_updated_nodes_join_aux_result_subset_map tc u' chn_u' :
-  exists chn_u'', sublist chn_u'' chn_u' /\
-  (tc_get_updated_nodes_join_aux tc u' chn_u') = map (tc_get_updated_nodes_join tc) chn_u''.
-(* we need something stronger. *)
-(* Lemma tc_get_updated_nodes_join_aux_result_descr tc u' chn_u' 
-  (Hsorted: StronglySorted ge (map tc_rootaclk chn_u')) 
-  l1 l2 (H : List.partition (fun tc' => let: Node (mkInfo v' clk_v' aclk_v') _ := tc' in
-    (clk_v' <=? tc_getclk tc v') || (aclk_v' <=? tc_getclk tc u')) chn_u' = (l1, l2)) :
-  (tc_get_updated_nodes_join_aux tc u' chn_u') = map (tc_get_updated_nodes_join tc) l2. *)
-Proof.
-  induction chn_u' as [ | [(v', clk_v', aclk_v') chn_v'] chn_u' IH ].
-  - exists nil.
-    intuition.
-  - destruct IH as (chn_u'' & Hsub & Hres).
-    tc_get_updated_nodes_join_unfold.
-    destruct (clk_v' <=? tc_getclk tc v') eqn:Ecmp_clk_v'.
-    + destruct (aclk_v' <=? tc_getclk tc u') eqn:Ecmp_aclk_v'.
-      * exists nil.
-        auto using sublist_nil_l.
-      * exists chn_u''.
-        split; auto.
-        now constructor.
-    + eexists. 
-      split.
-      * apply sublist_skip, Hsub.
-      * tc_get_updated_nodes_join_unfold.
-        now f_equal.
-Qed.
-*)
 
 (* all the nodes that are not in the gathered prefix do not need update *)
 
