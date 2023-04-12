@@ -4,8 +4,7 @@ Import ssreflect.SsrSyntax.
 (* From Coq Require Import List Bool Lia. *)
 
 (* Coq's list library is not very complete.  *)
-From stdpp Require Import list.
-(* ? *)
+From stdpp Require list.
 
 (* Section VectorClock.
 
@@ -79,14 +78,14 @@ Proof.
 Qed.
 
 Lemma sublist_In [A : Type] (x : A) (l1 l2 : list A) 
-  (Hsub : sublist l1 l2) (Hin : In x l1) : In x l2.
+  (Hsub : list.sublist l1 l2) (Hin : In x l1) : In x l2.
 Proof. 
-  eapply sublist_submseteq, elem_of_submseteq with (x:=x) in Hsub.
-  all: now apply elem_of_list_In.
+  eapply list.sublist_submseteq, list.elem_of_submseteq with (x:=x) in Hsub.
+  all: now apply base.elem_of_list_In.
 Qed.
 
 Corollary sublist_cons_In [A : Type] (x : A) (l1 l2 : list A) 
-  (Hsub : sublist (x :: l1) l2) : In x l2.
+  (Hsub : list.sublist (x :: l1) l2) : In x l2.
 Proof.
   eapply sublist_In; eauto.
   simpl.
@@ -99,7 +98,7 @@ Proof.
   induction l as [ | xs l IH ].
   - auto.
   - simpl in H.
-    rewrite <- NoDup_ListNoDup, -> NoDup_app, -> ! NoDup_ListNoDup in H.
+    rewrite <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup in H.
     destruct H as (H1 & _ & H2).
     constructor; intuition.
 Qed.
@@ -826,7 +825,7 @@ Lemma tc_get_updated_nodes_join_aux_result tc u' chn_u' (P : treeclock -> Prop)
   (Hclk_iff_P : forall tc', In tc' chn_u' -> 
     tc_rootclk tc' <= (tc_getclk tc (tc_roottid tc')) <-> P tc') 
   (Hsorted: StronglySorted ge (map tc_rootaclk chn_u')) :
-  exists chn_u'', sublist chn_u'' chn_u' /\
+  exists chn_u'', list.sublist chn_u'' chn_u' /\
     (tc_get_updated_nodes_join_aux tc u' chn_u') = map (tc_get_updated_nodes_join tc) chn_u'' /\
     (Forall (fun tc' => ~ In tc' chn_u'' <-> P tc') chn_u').
 Proof.
@@ -884,7 +883,7 @@ Proof.
         exists nil.
         rewrite -> Etc_v'.
         simpl.
-        intuition (auto using sublist_nil_l).
+        intuition (auto using list.sublist_nil_l).
       * exists chn_u''.
         split.
         1: now constructor.
@@ -935,7 +934,7 @@ Qed.
 Lemma tc_get_updated_nodes_join_aux_result_regular tc u' clk_u' aclk_u' chn_u' 
   (Hshape_tc' : tc_shape_inv (Node (mkInfo u' clk_u' aclk_u') chn_u')) 
   (Hrespect : tc_respect (Node (mkInfo u' clk_u' aclk_u') chn_u') tc) :
-  exists chn_u'', sublist chn_u'' chn_u' /\
+  exists chn_u'', list.sublist chn_u'' chn_u' /\
     (tc_get_updated_nodes_join_aux tc u' chn_u') = map (tc_get_updated_nodes_join tc) chn_u'' /\
     (Forall (fun tc' => ~ In tc' chn_u'' <-> tc_ge tc tc') chn_u').
 Proof.
@@ -1229,4 +1228,8 @@ Extract Inductive option => "option" [ "Some" "None" ].
 Extract Inductive nat => "int" [ "0" "(fun x -> x + 1)" ].
 Extract Constant PeanoNat.Nat.leb => "( <= )".
 
-Extraction "extraction/lib/tcimpl.ml" tc_get_updated_nodes_join.
+(* FIXME: simply Import stdpp will result in mysterious extracted code. 
+    Currently do not know why and there is no related report in Iris/stdpp/issues ...
+    will investigate it later. For now, ignore this
+*)
+Extraction "extraction/lib/tcimpl.ml" tc_join.
