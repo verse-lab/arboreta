@@ -256,21 +256,6 @@ Proof.
     intuition congruence.
 Qed.
 
-Definition tc_init t := Node (mkInfo t 0 0) nil.
-
-Fixpoint tc_getnode t tc :=
-  let: Node ni chn := tc in 
-  if thread_eqdec t (info_tid ni)
-  then Some tc
-  else find_first_some (map (tc_getnode t) chn).
-
-(* only for some domain-based reasoning; not for finding *)
-
-Fixpoint tc_flatten tc :=
-  let: Node ni chn := tc in tc :: (List.flat_map tc_flatten chn).
-
-Definition subtree tc1 tc2 : Prop := In tc1 (tc_flatten tc2).
-
 (*
 (* return a ThrMap ? *)
 
@@ -311,6 +296,8 @@ Definition thrmap_getclk thrmap t :=
   | _ => 0
   end.
 *)
+Definition tc_init t := Node (mkInfo t 0 0) nil.
+
 Definition tc_rootinfo tc :=
   let: Node ni _ := tc in ni.
 
@@ -326,10 +313,315 @@ Definition tc_rootaclk tc := info_aclk (tc_rootinfo tc).
 Global Arguments tc_roottid !_ /.
 Global Arguments tc_rootclk !_ /.
 Global Arguments tc_rootaclk !_ /.
+
+Fixpoint tc_getnode t tc :=
+  let: Node ni chn := tc in 
+  if thread_eqdec t (info_tid ni)
+  then Some tc
+  else find_first_some (map (tc_getnode t) chn).
+
+(* only for some domain-based reasoning; not for finding *)
+
+Fixpoint tc_flatten tc :=
+  let: Node ni chn := tc in tc :: (List.flat_map tc_flatten chn).
+
+Definition subtc tc1 tc2 : Prop := In tc1 (tc_flatten tc2).
+
+(* the same as paper, use 0 as default clk *)
+
+Definition tc_getclk t tc :=
+  match tc_getnode t tc with
+  | Some res => tc_rootclk res
+  | _ => 0
+  end.
+
+(* Forall over all subtrees *)
+(* it is hard to define this as a recursive function, so use indprop instead *)
+
+Inductive Foralltc (P : treeclock -> Prop) : treeclock -> Prop :=
+  Foralltc_intro : forall ni chn, 
+    P (Node ni chn) -> Forall (Foralltc P) chn -> Foralltc P (Node ni chn). 
+
+Fact Foralltc_cons_iff P ni chn :
+  Foralltc P (Node ni chn) <-> (P (Node ni chn) /\ Forall (Foralltc P) chn).
+Proof.
+  split; intros.
+  - now inversion H.
+  - now apply Foralltc_intro.
+Qed.
+
+Fact Foralltc_self P tc (H : Foralltc P tc) : P tc.
+Proof. destruct tc. now apply Foralltc_cons_iff in H. Qed.
+
+Lemma Foralltc_impl (P Q : treeclock -> Prop) (Hpq : forall tc, P tc -> Q tc) tc 
+  (H : Foralltc P tc) : Foralltc Q tc.
+Proof.
+  induction tc as [(u, clk_u, aclk_u) chn IH] using treeclock_ind_2; intros.
+  rewrite -> Foralltc_cons_iff in H |- *.
+  destruct H as (H & H0).
+  split.
+  - now apply Hpq.
+  - rewrite -> Forall_forall in *. 
+    firstorder. 
+Qed.
+
+Lemma Foralltc_and (P Q : treeclock -> Prop) tc :
+  Foralltc (fun tc => P tc /\ Q tc) tc <-> Foralltc P tc /\ Foralltc Q tc.
+Proof.
+  induction tc as [ni chn IH] using treeclock_ind_2; intros.
+  rewrite -> ! Foralltc_cons_iff, -> ! List.Forall_forall.
+  rewrite -> List.Forall_forall in IH.
+  firstorder.
+Qed.
+
+Lemma Foralltc_idempotent (P : treeclock -> Prop) tc :
+  Foralltc (Foralltc P) tc <-> Foralltc P tc.
+Proof.
+  induction tc as [ni chn IH] using treeclock_ind_2; intros.
+  rewrite -> ! Foralltc_cons_iff, -> ! List.Forall_forall.
+  rewrite -> List.Forall_forall in IH.
+  firstorder.
+Qed.
+
+Inductive prefixtc : treeclock -> treeclock -> Prop :=
+  prefixtc_intro : forall ni chn chn_sub prefix_chn, 
+    list.sublist chn_sub chn ->
+    Forall2 prefixtc prefix_chn chn_sub ->
+    prefixtc (Node ni prefix_chn) (Node ni chn).
+
+Fact prefixtc_inv ni1 ni2 chn1 chn2 (Hprefix: prefixtc (Node ni1 chn1) (Node ni2 chn2)) :
+  ni1 = ni2 /\ exists chn2_sub, list.sublist chn2_sub chn2 /\ Forall2 prefixtc chn1 chn2_sub.
+Proof. inversion Hprefix; subst. firstorder. Qed.
+
+#[export] Instance prefixtc_refl : Reflexive prefixtc.
+Proof.
+  hnf.
+  intros tc.
+  induction tc as [ni chn IH] using treeclock_ind_2; intros.
+  econstructor.
+  1: reflexivity.
+  now apply list.Forall_Forall2_diag.
+Qed.
+
+Lemma prefixtc_nil_l ni chn : prefixtc (Node ni nil) (Node ni chn).
+Proof.
+  econstructor.
+  2: reflexivity.
+  apply list.sublist_nil_l.
+Qed.
+
+Lemma prefixtc_flatten_sublist tc1 tc2 (Hprefix : prefixtc tc1 tc2) :
+  list.sublist (map tc_rootinfo (tc_flatten tc1)) (map tc_rootinfo (tc_flatten tc2)).
+Proof.
+  revert tc2 Hprefix.
+  induction tc1 as [ni chn1 IH] using treeclock_ind_2; intros.
+  destruct tc2 as [ni2 chn2].
+  apply prefixtc_inv in Hprefix.
+  destruct Hprefix as (<- & (chn2_sub & Hsub & Hprefix)).
+  simpl.
+  apply list.sublist_skip.
+  (* seems only induction works here ... *)
+  revert chn1 IH Hprefix.
+  induction Hsub as [ | ch2 chn2_sub chn2 Hsub IHsub | ch2 chn2_sub chn2 Hsub IHsub ]; intros.
+  - destruct chn1; inversion Hprefix.
+    reflexivity.
+  - destruct chn1 as [ | ch1 chn1 ]. 
+    1: inversion Hprefix.
+    apply list.Forall2_cons in Hprefix.
+    destruct Hprefix as (Hpf & Hprefix).
+    apply Forall_cons_iff in IH.
+    destruct IH as (IHsingle & IH).
+    simpl.
+    rewrite -> ! map_app.
+    apply list.sublist_app.
+    all: firstorder.
+  - simpl.
+    rewrite -> map_app.
+    apply list.sublist_inserts_l.
+    firstorder.
+Qed.
+
+(* mutual induction? seems to be necessary, but ... *)
 (*
+Lemma tc_getnode_map_iff : (forall t chn res, 
+    In (Some res) (map (tc_getnode t) chn) <-> 
+    In res (flat_map tc_flatten chn) /\ tc_roottid res = t)
+with tc_getnode_some : (forall t tc res, 
+    tc_getnode t tc = Some res -> 
+    In res (tc_flatten tc) /\ tc_roottid res = t)
+with tc_getnode_complete : (forall t tc res, 
+    In res (tc_flatten tc) -> 
+    tc_roottid res = t ->
+    (exists res', tc_getnode t tc = Some res')).
+Proof.
+  - intros t chn res.
+    rewrite -> in_map_iff, -> flat_map_concat_map, -> in_concat.
+    setoid_rewrite -> in_map_iff.
+    split.
+    + intros (ch & Hres & Hin).
+      apply tc_getnode_some in Hres.
+      destruct Hres as (Hres & <-).
+      intuition eauto.
+    + intros ((? & (ch & <- & Hin) & Hin_flat) & <-).
+
+      (* exists ch.
+      split; [ | assumption ]. *)
+
+      eapply tc_getnode_complete in Hin_flat.
+      2: reflexivity.
+      destruct Hin_flat as (res' & Hres').
+      destruct ch as [(t, ?, ?) chn_ch] eqn:Ech.
+      simpl in Hres'.
+      destruct (thread_eqdec (tc_roottid res) t) as [ <- | Hneq ] eqn:Etdec.
+      1:{
+        exists ch.
+        subst ch.
+        simpl.
+        rewrite -> Etdec.
+        intuition
+      apply tc_getnode_some in Hres'.
+      eauto.
+
+
+
+      1: lia.
+      1:{
+        apply list_max_le, Forall_map in H.
+        rewrite -> List.Forall_forall in H.
+        firstorder.
+      }
+      intuition.
+
+with 
+  1:{
+
+Fact tc_getnode_map_iff n :
+  (forall t chn res, 
+    List.list_max (map tc_height chn) <= n ->
+    In (Some res) (map (tc_getnode t) chn) <-> 
+    In res (flat_map tc_flatten chn) /\ tc_roottid res = t) /\
+  (* (forall t tc res, 
+    tc_height tc <= S n ->
+    tc_getnode t tc = Some res <-> 
+    In res (tc_flatten tc) /\ tc_roottid res = t). *)
+  (* (forall t tc, 
+    tc_height tc <= S n ->
+    (exists res, tc_getnode t tc = Some res) <-> 
+    (exists res, In res (tc_flatten tc) /\ tc_roottid res = t)). *)
+  (forall t tc res, 
+    tc_height tc <= S n ->
+    tc_getnode t tc = Some res -> 
+    In res (tc_flatten tc) /\ tc_roottid res = t) /\
+  (forall t tc res, 
+    tc_height tc <= S n ->
+    In res (tc_flatten tc) -> 
+    tc_roottid res = t ->
+    (exists res', tc_getnode t tc = Some res')).
+Proof.
+  induction n as [ | n IH ] using nat_ind_2; intros.
+  - split; intros.
+    + destruct chn as [ | ch ? ].
+      2: destruct ch; simpl in H; lia.
+      simpl.
+      intuition.
+    + 
+    + destruct tc as [(t', ?, ?) chn].
+      destruct chn as [ | ch ? ].
+      2: destruct ch; simpl in H; lia.
+      simpl.
+      destruct (thread_eqdec t t') as [ <- | Hneq ].
+      * split; intros ([(t'', ?, ?) ?] & _); simpl.
+        all: eauto.
+      * split.
+        1: intros (? & ?); discriminate.
+        intros ().
+        
+
+      (* all: split; intros ([(t'', ?, ?) ?] & _); simpl.
+      all: try intuition.
+      4:{ ; try intuition congruence.
+      destruct res as [(t'', ?, ?) ?]. *)
+  - split; intros.
+    + rewrite -> in_map_iff, -> flat_map_concat_map, -> in_concat.
+      setoid_rewrite -> in_map_iff.
+      split.
+      * intros (ch & Hres & Hin).
+        eapply IH with (m:=n) in Hres.
+        2: lia.
+        2:{
+          apply list_max_le, Forall_map in H.
+          rewrite -> List.Forall_forall in H.
+          firstorder.
+        }
+        destruct Hres as (Hres & <-).
+        intuition eauto.
+      * intros ((? & (ch & <- & Hin) & Hin_flat) & <-).
+        exists ch.
+        split; [ | assumption ].
+        eapply IH with (m:=n).
+        1: lia.
+        1:{
+          apply list_max_le, Forall_map in H.
+          rewrite -> List.Forall_forall in H.
+          firstorder.
+        }
+        intuition.
+    + destruct tc as [(t', ?, ?) chn].
+      simpl in H |- *.
+      apply le_S_n in H.
+      destruct res as [(t'', ?, ?) ?].
+      simpl.
+      destruct (thread_eqdec t t') as [ <- | ].
+      1:{ 
+        split. 
+        - intuition congruence.
+        - intros [[ | Hin ] ->]; [ intuition congruence | ].
+
+          
+
+          injection Htmp as ->.
+          subst.
+
+        split; [ congruence |
+      1: congruence.
+       
+      
+      destruct chn as [ | ch ? ].
+      2: destruct ch; simpl in H; lia.
+      destruct res as [(t'', ?, ?) ?].
+      simpl.
+      all: intuition congruence.
+
+
+
+    apply le_S_n, list_max_le, Forall_map in Hh. 
+    apply Hind, List.Forall_impl with (P:=fun x => tc_height x <= n).
+    2: assumption.
+    intros.
+    apply IH with (m:=n).
+    + lia.
+    + assumption.
+  
+
+  (* rewrite -> in_map_iff. *)
+  rewrite -> in_map_iff, -> flat_map_concat_map, -> in_concat.
+  setoid_rewrite -> in_map_iff.
+
+  firstorder.
+  revert res.
+  induction chn as [ | ch chn IH ]; intros.
+  - now simpl.
+  - simpl.
+    rewrite -> in_app_iff, -> IH.
+
 Fact tc_getnode_map_iff t chn res :
   In (Some res) (map (tc_getnode t) chn) <-> In res (flat_map tc_flatten chn).
 Proof.
+  (* rewrite -> in_map_iff. *)
+  rewrite -> in_map_iff, -> flat_map_concat_map, -> in_concat.
+  setoid_rewrite -> in_map_iff.
+
+  firstorder.
   revert res.
   induction chn as [ | ch chn IH ]; intros.
   - now simpl.
@@ -401,14 +693,6 @@ Proof.
   apply tc_getnode_complete with (t:=(tc_roottid sub)) in Hin; auto.
   now rewrite -> Hres in Hin.
 Qed.
-
-(* the same as paper, use 0 as default clk *)
-
-Definition tc_getclk t tc :=
-  match tc_getnode t tc with
-  | Some res => tc_rootclk res
-  | _ => 0
-  end.
 
 (*
 Notation "tc '@' t" := (tc_getnode t tc) (at level 50).
@@ -572,112 +856,6 @@ Definition tc_join tc tc' :=
     let: Node (mkInfo w clk_w _) chn_w := tc_attach_nodes forest subtree_tc' in
     let: Node info_z chn_z := pivot in 
     Node info_z ((Node (mkInfo w clk_w (info_clk info_z)) chn_w) :: chn_z).
-
-(* Forall over all subtrees *)
-(* it is hard to define this as a recursive function, so use indprop instead *)
-
-Inductive Foralltc (P : treeclock -> Prop) : treeclock -> Prop :=
-  Foralltc_intro : forall ni chn, 
-    P (Node ni chn) -> Forall (Foralltc P) chn -> Foralltc P (Node ni chn). 
-
-Fact Foralltc_cons_iff P ni chn :
-  Foralltc P (Node ni chn) <-> (P (Node ni chn) /\ Forall (Foralltc P) chn).
-Proof.
-  split; intros.
-  - now inversion H.
-  - now apply Foralltc_intro.
-Qed.
-
-Fact Foralltc_self P tc (H : Foralltc P tc) : P tc.
-Proof. destruct tc. now apply Foralltc_cons_iff in H. Qed.
-
-Lemma Foralltc_impl (P Q : treeclock -> Prop) (Hpq : forall tc, P tc -> Q tc) tc 
-  (H : Foralltc P tc) : Foralltc Q tc.
-Proof.
-  induction tc as [(u, clk_u, aclk_u) chn IH] using treeclock_ind_2; intros.
-  rewrite -> Foralltc_cons_iff in H |- *.
-  destruct H as (H & H0).
-  split.
-  - now apply Hpq.
-  - rewrite -> Forall_forall in *. 
-    firstorder. 
-Qed.
-
-Lemma Foralltc_and (P Q : treeclock -> Prop) tc :
-  Foralltc (fun tc => P tc /\ Q tc) tc <-> Foralltc P tc /\ Foralltc Q tc.
-Proof.
-  induction tc as [ni chn IH] using treeclock_ind_2; intros.
-  rewrite -> ! Foralltc_cons_iff, -> ! List.Forall_forall.
-  rewrite -> List.Forall_forall in IH.
-  firstorder.
-Qed.
-
-Lemma Foralltc_idempotent (P : treeclock -> Prop) tc :
-  Foralltc (Foralltc P) tc <-> Foralltc P tc.
-Proof.
-  induction tc as [ni chn IH] using treeclock_ind_2; intros.
-  rewrite -> ! Foralltc_cons_iff, -> ! List.Forall_forall.
-  rewrite -> List.Forall_forall in IH.
-  firstorder.
-Qed.
-
-Inductive prefixtc : treeclock -> treeclock -> Prop :=
-  prefixtc_intro : forall ni chn chn_sub prefix_chn, 
-    list.sublist chn_sub chn ->
-    Forall2 prefixtc prefix_chn chn_sub ->
-    prefixtc (Node ni prefix_chn) (Node ni chn).
-
-Fact prefixtc_inv ni1 ni2 chn1 chn2 (Hprefix: prefixtc (Node ni1 chn1) (Node ni2 chn2)) :
-  ni1 = ni2 /\ exists chn2_sub, list.sublist chn2_sub chn2 /\ Forall2 prefixtc chn1 chn2_sub.
-Proof. inversion Hprefix; subst. firstorder. Qed.
-
-#[export] Instance prefixtc_refl : Reflexive prefixtc.
-Proof.
-  hnf.
-  intros tc.
-  induction tc as [ni chn IH] using treeclock_ind_2; intros.
-  econstructor.
-  1: reflexivity.
-  now apply list.Forall_Forall2_diag.
-Qed.
-
-Lemma prefixtc_nil_l ni chn : prefixtc (Node ni nil) (Node ni chn).
-Proof.
-  econstructor.
-  2: reflexivity.
-  apply list.sublist_nil_l.
-Qed.
-
-Lemma prefixtc_flatten_sublist tc1 tc2 (Hprefix : prefixtc tc1 tc2) :
-  list.sublist (map tc_rootinfo (tc_flatten tc1)) (map tc_rootinfo (tc_flatten tc2)).
-Proof.
-  revert tc2 Hprefix.
-  induction tc1 as [ni chn1 IH] using treeclock_ind_2; intros.
-  destruct tc2 as [ni2 chn2].
-  apply prefixtc_inv in Hprefix.
-  destruct Hprefix as (<- & (chn2_sub & Hsub & Hprefix)).
-  simpl.
-  apply list.sublist_skip.
-  (* seems only induction works here ... *)
-  revert chn1 IH Hprefix.
-  induction Hsub as [ | ch2 chn2_sub chn2 Hsub IHsub | ch2 chn2_sub chn2 Hsub IHsub ]; intros.
-  - destruct chn1; inversion Hprefix.
-    reflexivity.
-  - destruct chn1 as [ | ch1 chn1 ]. 
-    1: inversion Hprefix.
-    apply list.Forall2_cons in Hprefix.
-    destruct Hprefix as (Hpf & Hprefix).
-    apply Forall_cons_iff in IH.
-    destruct IH as (IHsingle & IH).
-    simpl.
-    rewrite -> ! map_app.
-    apply list.sublist_app.
-    all: firstorder.
-  - simpl.
-    rewrite -> map_app.
-    apply list.sublist_inserts_l.
-    firstorder.
-Qed.
 
 (*
 Lemma Foralltc_Forall_subtree (P : treeclock -> Prop) tc :
