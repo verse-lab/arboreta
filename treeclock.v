@@ -136,6 +136,44 @@ Proof.
     now rewrite -> IH.
 Qed.
 
+Lemma partition_filter [A : Type] (f : A -> bool) l :
+  partition f l = (filter f l, filter (fun a => negb (f a)) l).
+Proof.
+  induction l as [ | x l IH ].
+  - reflexivity.
+  - simpl.
+    rewrite -> IH.
+    now destruct (f x).
+Qed.
+
+Lemma map_filter_comm [A B : Type] (f : A -> B) (g : B -> bool) l :
+  filter g (map f l) = map f (filter (fun x => g (f x)) l).
+Proof.
+  induction l as [ | x l IH ].
+  - reflexivity.
+  - simpl.
+    rewrite -> ! IH.
+    now destruct (g (f x)).
+Qed.
+
+Lemma filter_sublist [A : Type] (f : A -> bool) l :
+  list.sublist (filter f l) l.
+Proof.
+  induction l as [ | x l IH ].
+  - reflexivity.
+  - simpl.
+    now destruct (f x); constructor.
+Qed.
+
+Fact Forall_filter [A : Type] (f : A -> bool) l (P : A -> Prop) 
+  (H : Forall P l) : Forall P (filter f l).
+Proof.
+  rewrite -> Forall_forall in H |- *.
+  setoid_rewrite -> filter_In.
+  intros.
+  now apply H.
+Qed.
+
 Fact pair_equal_split [A B : Type] (a b : A) (c d : B) 
   (E : (a, c) = (b, d)) : a = b /\ c = d.
 Proof. intuition congruence. Qed.
@@ -1309,6 +1347,155 @@ Proof.
       destruct res as [(?, ?, ?) ?].
       simpl in *.
       lia.
+Qed.
+
+(* turn the properties of forest in snd to those on fst *)
+
+Lemma tc_detach_nodes_snd2fst subtree_tc' tc :
+  Forall (fun tc' => exists sub, In sub (tc_flatten tc) /\ 
+    tc' = fst (tc_detach_nodes subtree_tc' sub))
+  (snd (tc_detach_nodes subtree_tc' tc)).
+Proof.
+  induction tc as [ni chn IH] using treeclock_ind_2; intros.
+  rewrite -> List.Forall_forall in IH.
+  setoid_rewrite -> List.Forall_forall in IH.
+  simpl.
+  (* TODO much repetition. make these domain-specific tactic? *)
+  destruct (List.split (map (tc_detach_nodes subtree_tc') chn))
+    as (new_chn, res) eqn:Esplit, 
+    (partition (fun tc' : treeclock => tid_in_tree (tc_roottid tc') subtree_tc') new_chn)
+    as (res', new_chn') eqn:Epar.
+  rewrite -> split_map_fst_snd, -> ! map_map in Esplit.
+  rewrite -> partition_filter in Epar.
+  apply pair_equal_split in Esplit, Epar.
+  destruct Esplit as (Enew_chn & Eres), Epar as (Eres' & Enew_chn').
+  simpl.
+  rewrite -> List.Forall_app, ! List.Forall_forall.
+  split.
+  - subst res.
+    setoid_rewrite -> in_concat.
+    setoid_rewrite -> in_map_iff.
+    intros res_ch (? & (ch & <- & Hin_ch) & Hin).
+    specialize (IH _ Hin_ch _ Hin).
+    destruct IH as (sub & Hin_sub & ->).
+    exists sub.
+    split; [ right; eapply tc_flatten_in_ch_chn in Hin_sub; eauto | reflexivity ].
+  - subst res' new_chn.
+    setoid_rewrite -> filter_In.
+    setoid_rewrite -> in_map_iff.
+    intros ? ((ch & <- & Hin_ch) & _).
+    exists ch.
+    split. 
+    2: reflexivity.
+    right. 
+    eapply tc_flatten_in_ch_chn in Hin_ch; eauto.
+    destruct ch as [(?, ?, ?) ?].
+    simpl.
+    intuition.
+Qed.
+
+Lemma tc_detach_nodes_dom_incl subtree_tc' tc :
+  Forall (fun tc' => tc_getnode (tc_roottid tc') subtree_tc')
+  (snd (tc_detach_nodes subtree_tc' tc)).
+Proof.
+  induction tc as [ni chn IH] using treeclock_ind_2; intros.
+  rewrite -> List.Forall_forall in IH.
+  setoid_rewrite -> List.Forall_forall in IH.
+  simpl.
+  destruct (List.split (map (tc_detach_nodes subtree_tc') chn))
+    as (new_chn, res) eqn:Esplit, 
+    (partition (fun tc' : treeclock => tid_in_tree (tc_roottid tc') subtree_tc') new_chn)
+    as (res', new_chn') eqn:Epar.
+  rewrite -> split_map_fst_snd, -> ! map_map in Esplit.
+  rewrite -> partition_filter in Epar.
+  apply pair_equal_split in Esplit, Epar.
+  destruct Esplit as (Enew_chn & Eres), Epar as (Eres' & Enew_chn').
+  simpl.
+  rewrite -> List.Forall_app, ! List.Forall_forall.
+  split.
+  - subst res.
+    setoid_rewrite -> in_concat.
+    setoid_rewrite -> in_map_iff.
+    intros res_ch (? & (ch & <- & Hin_ch) & Hin).
+    eapply IH; eauto.
+  - subst res' new_chn.
+    setoid_rewrite -> filter_In.
+    setoid_rewrite -> in_map_iff.
+    intros ? ((ch & <- & Hin_ch) & ?).
+    intuition.
+Qed.
+
+Lemma tc_detach_nodes_fst_is_prefix subtree_tc' tc :
+  prefixtc (fst (tc_detach_nodes subtree_tc' tc)) tc.
+Proof.
+  induction tc as [ni chn IH] using treeclock_ind_2; intros.
+  simpl.
+  destruct (List.split (map (tc_detach_nodes subtree_tc') chn))
+    as (new_chn, res) eqn:Esplit, 
+    (partition (fun tc' : treeclock => tid_in_tree (tc_roottid tc') subtree_tc') new_chn)
+    as (res', new_chn') eqn:Epar.
+  rewrite -> split_map_fst_snd, -> ! map_map in Esplit.
+  rewrite -> partition_filter in Epar.
+  apply pair_equal_split in Esplit, Epar.
+  destruct Esplit as (Enew_chn & Eres), Epar as (Eres' & Enew_chn').
+  simpl.
+  subst new_chn.
+  rewrite -> map_filter_comm in Enew_chn'.
+  match type of Enew_chn' with map _ (filter ?ff ?ll) = _ => 
+    remember (filter ff ll) as chn_sub;
+    remember ff as fb
+  end.
+  econstructor.
+  1: apply filter_sublist with (f:=fb).
+  subst new_chn'.
+  apply Forall_filter with (f:=fb) in IH.
+  rewrite <- Heqchn_sub in IH |- *.
+  clear -IH.
+  induction chn_sub as [ | ch chn ].
+  - reflexivity.
+  - simpl.
+    rewrite -> List.Forall_cons_iff in IH. 
+    constructor; firstorder.
+Qed.
+
+(* TODO domain completeness? *)
+
+(* there will not be any tid in subtree_tc' that is also inside the pivot tree *)
+
+Lemma tc_detach_nodes_dom_excl subtree_tc' tc :
+  forall t (Htarg : tc_getnode t subtree_tc')
+  (* res (Hres : tc_getnode t (fst (tc_detach_nodes subtree_tc' tc)) = Some res), *)
+  res (Hin : In res (tc_flatten (fst (tc_detach_nodes subtree_tc' tc)))) (Et : tc_roottid res = t),
+  res = (fst (tc_detach_nodes subtree_tc' tc)).
+Proof.
+  induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros.
+  rewrite -> List.Forall_forall in IH.
+  simpl in Hin |- *.
+  destruct (List.split (map (tc_detach_nodes subtree_tc') chn))
+    as (new_chn, forest) eqn:Esplit, 
+    (partition (fun tc' : treeclock => tid_in_tree (tc_roottid tc') subtree_tc') new_chn)
+    as (forest', new_chn') eqn:Epar.
+  rewrite -> split_map_fst_snd, -> ! map_map in Esplit.
+  rewrite -> partition_filter in Epar.
+  apply pair_equal_split in Esplit, Epar.
+  destruct Esplit as (Enew_chn & Eres), Epar as (Eres' & Enew_chn').
+  simpl in Hin |- *.
+  destruct Hin as [ | Hin ].
+  1: congruence.
+  (* now contradiction part *)
+  apply tc_flatten_in_chn_ch in Hin.
+  destruct Hin as (new_ch & Hin_ch & Hin).
+  subst new_chn' new_chn.
+  apply filter_In in Hin_ch.
+  destruct Hin_ch as (Hin_ch & Htidnotin).
+  apply in_map_iff in Hin_ch.
+  destruct Hin_ch as (ch & <- & Hin_ch).
+  subst t.
+  eapply IH in Hin; eauto.
+  subst res.
+  unfold tid_in_tree in Htidnotin.
+  now destruct (tc_getnode (tc_roottid (fst (tc_detach_nodes subtree_tc' ch)))
+    subtree_tc').
 Qed.
 
 (* 
