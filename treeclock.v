@@ -127,6 +127,19 @@ Proof.
   intuition congruence.
 Qed.
 
+Lemma split_map_fst_snd [A B : Type] (l : list (A * B)) :
+  List.split l = (map fst l, map snd l).
+Proof.
+  induction l as [ | (x, y) l IH ].
+  - auto.
+  - simpl.
+    now rewrite -> IH.
+Qed.
+
+Fact pair_equal_split [A B : Type] (a b : A) (c d : B) 
+  (E : (a, c) = (b, d)) : a = b /\ c = d.
+Proof. intuition congruence. Qed.
+
 Section TreeClock.
 
 Context {thread : Type} (thread_eqdec : forall (t1 t2 : thread), {t1 = t2} + {t1 <> t2}).
@@ -396,6 +409,9 @@ Proof.
     eapply H, tc_flatten_in_ch_chn; eauto.
 Qed.
 
+Corollary Foralltc_trivial (P : treeclock -> Prop) (H : forall tc, P tc) tc : Foralltc P tc.
+Proof. now apply Foralltc_Forall_subtree, List.Forall_forall. Qed.
+  
 Inductive prefixtc : treeclock -> treeclock -> Prop :=
   prefixtc_intro : forall ni chn chn_sub prefix_chn, 
     list.sublist chn_sub chn ->
@@ -742,6 +758,123 @@ Record tc_respect tc (tc' : treeclock) : Prop := {
   dmono : Foralltc (dmono_single tc') tc;
   imono : Foralltc (imono_single tc') tc
 }.
+
+(*
+(* this requires tc to be map-like *)
+#[export] Instance tc_ge_refl : Reflexive tc_ge.
+*)
+
+Fact tc_ge_all_getclk_ge tc tc_larger (H : tc_ge tc_larger tc) 
+  t : tc_getclk t tc <= tc_getclk t tc_larger.
+Proof.
+  unfold tc_getclk at 1.
+  destruct (tc_getnode t tc) as [ [(t', clk', aclk') chn'] | ] eqn:E.
+  - apply tc_getnode_some in E.
+    simpl in E.
+    destruct E as (Hin' & ->).
+    hnf in H.
+    rewrite -> Foralltc_Forall_subtree, List.Forall_forall in H.
+    specialize (H _ Hin').
+    simpl in H |- *.
+    lia.
+  - lia.
+Qed.
+
+Fact all_getclk_ge_tc_ge tc tc_larger
+  (Hnodup : List.NoDup (map tc_roottid (tc_flatten tc)))
+  (H : forall t, tc_getclk t tc <= tc_getclk t tc_larger) :
+  tc_ge tc_larger tc.
+Proof.
+  unfold tc_ge.
+  rewrite -> Foralltc_Forall_subtree, List.Forall_forall.
+  intros [(t, clk, aclk) chn] Hin.
+  eapply tc_getnode_complete_nodup in Hin.
+  2: reflexivity.
+  2: assumption.
+  simpl in Hin.
+  specialize (H t).
+  unfold tc_getclk in H at 1.
+  now rewrite -> Hin in H.
+Qed.
+
+#[export] Instance tc_ge_trans : Transitive tc_ge.
+Proof.
+  hnf.
+  intros tc_x tc_y tc_z Hge1 Hge2.
+  hnf in Hge2 |- *.
+  rewrite -> Foralltc_Forall_subtree, List.Forall_forall in Hge2 |- *.
+  intros [(t, clk, aclk) chn] Hin.
+  specialize (Hge2 _ Hin).
+  simpl in Hge2.
+  pose proof (tc_ge_all_getclk_ge _ _ Hge1 t).
+  lia.
+Qed.
+
+Section Pointwise_Treeclock.
+
+  Variables (tc1 tc2 tc_max : treeclock).
+  Hypotheses (Hpmax : forall t, tc_getclk t tc_max = Nat.max (tc_getclk t tc1) (tc_getclk t tc2))
+    (Hnodup1 : List.NoDup (map tc_roottid (tc_flatten tc1)))
+    (Hnodup2 : List.NoDup (map tc_roottid (tc_flatten tc2))).
+
+  Fact tc_ge_from_pointwise_max : tc_ge tc_max tc1 /\ tc_ge tc_max tc2.
+  Proof.
+    eapply all_getclk_ge_tc_ge with (tc_larger:=tc_max) in Hnodup1, Hnodup2.
+    2-3: intros t; rewrite -> Hpmax; lia.
+    intuition.
+  Qed.
+
+  Lemma dmono_single_pointwise_max_preserve tc 
+    (Hdmono1 : dmono_single tc1 tc)
+    (Hdmono2 : dmono_single tc2 tc) :
+    dmono_single tc_max tc.
+  Proof.
+    hnf in Hdmono1, Hdmono2 |- *.
+    destruct tc as [(t, clk, aclk) chn].
+    intros Hle.
+    pose proof tc_ge_from_pointwise_max as Hge.
+    rewrite -> Hpmax in Hle.
+    apply Nat.max_le in Hle.
+    destruct Hle as [ Hle | Hle ].
+    1: specialize (Hdmono1 Hle); transitivity tc1; auto.
+    2: specialize (Hdmono2 Hle); transitivity tc2; auto.
+    all: intuition.
+  Qed.
+
+  Lemma imono_single_pointwise_max_preserve tc 
+    (Himono1 : imono_single tc1 tc)
+    (Himono2 : imono_single tc2 tc) :
+    imono_single tc_max tc.
+  Proof.
+    hnf in Himono1, Himono2 |- *.
+    destruct tc as [(u, clk_u, aclk_u) chn].
+    rewrite -> List.Forall_forall in Himono1, Himono2 |- *.
+    intros [(v, clk_v, aclk_v) chn_v] Hin Hle.
+    pose proof tc_ge_from_pointwise_max as Hge.
+    rewrite -> Hpmax in Hle.
+    apply Nat.max_le in Hle.
+    destruct Hle as [ Hle | Hle ].
+    1: specialize (Himono1 _ Hin Hle); transitivity tc1; auto.
+    2: specialize (Himono2 _ Hin Hle); transitivity tc2; auto.
+    all: intuition.
+  Qed.
+
+  Corollary tc_respect_pointwise_max_preserve tc 
+    (Hrespect1 : tc_respect tc tc1)
+    (Hrespect2 : tc_respect tc tc2) :
+    tc_respect tc tc_max.
+  Proof.
+    destruct Hrespect1 as (Hdmono1 & Himono1), Hrespect2 as (Hdmono2 & Himono2).
+    constructor.
+    - rewrite -> Foralltc_Forall_subtree, List.Forall_forall in Hdmono1, Hdmono2 |- *.
+      intros sub Hin.
+      apply dmono_single_pointwise_max_preserve; firstorder.
+    - rewrite -> Foralltc_Forall_subtree, List.Forall_forall in Himono1, Himono2 |- *.
+      intros sub Hin.
+      apply imono_single_pointwise_max_preserve; firstorder.
+  Qed.
+
+End Pointwise_Treeclock.
 
 Fact tc_respect_chn ni chn tc' (H : tc_respect (Node ni chn) tc') :
   Forall (fun ch => tc_respect ch tc') chn.
