@@ -1021,9 +1021,6 @@ Record tc_shape_inv tc : Prop := {
   clk_lowerbound: Foralltc (fun tc' => 0 < tc_rootclk tc') tc
 }.
 
-(* FIXME: there seems to be some duplication in the following things, 
-    or possibility to generalize them from children into all sub-nodes; figure them out *)
-
 Lemma tid_nodup_chn_ch chn ch
   (H : List.NoDup (map tc_roottid (flat_map tc_flatten chn)))
   (Hin : In ch chn) : List.NoDup (map tc_roottid (tc_flatten ch)).
@@ -1033,6 +1030,8 @@ Proof.
   rewrite -> List.Forall_map, List.Forall_forall in H.
   now apply H.
 Qed.
+
+(* this essentially tells that tid_nodup iff all subtrees are tid_nodup *)
 
 Lemma tid_nodup_Foralltc_id tc : 
   List.NoDup (map tc_roottid (tc_flatten tc)) <->
@@ -1053,6 +1052,27 @@ Proof.
   apply NoDup_cons_iff in H.
   destruct H as (_ & H).
   now eapply tid_nodup_chn_ch; eauto.
+Qed.
+
+Lemma tid_nodup_prefix_preserve tc tc' (Hprefix : prefixtc tc tc') 
+  (Hnodup : List.NoDup (map tc_roottid (tc_flatten tc'))) : 
+  List.NoDup (map tc_roottid (tc_flatten tc)).
+Proof.
+  (* use prefix domain *)
+  revert tc' Hprefix Hnodup.
+  induction tc as [(u, clk, aclk) chn_sp IH] using treeclock_ind_2; intros.
+  destruct tc' as [(u', clk', aclk') chn].
+  pose proof (prefixtc_flatten_sublist _ _ Hprefix) as Hdomsub. 
+  apply prefixtc_inv in Hprefix.
+  destruct Hprefix as (Htmp & (chn_sub & Hsub & Hcorr)).
+  injection Htmp as <-.
+  subst clk' aclk'.
+  simpl in Hnodup, Hdomsub |- *.
+  apply sublist_map with (f:=info_tid) in Hdomsub.
+  simpl in Hdomsub.
+  rewrite -> ! map_map in Hdomsub.
+  fold tc_roottid in Hdomsub.
+  eapply sublist_NoDup; eauto.
 Qed.
 
 Fact tc_shape_inv_conj_iff tc : 
@@ -1092,7 +1112,6 @@ Proof.
   revert tc' Hprefix Hshape.
   induction tc as [(u, clk, aclk) chn_sp IH] using treeclock_ind_2; intros.
   destruct tc' as [(u', clk', aclk') chn].
-  pose proof (prefixtc_flatten_sublist _ _ Hprefix) as Hdomsub. 
   apply prefixtc_inv in Hprefix.
   destruct Hprefix as (Htmp & (chn_sub & Hsub & Hcorr)).
   injection Htmp as <-.
@@ -1113,14 +1132,9 @@ Proof.
   2: apply prefixtc_rootinfo_same.
   pose proof (Forall2_forall_exists _ _ _ Hrootinfo) as Hrootinfo_in.
   constructor.
-  - (* use prefix domain *)
-    apply tid_nodup in Hshape.
-    simpl in Hshape, Hdomsub |- *.
-    apply sublist_map with (f:=info_tid) in Hdomsub.
-    simpl in Hdomsub.
-    rewrite -> ! map_map in Hdomsub.
-    fold tc_roottid in Hdomsub.
-    eapply sublist_NoDup; eauto.
+  - apply tid_nodup in Hshape.
+    eapply tid_nodup_prefix_preserve; eauto.
+    econstructor; eauto.
   - constructor.
     + apply aclk_upperbound, Foralltc_self in Hshape.
       simpl in Hshape |- *.
