@@ -1482,7 +1482,7 @@ Proof.
       eapply List.Forall_forall in IH.
       2: apply Hin.
       apply IH.
-      * eapply tc_shape_inv_chn, List.Forall_forall, Foralltc_self in Hshape_tc'; eauto.
+      * eapply tc_shape_inv_chn, List.Forall_forall in Hshape_tc'; eauto.
       * eapply tc_respect_chn, List.Forall_forall in Hrespect; eauto.
       * now apply Halllt in Hin_sublist.
       * now rewrite -> Hres.
@@ -1513,7 +1513,7 @@ Proof.
         rewrite -> List.Forall_forall in IH.
         eapply IH.
         all: auto.
-        - eapply tc_shape_inv_chn, List.Forall_forall, Foralltc_self in Hshape_tc'; eauto.
+        - eapply tc_shape_inv_chn, List.Forall_forall in Hshape_tc'; eauto.
         - eapply tc_respect_chn, List.Forall_forall in Hrespect; eauto.
         - now apply Halllt in Hin_ch.
         - unfold tc_getclk at 2.
