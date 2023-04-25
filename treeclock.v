@@ -70,8 +70,8 @@ Proof.
   - simpl. now destruct x.
 Qed.
 
-Lemma sublist_In [A : Type] (x : A) (l1 l2 : list A) 
-  (Hsub : list.sublist l1 l2) (Hin : In x l1) : In x l2.
+Lemma sublist_In [A : Type] (l1 l2 : list A) 
+  (Hsub : list.sublist l1 l2) (x : A) (Hin : In x l1) : In x l2.
 Proof. 
   eapply list.sublist_submseteq, list.elem_of_submseteq with (x:=x) in Hsub.
   all: now apply base.elem_of_list_In.
@@ -172,6 +172,58 @@ Proof.
   setoid_rewrite -> filter_In.
   intros.
   now apply H.
+Qed.
+
+Fact sublist_StronglySorted [A : Type] (R : A -> A -> Prop) l1 l2
+  (H : StronglySorted R l2) (Hsub : list.sublist l1 l2) :
+  StronglySorted R l1.
+Proof.
+  induction Hsub as [ | x l1 l2 Hsub IHsub | x l1 l2 Hsub IHsub ]; intros.
+  - auto.
+  - apply StronglySorted_inv in H.
+    constructor.
+    1: intuition.
+    destruct H as (_ & H).
+    rewrite -> List.Forall_forall in H |- *.
+    pose proof (sublist_In _ _ Hsub).
+    firstorder.
+  - apply StronglySorted_inv in H.
+    intuition.
+Qed.
+
+Fact Forall2_forall_exists [A B : Type] (P : A -> B -> Prop) l1 l2
+  (H : Forall2 P l1 l2) (x : A) (Hin : In x l1) :
+  exists y, In y l2 /\ P x y.
+Proof.
+  induction H as [ | x0 y0 l1 l2 Hp H IH ].
+  - inversion Hin.
+  - simpl in Hin |- *.
+    destruct Hin as [ -> | Hin ]; firstorder.
+Qed.
+
+Fact sublist_map [A B : Type] (f : A -> B) (l1 l2 : list A)
+  (Hsub : list.sublist l1 l2) :
+  list.sublist (map f l1) (map f l2).
+Proof.
+  induction Hsub as [ | x l1 l2 Hsub IHsub | x l1 l2 Hsub IHsub ]; intros.
+  - auto.
+  - simpl.
+    now constructor.
+  - simpl.
+    now constructor.
+Qed.
+
+Fact sublist_NoDup [A : Type] (l1 l2 : list A)
+  (Hsub : list.sublist l1 l2) (Hnodup : NoDup l2) : NoDup l1.
+Proof.
+  induction Hsub as [ | x l1 l2 Hsub IHsub | x l1 l2 Hsub IHsub ]; intros.
+  - auto.
+  - pose proof (sublist_In _ _ Hsub x).
+    rewrite -> NoDup_cons_iff in Hnodup |- *.
+    firstorder.
+  - pose proof (sublist_In _ _ Hsub x).
+    rewrite -> NoDup_cons_iff in Hnodup.
+    firstorder.
 Qed.
 
 Fact pair_equal_split [A B : Type] (a b : A) (c d : B) 
@@ -460,6 +512,14 @@ Fact prefixtc_inv ni1 ni2 chn1 chn2 (Hprefix: prefixtc (Node ni1 chn1) (Node ni2
   ni1 = ni2 /\ exists chn2_sub, list.sublist chn2_sub chn2 /\ Forall2 prefixtc chn1 chn2_sub.
 Proof. inversion Hprefix; subst. firstorder. Qed.
 
+Fact prefixtc_rootinfo_same tc tc' (Hprefix : prefixtc tc tc') :
+  tc_rootinfo tc = tc_rootinfo tc'.
+Proof. 
+  destruct tc, tc'.
+  apply prefixtc_inv in Hprefix.
+  intuition congruence.
+Qed.
+
 #[export] Instance prefixtc_refl : Reflexive prefixtc.
 Proof.
   hnf.
@@ -632,6 +692,23 @@ Proof.
   intros sub Hin <-.
   apply tc_getnode_complete with (t:=(tc_roottid sub)) in Hin; auto.
   firstorder congruence.
+Qed.
+
+Corollary tc_getnode_subtc_iff t tc : 
+  In t (map tc_roottid (tc_flatten tc)) <-> tc_getnode t tc.
+Proof.
+  rewrite -> in_map_iff.
+  split.
+  - intros (sub & <- & Hin).
+    eapply tc_getnode_complete in Hin.
+    2: reflexivity.
+    destruct Hin as (? & H).
+    now rewrite -> H.
+  - destruct (tc_getnode t tc) as [ res | ] eqn:E.
+    2: now unfold isSome.
+    intros _.
+    apply tc_getnode_some in E.
+    firstorder.
 Qed.
 
 (* domain inclusion property of prefix *)
@@ -944,6 +1021,9 @@ Record tc_shape_inv tc : Prop := {
   clk_lowerbound: Foralltc (fun tc' => 0 < tc_rootclk tc') tc
 }.
 
+(* FIXME: there seems to be some duplication in the following things, 
+    or possibility to generalize them from children into all sub-nodes; figure them out *)
+
 Lemma tid_nodup_chn_ch chn ch
   (H : List.NoDup (map tc_roottid (flat_map tc_flatten chn)))
   (Hin : In ch chn) : List.NoDup (map tc_roottid (tc_flatten ch)).
@@ -989,27 +1069,142 @@ Proof.
 Qed.
 
 Lemma tc_shape_inv_chn ni chn (Hshape : tc_shape_inv (Node ni chn)) :
-  Forall (Foralltc tc_shape_inv) chn.
+  Forall tc_shape_inv chn.
 Proof.
   apply List.Forall_forall.
   intros ch Hin.
-  eapply Foralltc_impl.
-  1: apply tc_shape_inv_conj_iff.
-  apply Foralltc_and; split.
-  2: apply Foralltc_and; split.
-  3: apply Foralltc_and; split.
-  2-4: rewrite -> Foralltc_idempotent.
-  2: apply aclk_upperbound in Hshape.
-  3: apply aclk_decsorted in Hshape.
-  4: apply clk_lowerbound in Hshape.
-  2-4: apply Foralltc_cons_iff in Hshape.
-  2-4: rewrite -> List.Forall_forall in Hshape.
+  apply tc_shape_inv_conj_iff in Hshape.
+  rewrite -> ! Foralltc_cons_iff, -> ! List.Forall_forall in Hshape.
+  constructor.
   2-4: firstorder.
-  apply tid_nodup in Hshape.
-  simpl in Hshape.
-  apply NoDup_cons_iff in Hshape.
-  destruct Hshape as (_ & Hnodup).
-  now eapply tid_nodup_Foralltc_id, tid_nodup_chn_ch; eauto.
+  destruct Hshape as (Hnodup & _).
+  simpl in Hnodup.
+  apply NoDup_cons_iff in Hnodup.
+  destruct Hnodup as (_ & Hnodup).
+  now eapply tid_nodup_chn_ch; eauto.
+Qed.  
+
+(* prefix also have shape inv *)
+
+Lemma tc_shape_inv_prefix_preserve tc tc' (Hprefix : prefixtc tc tc') 
+  (Hshape : tc_shape_inv tc') : tc_shape_inv tc.
+Proof.
+  revert tc' Hprefix Hshape.
+  induction tc as [(u, clk, aclk) chn_sp IH] using treeclock_ind_2; intros.
+  destruct tc' as [(u', clk', aclk') chn].
+  pose proof (prefixtc_flatten_sublist _ _ Hprefix) as Hdomsub. 
+  apply prefixtc_inv in Hprefix.
+  destruct Hprefix as (Htmp & (chn_sub & Hsub & Hcorr)).
+  injection Htmp as <-.
+  subst clk' aclk'.
+  pose proof (sublist_In _ _ Hsub) as Hsub_in.
+  pose proof (Forall2_forall_exists _ _ _ Hcorr) as Hcorr_in.
+  pose proof (tc_shape_inv_chn _ _ Hshape) as Hshape_chn.
+  rewrite -> List.Forall_forall in IH, Hshape_chn.
+  assert (forall x, In x chn_sp -> tc_shape_inv x) as Hshape_sp.
+  {
+    intros x Hin.
+    destruct (Hcorr_in _ Hin) as (y & Hin_sub & Hprefix_sub).
+    specialize (Hsub_in _ Hin_sub).
+    firstorder.
+  }
+  pose proof Hcorr as Hrootinfo.
+  eapply list.Forall2_impl in Hrootinfo.
+  2: apply prefixtc_rootinfo_same.
+  pose proof (Forall2_forall_exists _ _ _ Hrootinfo) as Hrootinfo_in.
+  constructor.
+  - (* use prefix domain *)
+    apply tid_nodup in Hshape.
+    simpl in Hshape, Hdomsub |- *.
+    apply sublist_map with (f:=info_tid) in Hdomsub.
+    simpl in Hdomsub.
+    rewrite -> ! map_map in Hdomsub.
+    fold tc_roottid in Hdomsub.
+    eapply sublist_NoDup; eauto.
+  - constructor.
+    + apply aclk_upperbound, Foralltc_self in Hshape.
+      simpl in Hshape |- *.
+      rewrite -> List.Forall_forall in Hshape |- *.
+      unfold tc_rootaclk in Hshape |- *.
+      firstorder congruence.
+    + rewrite -> List.Forall_forall.
+      firstorder.
+  - constructor.
+    + apply aclk_decsorted, Foralltc_self in Hshape.
+      simpl in Hshape |- *.
+      assert (map tc_rootaclk chn_sp = map tc_rootaclk chn_sub) as ->.
+      {
+        clear -Hrootinfo.
+        induction Hrootinfo.
+        - auto.
+        - simpl. unfold tc_rootaclk in *. congruence.
+      }
+      eapply sublist_map with (f:=tc_rootaclk) in Hsub.
+      eapply sublist_StronglySorted; eauto.
+    + rewrite -> List.Forall_forall.
+      firstorder.
+  - constructor.
+    + now apply clk_lowerbound, Foralltc_self in Hshape.
+    + rewrite -> List.Forall_forall.
+      firstorder.
+Qed.
+
+(* exploit some simple cases, which may be not generalizable but simpler ... *)
+
+Lemma tc_shape_inv_prepend_child ni chn (Hshape : tc_shape_inv (Node ni chn))
+  tc_new (Hshape_new : tc_shape_inv tc_new)
+  (Hnointersect : forall t, tc_getnode t tc_new -> tc_getnode t (Node ni chn) -> False)
+  (Haclk_bounded : tc_rootaclk tc_new <= info_clk ni)
+  (Haclk_ge : tc_rootaclk tc_new >= match chn with ch :: _ => tc_rootaclk ch | nil => 0 end) :
+  tc_shape_inv (Node ni (tc_new :: chn)).
+Proof.
+  constructor.
+  - repeat setoid_rewrite <- tc_getnode_subtc_iff in Hnointersect.
+    eapply Permutation.Permutation_NoDup with 
+      (l:=map tc_roottid ((tc_flatten tc_new) ++ (tc_flatten (Node ni chn)))).
+    + simpl.
+      rewrite -> ! map_app.
+      simpl.
+      symmetry.
+      apply Permutation.Permutation_middle.
+    + rewrite -> map_app.
+      rewrite <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup.
+      setoid_rewrite -> base.elem_of_list_In.
+      now apply tid_nodup in Hshape, Hshape_new.
+  - constructor.
+    + apply aclk_upperbound, Foralltc_self in Hshape.
+      simpl in Hshape |- *.
+      destruct ni as (?, ?, ?).
+      simpl in Haclk_bounded.
+      constructor; auto.
+    + apply aclk_upperbound in Hshape, Hshape_new.
+      apply Foralltc_cons_iff in Hshape.
+      now constructor.
+  - constructor.
+    + apply aclk_decsorted, Foralltc_self in Hshape.
+      simpl in Hshape |- *.
+      constructor.
+      1: assumption.
+      destruct chn as [ | ch chn ].
+      * now simpl.
+      * simpl.
+        constructor.
+        1: assumption.
+        simpl in Hshape.
+        apply StronglySorted_inv in Hshape.
+        rewrite -> List.Forall_forall in Hshape |- *.
+        intros x Hin.
+        pose proof (proj2 Hshape _ Hin).
+        lia.
+    + apply aclk_decsorted in Hshape, Hshape_new.
+      apply Foralltc_cons_iff in Hshape.
+      now constructor.
+  - apply clk_lowerbound in Hshape, Hshape_new.
+    apply Foralltc_cons_iff in Hshape.
+    simpl in Hshape.
+    constructor.
+    + now simpl.
+    + now constructor.
 Qed.
 
 Lemma tc_get_updated_nodes_join_aux_result tc u' chn_u'
