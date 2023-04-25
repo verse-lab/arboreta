@@ -449,7 +449,7 @@ Qed.
 
 Corollary Foralltc_trivial (P : treeclock -> Prop) (H : forall tc, P tc) tc : Foralltc P tc.
 Proof. now apply Foralltc_Forall_subtree, List.Forall_forall. Qed.
-  
+
 Inductive prefixtc : treeclock -> treeclock -> Prop :=
   prefixtc_intro : forall ni chn chn_sub prefix_chn, 
     list.sublist chn_sub chn ->
@@ -1211,7 +1211,7 @@ Qed.
 
 (* a node is in the gathered prefix iff it needs update *)
 
-Lemma tc_get_updated_nodes_join_sound : forall tc' (Hshape_tc': tc_shape_inv tc') 
+Lemma tc_get_updated_nodes_join_result : forall tc' (Hshape_tc': tc_shape_inv tc') 
   tc (Hrespect: tc_respect tc' tc) 
   (* root clk le is NECESSARY for sound and completeness since root is always in the gathered prefix *)
   (Hroot_clk_le : tc_getclk (tc_roottid tc') tc < tc_rootclk tc') t,
@@ -1458,7 +1458,74 @@ Proof.
     constructor; firstorder.
 Qed.
 
-(* TODO domain completeness? *)
+Lemma tc_detach_nodes_dom_partition subtree_tc' tc :
+  forall ni, In ni (map tc_rootinfo (tc_flatten tc)) <-> 
+    (In ni (map tc_rootinfo (tc_flatten (fst (tc_detach_nodes subtree_tc' tc)))) \/
+    In ni (map tc_rootinfo (flat_map tc_flatten (snd (tc_detach_nodes subtree_tc' tc))))).
+Proof.
+  induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros.
+  simpl.
+  destruct (List.split (map (tc_detach_nodes subtree_tc') chn))
+    as (new_chn, forest) eqn:Esplit, 
+    (partition (fun tc' : treeclock => tid_in_tree (tc_roottid tc') subtree_tc') new_chn)
+    as (forest', new_chn') eqn:Epar.
+  rewrite -> split_map_fst_snd, -> ! map_map in Esplit.
+  (* special here *)
+  pose proof (elements_in_partition _ _ Epar) as Hparin.
+  rewrite -> partition_filter in Epar.
+  apply pair_equal_split in Esplit, Epar.
+  destruct Esplit as (Enew_chn & Eres), Epar as (Eres' & Enew_chn').
+  simpl.
+  rewrite -> or_assoc.
+  apply or_iff_compat_l.
+  (* operating on lists *)
+  rewrite -> flat_map_app, -> map_app, -> in_app_iff.
+  rewrite <- or_comm, -> or_assoc, <- in_app_iff, <- map_app, <- flat_map_app.
+  match goal with |- _ <-> _ \/ ?b => 
+    assert (b <-> In ni (map tc_rootinfo (flat_map tc_flatten new_chn))) as Htmp end.
+  {
+    rewrite -> ! in_map_iff.
+    repeat setoid_rewrite -> in_flat_map.
+    setoid_rewrite -> Hparin.
+    setoid_rewrite -> in_app_iff.
+    reflexivity.
+  }
+  rewrite -> Htmp.
+  clear Htmp.
+  subst forest new_chn.
+  rewrite -> ! in_map_iff.
+  (* TODO why rewrite in_flat_map will make the same effect as in_concat? *)
+  setoid_rewrite -> in_flat_map.
+  setoid_rewrite -> in_concat.
+  repeat setoid_rewrite -> in_map_iff.
+  rewrite -> List.Forall_forall in IH.
+  repeat setoid_rewrite -> in_map_iff in IH.
+  setoid_rewrite -> in_flat_map in IH.
+  (* beyond firstorder. *)
+  split.
+  - intros (sub & <- & (ch & Hin_ch & Hin_sub)).
+    specialize (IH ch Hin_ch (tc_rootinfo sub)).
+    apply proj1 in IH.
+    removehead IH.
+    2: eauto.
+    destruct IH as [ (sub' & Einfo & Hin) | (sub' & Einfo & (sub'' & Hin_sub'' & Hin_sub')) ].
+    1: right.
+    2: left.
+    all: firstorder eauto.
+  - intros [ H | H ].
+    + destruct H as (sub & <- & (sub'' & (? & (ch & <- & Hin_ch) & Hin_sub'') & Hin_sub)).
+      specialize (IH ch Hin_ch (tc_rootinfo sub)).
+      apply proj2 in IH.
+      removehead IH.
+      2: right; eauto.
+      firstorder.
+    + destruct H as (sub & <- & (? & (ch & <- & Hin_ch) & Hin_sub)).
+      specialize (IH ch Hin_ch (tc_rootinfo sub)).
+      apply proj2 in IH.
+      removehead IH.
+      2: left; eauto.
+      firstorder.
+Qed.
 
 (* there will not be any tid in subtree_tc' that is also inside the pivot tree *)
 
