@@ -1822,6 +1822,446 @@ Proof.
     subtree_tc').
 Qed.
 
+(* a very special case for the overlay tree *)
+
+Inductive simple_overlaytc (P : thread -> list treeclock) : treeclock -> treeclock -> Prop :=
+  simple_overlaytc_intro : forall ni chn chn' chn'',
+    chn'' = P (info_tid ni) ->
+    Forall2 (simple_overlaytc P) chn chn' ->
+    simple_overlaytc P (Node ni chn) (Node ni (chn' ++ chn'')).
+
+Fact simple_overlaytc_inv (P : thread -> list treeclock) ni1 ni2 chn1 chn2 
+  (Hso: simple_overlaytc P (Node ni1 chn1) (Node ni2 chn2)) :
+  exists prefix_chn suffix_chn, ni1 = ni2 /\ chn2 = prefix_chn ++ suffix_chn /\
+    suffix_chn = P (info_tid ni1) /\ Forall2 (simple_overlaytc P) chn1 prefix_chn.
+Proof. inversion Hso; subst. eexists. eexists. eauto. Qed.
+
+Lemma tc_attach_nodes_result forest tc :
+  simple_overlaytc (fun t =>
+    match List.find (fun tc => thread_eqdec (tc_roottid tc) t) forest with
+    | Some res => tc_rootchn res
+    | None => nil
+    end) tc (tc_attach_nodes forest tc).
+Proof.
+  induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros.
+  simpl.
+  constructor.
+  - auto.
+  - clear -IH.
+    induction chn as [ | ch chn ].
+    1: constructor.
+    apply List.Forall_cons_iff in IH.
+    destruct IH as (H & IH).
+    constructor; firstorder.
+Qed.
+
+Lemma simple_overlaytc_dom_info (P : thread -> list treeclock) tc : forall tc'
+  (Hoverlay : simple_overlaytc P tc tc') ni,
+  In ni (map tc_rootinfo (tc_flatten tc')) <->
+  In ni (map tc_rootinfo (tc_flatten tc)) \/ 
+    (exists t, tc_getnode t tc /\ In ni (map tc_rootinfo (flat_map tc_flatten (P t)))).
+Proof.
+  induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros.
+  destruct tc' as [(u', clk', aclk') chn'].
+  apply simple_overlaytc_inv in Hoverlay.
+  simpl in Hoverlay.
+  destruct Hoverlay as (new_chn & ? & Htmp & -> & -> & Hcorr).
+  injection Htmp as <-.
+  subst clk' aclk'.
+  simpl.
+  rewrite -> flat_map_app, -> map_app, -> in_app_iff, -> or_assoc.
+  apply or_iff_compat_l.
+  rewrite -> List.Forall_forall in IH.
+  pose proof (Forall2_forall_exists_l _ _ _ Hcorr) as Hcorr_inl.
+  pose proof (Forall2_forall_exists_r _ _ _ Hcorr) as Hcorr_inr.
+  repeat setoid_rewrite -> map_flat_map_In.
+  setoid_rewrite -> map_flat_map_In in IH.
+  (* TODO temporarily cannot find a good way to do this. simply discuss first *)
+  split.
+  - intros [ (new_ch & Hin_newch & Hin) | (sub & Hin_sub & Hin) ].
+    + specialize (Hcorr_inr _ Hin_newch).
+      destruct Hcorr_inr as (ch & Hin_ch & Hso).
+      specialize (IH _ Hin_ch _ Hso ni).
+      rewrite -> IH in Hin.
+      destruct Hin as [ | (t & Hres & (sub & Hin_sub & Hin)) ].
+      1: left; eauto.
+      right.
+      exists t.
+      split.
+      2: eauto.
+      destruct (thread_eqdec t u); auto.
+      eapply find_first_some_correct', some_In_findsome_iff, tc_getnode_ch_in_chn; eauto.
+    + right.
+      exists u.
+      destruct (thread_eqdec u u); intuition eauto.
+  - intros [ (ch & Hin_ch & Hin) | (t & E & (sub & Hin_sub & Hin)) ].
+    + specialize (Hcorr_inl _ Hin_ch).
+      destruct Hcorr_inl as (new_ch & Hin_newch & Hso).
+      specialize (IH _ Hin_ch _ Hso ni).
+      apply (fun a => proj2 IH (or_introl a)) in Hin.
+      eauto.
+    + destruct (thread_eqdec t u) as [ <- | Hneq ].
+      * eauto.
+      * rewrite -> find_first_some_correct', some_In_findsome_iff in E.
+        destruct E as (res & Hres).
+        apply tc_getnode_some_list in Hres.
+        rewrite -> in_flat_map in Hres.
+        destruct Hres as ((ch & Hin_ch & Hres) & <-).
+        pose proof (tc_getnode_complete _ _ _ Hres eq_refl) as (res' & E).
+        specialize (Hcorr_inl _ Hin_ch).
+        destruct Hcorr_inl as (new_ch & Hin_newch & Hso).
+        left.
+        exists new_ch. 
+        split; auto.
+        specialize (IH _ Hin_ch _ Hso ni).
+        apply (fun a => proj2 IH (or_intror a)).
+        exists (tc_roottid res).
+        rewrite -> E.
+        firstorder.
+Qed.
+
+Corollary simple_overlaytc_dom_tid (P : thread -> list treeclock) tc tc'
+  (Hoverlay : simple_overlaytc P tc tc') t :
+  In t (map tc_roottid (tc_flatten tc')) <->
+  In t (map tc_roottid (tc_flatten tc)) \/ 
+    (exists t', tc_getnode t' tc /\ In t (map tc_roottid (flat_map tc_flatten (P t')))).
+Proof.
+  setoid_rewrite -> map_flat_map_In.
+  unfold tc_roottid.
+  setoid_rewrite <- map_map.
+  setoid_rewrite -> in_map_iff.
+  pose proof (simple_overlaytc_dom_info _ _ _ Hoverlay).
+  setoid_rewrite -> H.
+  setoid_rewrite -> map_flat_map_In.
+  firstorder.
+Qed.
+
+Section Perfect_Partition.
+
+  (* a primitive attempt for perfect partitioning *)
+
+  Lemma tc_getnode_list_nodup_perm (l : list treeclock)
+    (Hnodup : List.NoDup (map tc_roottid (flat_map tc_flatten l))) 
+    l' (Hperm : Permutation.Permutation l l') t :
+    find_first_some (map (tc_getnode t) l) = find_first_some (map (tc_getnode t) l').
+  Proof.
+    rewrite -> ! find_first_some_correct.
+    assert (forall res, In res (map (tc_getnode t) l) <-> In res (map (tc_getnode t) l')) as H.
+    {
+      intros res.
+      apply Permutation.Permutation_in'.
+      1: reflexivity.
+      now apply Permutation.Permutation_map.
+    }
+    destruct (find isSome (map (tc_getnode t) l)) as [ res | ] eqn:E, 
+      (find isSome (map (tc_getnode t) l')) as [ res' | ] eqn:E'.
+    - apply find_some in E, E'.
+      destruct E as (Hin & E), E' as (Hin' & E'), res as [ res | ], res' as [ res' | ].
+      all: try discriminate.
+      f_equal.
+      rewrite <- H in Hin'.
+      pose proof (tc_getnode_some_list _ _ _ Hin) as (Hin_flat & <-).
+      pose proof (tc_getnode_some_list _ _ _ Hin') as (Hin_flat' & Et).
+      symmetry.
+      eapply NoDup_map_inj; eauto.
+    - apply find_some in E.
+      destruct E as (Hin & E).
+      eapply find_none in E'.
+      2: rewrite <- H; apply Hin.
+      intuition.
+    - (* TODO bad symmetry *)
+      apply find_some in E'.
+      destruct E' as (Hin & E').
+      eapply find_none in E.
+      2: rewrite -> H; apply Hin.
+      intuition.
+    - reflexivity.
+  Qed.
+
+  (* can only talk about rootinfo *)
+
+  Fact fmap_rootinfo_someiff (x y : option treeclock) (H : base.fmap tc_rootinfo x = base.fmap tc_rootinfo y) :
+    x <-> y.
+  Proof. now destruct x, y. Qed.
+
+  Fact tc_getnode_prepend_child_partition ni ch chn 
+    (Hnodup : List.NoDup (map tc_roottid (tc_flatten (Node ni (ch :: chn))))) t : 
+    base.fmap tc_rootinfo (tc_getnode t (Node ni (ch :: chn))) =
+    base.fmap tc_rootinfo (find_first_some ((tc_getnode t (Node ni chn)) :: (tc_getnode t ch) :: nil)).
+  Proof.
+    cbn.
+    destruct (thread_eqdec t (info_tid ni)) as [ -> | Hneq ].
+    - reflexivity.
+    - destruct (tc_getnode t ch) as [ res | ] eqn:E, 
+        (find_first_some (map (tc_getnode t) chn)) as [ res' | ] eqn:E'.
+      all: auto.
+      simpl.
+      f_equal.
+      (* TODO should we extract this out? and also, why this seems very weird ... *)
+      simpl in Hnodup.
+      apply NoDup_cons_iff in Hnodup.
+      destruct Hnodup as (_ & Hnodup).
+      unfold tc_roottid in Hnodup.
+      rewrite <- map_map in Hnodup.
+
+      rewrite -> find_first_some_correct in E'.
+      destruct (find isSome (map (tc_getnode t) chn)) as [ res'' | ] eqn:E2; [ | discriminate ].
+      destruct res'' as [ ? | ]; [ injection E' as -> | discriminate ].
+      apply find_some in E2.
+      destruct E2 as (E' & _).
+      apply tc_getnode_some_list in E'.
+      destruct E' as (Hin' & <-).
+
+      apply tc_getnode_some in E.
+      destruct E as (Hin & Et).
+      apply in_map with (f:=tc_rootinfo) in Hin, Hin'.
+
+      eapply NoDup_map_inj.
+      1: apply Hnodup.
+      1: now unfold tc_roottid in Et.
+      all: rewrite -> map_app, in_app_iff; intuition.
+  Qed.
+
+  Corollary tc_getnode_prepend_child_partition' ni ch chn 
+    (Hnodup : List.NoDup (map tc_roottid (tc_flatten (Node ni (ch :: chn))))) t : 
+    base.fmap tc_rootinfo (tc_getnode t (Node ni (ch :: chn))) =
+    base.fmap tc_rootinfo (find_first_some ((tc_getnode t ch) :: (tc_getnode t (Node ni chn)) :: nil)).
+  Proof.
+    rewrite -> tc_getnode_prepend_child_partition; auto.
+    f_equal.
+    change (tc_getnode t ?a :: tc_getnode t ?b :: nil) with (map (tc_getnode t) (a :: b :: nil)).
+    apply tc_getnode_list_nodup_perm.
+    - simpl in Hnodup |- *.
+      rewrite -> app_nil_r.
+      eapply Permutation.Permutation_NoDup.
+      2: apply Hnodup.
+      constructor.
+      apply Permutation.Permutation_map, Permutation.Permutation_app_comm.
+    - apply Permutation.perm_swap.
+  Qed.
+
+End Perfect_Partition.
+
+(* this is actually much more complicated than I thought ... *)
+
+Lemma simple_overlaytc_nodup (P : thread -> list treeclock) 
+  (Hnodup_forest : forall t, List.NoDup (map tc_roottid (flat_map tc_flatten (P t))))
+  (Hnoits_forest : forall t t', t <> t' -> forall t'', 
+    find_first_some (map (tc_getnode t'') (P t)) -> 
+    find_first_some (map (tc_getnode t'') (P t')) -> False)
+  tc : forall tc'
+  (Hoverlay : simple_overlaytc P tc tc')
+  (Hnodup : List.NoDup (map tc_roottid (tc_flatten tc)))
+  (* a neat choice to write None or neg here ... *)
+  (Hdomexcl : forall t, tc_getnode t tc -> forall t', ~ find_first_some (map (tc_getnode t) (P t'))),
+  List.NoDup (map tc_roottid (tc_flatten tc')).
+Proof.
+  induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros.
+  destruct tc' as [(u', clk', aclk') chn'].
+  apply simple_overlaytc_inv in Hoverlay.
+  simpl in Hoverlay.
+  destruct Hoverlay as (new_chn & ? & Htmp & -> & -> & Hcorr).
+  injection Htmp as <-.
+  subst clk' aclk'.
+  rewrite -> List.Forall_forall in IH.
+  pose proof (Forall2_forall_exists_l _ _ _ Hcorr) as Hcorr_inl.
+  pose proof (Forall2_forall_exists_r _ _ _ Hcorr) as Hcorr_inr.
+  simpl in Hnodup |- *.
+  rewrite -> NoDup_cons_iff in Hnodup |- *.
+  destruct Hnodup as (Hnotin & Hnodup).
+  split.
+  - rewrite -> flat_map_app, -> map_app, -> in_app_iff, -> ! map_flat_map_In.
+    intros [ (new_ch & Hin_newch & Hin) | (sub & Hin_sub & Hin) ].
+    + specialize (Hcorr_inr _ Hin_newch).
+      destruct Hcorr_inr as (ch & Hin_ch & Hso).
+      eapply simple_overlaytc_dom_tid with (t:=u) in Hso.
+      rewrite -> Hso in Hin.
+      destruct Hin as [ Hin | (t & _ & Hin) ].
+      * rewrite -> map_flat_map_In in Hnotin.
+        firstorder.
+      * (* TODO some repetition here (from above + below) *)
+        rewrite -> map_flat_map_In in Hin.
+        setoid_rewrite -> tc_getnode_subtc_iff in Hin.
+        destruct Hin as (sub & Hin_sub & Hin).
+        (* use domain exclusion *)
+        eapply Hdomexcl.
+        2:{
+          rewrite -> find_first_some_correct', -> some_In_findsome_iff.
+          eapply tc_getnode_ch_in_chn; eauto.
+        }
+        simpl.
+        now destruct (thread_eqdec u u).
+    + (* use domain exclusion *)
+      eapply Hdomexcl.
+      2:{
+        rewrite -> find_first_some_correct', -> some_In_findsome_iff.
+        rewrite -> tc_getnode_subtc_iff in Hin.
+        eapply tc_getnode_ch_in_chn; eauto.
+      }
+      simpl.
+      now destruct (thread_eqdec u u).
+  - rewrite -> flat_map_app, -> map_app.
+    rewrite <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup.
+    split; [ | split ].
+    + (* for this case, maybe a local induction will be helpful ... *)
+      clear Hcorr_inl Hcorr_inr.
+      revert Hdomexcl.
+      induction Hcorr as [ | ch new_ch chn new_chn Hso Hcorr IH' ]; intros.
+      1: auto.
+      (* simplify *)
+      pose proof Hnodup as Hnodup_backup.
+      simpl in IH, Hnotin, Hnodup |- *.
+      rewrite -> map_app in Hnotin, Hnodup |- *. 
+      rewrite -> in_app_iff in Hnotin.
+      apply Decidable.not_or in Hnotin.
+      rewrite <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup in Hnodup |- *.
+      repeat setoid_rewrite -> base.elem_of_list_In in Hnodup.
+      repeat setoid_rewrite -> base.elem_of_list_In.
+      destruct Hnotin as (Hnotin_ch & Hnotin_chn), Hnodup as (Hnodup_ch & Hnoits_ch_chn & Hnodup_chn).
+      removehead IH'.
+      2: firstorder.
+      do 2 (removehead IH'; [ | intuition ]).
+      removehead IH'.
+      2:{
+        (* TODO still, some repetition here *)
+        intros t Hres.
+        eapply Hdomexcl, fmap_rootinfo_someiff.
+        - apply tc_getnode_prepend_child_partition.
+          simpl in Hnodup_backup |- *.
+          apply NoDup_cons_iff.
+          split; [ | assumption ].
+          rewrite -> map_app, -> in_app_iff.
+          now intros [ ? | ? ].
+        - simpl in Hres |- *.
+          match type of Hres with (is_true (isSome ?t)) => now destruct t end.
+      }
+      split; [ | split ]; auto.
+      * eapply IH; eauto.
+      (* TODO still, some repetition here *)
+        intros t Hres.
+        eapply Hdomexcl, fmap_rootinfo_someiff.
+        --apply tc_getnode_prepend_child_partition'.
+          simpl in Hnodup_backup |- *.
+          apply NoDup_cons_iff.
+          split; [ | assumption ].
+          rewrite -> map_app, -> in_app_iff.
+          now intros [ ? | ? ].
+        --simpl in Hres |- *.
+          match type of Hres with (is_true (isSome ?t)) => now destruct t end.
+      * intros t Hin Hin'.
+        rewrite -> map_flat_map_In in Hin'.
+        destruct Hin' as (new_ch' & Hin_newch' & Hin').
+        (* relate to old tree; would yield 2*2 discussion *)
+        pose proof (Forall2_forall_exists_r _ _ _ Hcorr _ Hin_newch') as (ch' & Hin_ch' & Hso').
+        eapply simple_overlaytc_dom_tid with (t:=t) in Hso, Hso'.
+        rewrite -> Hso in Hin.
+        rewrite -> Hso' in Hin'.
+        setoid_rewrite -> map_flat_map_In in Hin.
+        setoid_rewrite -> map_flat_map_In in Hin'.
+        destruct Hin as [ Hin | (t' & Hres' & (sub & Hin_sub & Hin)) ], 
+          Hin' as [ Hin' | (t'' & Hres'' & (sub' & Hin_sub' & Hin')) ].
+        --eapply Hnoits_ch_chn.
+          1: apply Hin.
+          eapply map_flat_map_In; eauto.
+        --(* TODO some repetition here (from above) *)
+          assert (t <> u) as Hneq by intuition.
+          rewrite -> tc_getnode_subtc_iff in Hin, Hin'.
+          (* use domain exclusion *)
+          eapply Hdomexcl.
+          2:{
+            rewrite -> find_first_some_correct', -> some_In_findsome_iff.
+            (* TODO maybe it is not very proper to use eauto here ... *)
+            eapply tc_getnode_ch_in_chn; eauto.
+          }
+          simpl.
+          destruct (thread_eqdec t u); try congruence.
+          now destruct (tc_getnode t ch).
+        --(* TODO some repetition here (from above) *)
+          assert (t <> u) as Hneq.
+          {
+            intros ->.
+            rewrite -> map_flat_map_In in Hnotin_chn.
+            apply Hnotin_chn.
+            eauto.
+          }
+          rewrite -> tc_getnode_subtc_iff in Hin, Hin'.
+          (* use domain exclusion *)
+          eapply Hdomexcl.
+          2:{
+            rewrite -> find_first_some_correct', -> some_In_findsome_iff.
+            eapply tc_getnode_ch_in_chn.
+            2: apply Hin_sub.
+            apply Hin.
+          }
+          simpl.
+          destruct (thread_eqdec t u); try congruence.
+          destruct (tc_getnode t ch); auto.
+          rewrite -> find_first_some_correct', -> some_In_findsome_iff.
+          eapply tc_getnode_ch_in_chn; eauto.
+        --rewrite <- tc_getnode_subtc_iff in Hres', Hres''.
+          assert (t' <> t'') as Hneq.
+          {
+            intros <-.
+            eapply Hnoits_ch_chn.
+            1: apply Hres'.
+            eapply map_flat_map_In; eauto.
+          }
+          rewrite -> tc_getnode_subtc_iff in Hin, Hin'.
+          apply Hnoits_forest with (t:=t') (t':=t'') (t'':=t); auto.
+          ++rewrite -> find_first_some_correct', -> some_In_findsome_iff.
+            apply tc_getnode_ch_in_chn with (ch:=sub).
+            all: auto.
+          ++rewrite -> find_first_some_correct', -> some_In_findsome_iff.
+            apply tc_getnode_ch_in_chn with (ch:=sub').
+            all: auto.
+    + setoid_rewrite -> base.elem_of_list_In.
+      setoid_rewrite -> map_flat_map_In.
+      intros t (new_ch & Hin_newch & Hin) (sub & Hin_sub & Hin').
+      (* TODO repetition *)
+      pose proof (Forall2_forall_exists_r _ _ _ Hcorr _ Hin_newch) as (ch & Hin_ch & Hso).
+      eapply simple_overlaytc_dom_tid with (t:=t) in Hso.
+      rewrite -> Hso in Hin.
+      setoid_rewrite -> map_flat_map_In in Hin.
+      destruct Hin as [ Hin | (t' & Hres' & (sub'' & Hin_sub'' & Hin)) ].
+      * assert (t <> u) as Hneq.
+        {
+          intros ->.
+          rewrite -> map_flat_map_In in Hnotin.
+          apply Hnotin.
+          eauto.
+        }
+        rewrite -> tc_getnode_subtc_iff in Hin, Hin'.
+        (* use domain exclusion *)
+        eapply Hdomexcl.
+        2:{
+          rewrite -> find_first_some_correct', -> some_In_findsome_iff.
+          eapply tc_getnode_ch_in_chn.
+          - apply Hin'.
+          - apply Hin_sub.
+        }
+        simpl.
+        destruct (thread_eqdec t u); try congruence.
+        rewrite -> find_first_some_correct', -> some_In_findsome_iff.
+        eapply tc_getnode_ch_in_chn; eauto.
+      * rewrite <- tc_getnode_subtc_iff in Hres'.
+        assert (t' <> u) as Hneq.
+        {
+          intros ->.
+          eapply Hnotin.
+          eapply map_flat_map_In.
+          eauto.
+        }
+        rewrite -> tc_getnode_subtc_iff in Hin, Hin'.
+        apply Hnoits_forest with (t:=t') (t':=u) (t'':=t); auto.
+        ++rewrite -> find_first_some_correct', -> some_In_findsome_iff.
+          apply tc_getnode_ch_in_chn with (ch:=sub'').
+          all: auto.
+        ++rewrite -> find_first_some_correct', -> some_In_findsome_iff.
+          apply tc_getnode_ch_in_chn with (ch:=sub).
+          all: auto.
+    + firstorder.
+Qed.
+
 (* 
   finally needed:
   - join implements pointwise-max
