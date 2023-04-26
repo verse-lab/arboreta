@@ -70,6 +70,34 @@ Proof.
   - simpl. now destruct x.
 Qed.
 
+Corollary find_first_some_correct' [A : Type] (l : list (option A)) : 
+  find_first_some l <-> find isSome l.
+Proof. 
+  rewrite -> find_first_some_correct. 
+  destruct (find isSome l) as [ res | ] eqn:E.
+  2: auto.
+  apply find_some in E.
+  now destruct res.
+Qed.
+
+Fact some_In_findsome_iff [A : Type] (l : list (option A)) : 
+  find isSome l <-> (exists res, In (Some res) l).
+Proof.
+  split.
+  - intros H.
+    destruct (find isSome l) as [ res | ] eqn:E.
+    2: now unfold isSome in *.
+    apply find_some in E.
+    unfold isSome in E.
+    destruct res as [ res | ]; [ now exists res | intuition ].
+  - intros (res & Hin).
+    destruct (find isSome l) as [ res' | ] eqn:E.
+    1: auto.
+    eapply find_none in E.
+    2: apply Hin.
+    discriminate.
+Qed.
+
 Lemma sublist_In [A : Type] (l1 l2 : list A) 
   (Hsub : list.sublist l1 l2) (x : A) (Hin : In x l1) : In x l2.
 Proof. 
@@ -191,9 +219,19 @@ Proof.
     intuition.
 Qed.
 
-Fact Forall2_forall_exists [A B : Type] (P : A -> B -> Prop) l1 l2
+Fact Forall2_forall_exists_l [A B : Type] (P : A -> B -> Prop) l1 l2
   (H : Forall2 P l1 l2) (x : A) (Hin : In x l1) :
   exists y, In y l2 /\ P x y.
+Proof.
+  induction H as [ | x0 y0 l1 l2 Hp H IH ].
+  - inversion Hin.
+  - simpl in Hin |- *.
+    destruct Hin as [ -> | Hin ]; firstorder.
+Qed.
+
+Fact Forall2_forall_exists_r [A B : Type] (P : A -> B -> Prop) l1 l2
+  (H : Forall2 P l1 l2) (y : B) (Hin : In y l2) :
+  exists x, In x l1 /\ P x y.
 Proof.
   induction H as [ | x0 y0 l1 l2 Hp H IH ].
   - inversion Hin.
@@ -225,6 +263,21 @@ Proof.
     rewrite -> NoDup_cons_iff in Hnodup.
     firstorder.
 Qed.
+
+(* a simple swap of map and flat_map over In *)
+
+Fact map_flat_map_In [A B C : Type] (f : B -> C) (g : A -> list B) (l : list A) :
+  forall x, In x (map f (flat_map g l)) <-> (exists y, In y l /\ In x (map f (g y))).
+Proof. 
+  intros x.
+  repeat setoid_rewrite -> in_map_iff.
+  setoid_rewrite -> in_flat_map.
+  firstorder congruence.
+Qed.
+
+Fact in_flat_map_conv : forall [A B : Type] (f : A -> list B) (l : list A) (x : A) (y : B),
+  In x l -> In y (f x) -> In y (flat_map f l).
+Proof. intros. apply in_flat_map. eauto. Qed.
 
 Fact pair_equal_split [A B : Type] (a b : A) (c d : B) 
   (E : (a, c) = (b, d)) : a = b /\ c = d.
@@ -406,23 +459,6 @@ Fixpoint tc_flatten tc :=
 
 Definition subtc tc1 tc2 : Prop := In tc1 (tc_flatten tc2).
 
-Fact tc_flatten_in_ch_chn tc ch chn 
-  (Hin_ch : In ch chn) (Hin : In tc (tc_flatten ch)) : In tc (flat_map tc_flatten chn).
-Proof.
-  rewrite -> flat_map_concat_map, -> in_concat.
-  setoid_rewrite -> in_map_iff.
-  firstorder.
-Qed.
-
-Fact tc_flatten_in_chn_ch tc chn (Hin : In tc (flat_map tc_flatten chn)) :
-  exists ch, In ch chn /\ In tc (tc_flatten ch).
-Proof.
-  rewrite -> flat_map_concat_map, -> in_concat in Hin.
-  setoid_rewrite -> in_map_iff in Hin.
-  destruct Hin as (? & (ch & <- & Hin_ch) & Hin).
-  firstorder.
-Qed.
-
 (* the same as paper, use 0 as default clk *)
 
 Definition tc_getclk t tc :=
@@ -490,13 +526,13 @@ Proof.
   apply and_iff_compat_l.
   split; intros H.
   - intros sub Hin.
-    apply tc_flatten_in_chn_ch in Hin.
+    apply in_flat_map in Hin.
     firstorder.
   - intros ch Hin_ch.
     apply IH.
     1: assumption.
     intros sub Hin.
-    eapply H, tc_flatten_in_ch_chn; eauto.
+    eapply H, in_flat_map; eauto.
 Qed.
 
 Corollary Foralltc_trivial (P : treeclock -> Prop) (H : forall tc, P tc) tc : Foralltc P tc.
@@ -587,7 +623,7 @@ Proof.
     (* OK. after some attempts now I do not think I can solve this easily. *)
     simpl.
     rewrite -> in_map_iff in E.
-    pose proof tc_flatten_in_ch_chn.
+    rewrite -> in_flat_map.
     rewrite -> List.Forall_forall in IH.
     firstorder.
   - discriminate.
@@ -601,7 +637,7 @@ Proof.
   rewrite -> in_map_iff in Hres.
   destruct Hres as (ch & Hres & Hin_ch).
   apply tc_getnode_some in Hres.
-  pose proof tc_flatten_in_ch_chn.
+  rewrite -> in_flat_map.
   firstorder.
 Qed.
 
@@ -615,7 +651,7 @@ Proof.
   1: eauto.
   destruct Hin as [ <- | Hin ].
   1: simpl in Et; congruence.
-  apply tc_flatten_in_chn_ch in Hin.
+  apply in_flat_map in Hin.
   destruct Hin as (ch & Hin_ch & Hin_sub).
   rewrite -> List.Forall_forall in IH.
   specialize (IH _ Hin_ch _ Hin_sub Et).
@@ -649,13 +685,25 @@ Fact tc_getnode_complete_list t chn sub
   (Hin_flat : In sub (flat_map tc_flatten chn))
   (Et : tc_roottid sub = t) : exists res, In (Some res) (map (tc_getnode t) chn).
 Proof.
-  apply tc_flatten_in_chn_ch in Hin_flat.
+  apply in_flat_map in Hin_flat.
   destruct Hin_flat as (ch & Hin_ch & Hin_flat).
   eapply tc_getnode_complete in Hin_flat.
   2: apply Et.
   destruct Hin_flat as (res & Hin_flat).
   setoid_rewrite -> in_map_iff.
   eauto.
+Qed.
+
+(* TODO should be a part of a solver ... *)
+
+Fact tc_getnode_ch_in_chn t ch chn (Hres : tc_getnode t ch) (Hin_ch : In ch chn) :
+  exists res, In (Some res) (map (tc_getnode t) chn).
+Proof.
+  destruct (tc_getnode t ch) as [ res | ] eqn:E; [ | discriminate ].
+  apply tc_getnode_some in E.
+  eapply tc_getnode_complete_list.
+  2: apply (proj2 E).
+  eapply in_flat_map_conv; intuition eauto.
 Qed.
 
 Fact tc_getnode_complete_nodup_list t chn sub
@@ -679,7 +727,7 @@ Proof.
   intros ch' res' Hin_ch' Hres'.
   apply tc_getnode_some in Hres, Hres'.
   destruct Hres' as (Hin' & Et').
-  assert (In res' (flat_map tc_flatten chn)) by (eapply tc_flatten_in_ch_chn; eauto).
+  assert (In res' (flat_map tc_flatten chn)) by (eapply in_flat_map; eauto).
   eapply NoDup_map_inj in Hnodup_backup.
   2: apply Et'.
   2-3: assumption.
@@ -1117,7 +1165,7 @@ Proof.
   injection Htmp as <-.
   subst clk' aclk'.
   pose proof (sublist_In _ _ Hsub) as Hsub_in.
-  pose proof (Forall2_forall_exists _ _ _ Hcorr) as Hcorr_in.
+  pose proof (Forall2_forall_exists_l _ _ _ Hcorr) as Hcorr_in.
   pose proof (tc_shape_inv_chn _ _ Hshape) as Hshape_chn.
   rewrite -> List.Forall_forall in IH, Hshape_chn.
   assert (forall x, In x chn_sp -> tc_shape_inv x) as Hshape_sp.
@@ -1130,7 +1178,7 @@ Proof.
   pose proof Hcorr as Hrootinfo.
   eapply list.Forall2_impl in Hrootinfo.
   2: apply prefixtc_rootinfo_same.
-  pose proof (Forall2_forall_exists _ _ _ Hrootinfo) as Hrootinfo_in.
+  pose proof (Forall2_forall_exists_l _ _ _ Hrootinfo) as Hrootinfo_in.
   constructor.
   - apply tid_nodup in Hshape.
     eapply tid_nodup_prefix_preserve; eauto.
@@ -1475,7 +1523,7 @@ Proof.
     pose proof Hres_ch as Hin_flat.
     apply tc_getnode_some in Hin_flat.
     destruct Hin_flat as (Hin_flat & Et).
-    eapply tc_flatten_in_ch_chn in Hin_flat.
+    eapply in_flat_map_conv in Hin_flat.
     2: apply Hin.
     (* now show that res must be the result of "find isSome (map (tc_getnode t) chn')" *)
     destruct (find isSome (map (tc_getnode t) chn')) as [ res' | ] eqn:E.
@@ -1588,7 +1636,7 @@ Proof.
     specialize (IH _ Hin_ch _ Hin).
     destruct IH as (sub & Hin_sub & ->).
     exists sub.
-    split; [ right; eapply tc_flatten_in_ch_chn in Hin_sub; eauto | reflexivity ].
+    split; [ right; eapply in_flat_map_conv in Hin_sub; eauto | reflexivity ].
   - subst res' new_chn.
     setoid_rewrite -> filter_In.
     setoid_rewrite -> in_map_iff.
@@ -1597,7 +1645,7 @@ Proof.
     split. 
     2: reflexivity.
     right. 
-    eapply tc_flatten_in_ch_chn in Hin_ch; eauto.
+    eapply in_flat_map_conv in Hin_ch; eauto.
     destruct ch as [(?, ?, ?) ?].
     simpl.
     intuition.
@@ -1759,7 +1807,7 @@ Proof.
   destruct Hin as [ | Hin ].
   1: congruence.
   (* now contradiction part *)
-  apply tc_flatten_in_chn_ch in Hin.
+  apply in_flat_map in Hin.
   destruct Hin as (new_ch & Hin_ch & Hin).
   subst new_chn' new_chn.
   apply filter_In in Hin_ch.
