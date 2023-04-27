@@ -1136,21 +1136,29 @@ Proof.
     now constructor.
 Qed.
 
-Lemma tc_shape_inv_chn ni chn (Hshape : tc_shape_inv (Node ni chn)) :
+Lemma tc_shape_inv_sub tc (Hshape : tc_shape_inv tc) : Forall tc_shape_inv (tc_flatten tc).
+Proof.
+  apply tc_shape_inv_conj_iff in Hshape.
+  rewrite -> ! Foralltc_Forall_subtree in Hshape.
+  change tc_shape_inv with (fun tc' => tc_shape_inv tc').
+  setoid_rewrite -> tc_shape_inv_conj_iff.
+  repeat apply Forall_and.
+  2-4: now rewrite <- Foralltc_Forall_subtree, -> Foralltc_idempotent, -> Foralltc_Forall_subtree.
+  now rewrite <- Foralltc_Forall_subtree, <- tid_nodup_Foralltc_id.
+Qed.
+
+Corollary tc_shape_inv_chn ni chn (Hshape : tc_shape_inv (Node ni chn)) :
   Forall tc_shape_inv chn.
 Proof.
-  apply List.Forall_forall.
-  intros ch Hin.
-  apply tc_shape_inv_conj_iff in Hshape.
-  rewrite -> ! Foralltc_cons_iff, -> ! List.Forall_forall in Hshape.
-  constructor.
-  2-4: firstorder.
-  destruct Hshape as (Hnodup & _).
-  simpl in Hnodup.
-  apply NoDup_cons_iff in Hnodup.
-  destruct Hnodup as (_ & Hnodup).
-  now eapply tid_nodup_chn_ch; eauto.
-Qed.  
+  apply tc_shape_inv_sub in Hshape.
+  simpl in Hshape.
+  apply Forall_cons_iff, proj2, Forall_flat_map in Hshape.
+  rewrite -> List.Forall_forall in Hshape |- *.
+  intros [? ?] Hin.
+  specialize (Hshape _ Hin).
+  simpl in Hshape.
+  now apply Forall_cons_iff, proj1 in Hshape.
+Qed.
 
 (* prefix also have shape inv *)
 
@@ -2294,6 +2302,8 @@ Proof.
           all: auto.
     + firstorder.
 Qed.
+
+
 
 (* 
   finally needed:
