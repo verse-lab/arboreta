@@ -47,16 +47,16 @@ let test_join (tc : int treeclock) (tc_ : int treeclock) verbosity : bool =
       print_tree tc_max
     end
     else ());
-  if dom_check dom_original dom_new
+  if dom_check (List.map tc_rootinfo dom_original) (List.map tc_rootinfo dom_new)
   then begin
     let res_fail = (List.filter (fun { info_tid = x; info_clk = clk_x; _ } -> 
-    clk_x <> (max (tc_getclk ( = ) tc x) (tc_getclk ( = ) tc_ x))) dom_new) in
+    clk_x <> (max (tc_getclk ( = ) x tc) (tc_getclk ( = ) x tc_))) (List.map tc_rootinfo dom_new)) in
       match res_fail with
       | [] -> true
       | { info_tid = x; info_clk = clk_x_fail; _ } :: _ -> 
         print_string "maximal check error!\n";  
         print_string "For thread "; print_int x; 
-        print_string ", expected "; print_int (max (tc_getclk ( = ) tc x) (tc_getclk ( = ) tc_ x)); 
+        print_string ", expected "; print_int (max (tc_getclk ( = ) x tc) (tc_getclk ( = ) x tc_)); 
         print_string ", got "; print_int clk_x_fail; 
         print_char '\n'; false 
     end
@@ -64,7 +64,7 @@ let test_join (tc : int treeclock) (tc_ : int treeclock) verbosity : bool =
 
 let sanity_check (tc : int treeclock) (tc_ : int treeclock) : bool =
   (* see 1.test *)
-  (tc_rootinfo tc).info_clk >= (tc_getclk ( = ) tc_ (tc_rootinfo tc).info_tid)
+  (tc_rootinfo tc).info_clk >= (tc_getclk ( = ) (tc_rootinfo tc).info_tid tc_)
 
 let _ = 
   assert (Array.length Sys.argv = 2);
