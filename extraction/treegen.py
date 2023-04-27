@@ -14,53 +14,58 @@ def treeprint(root, edges, info):
     
     dfs(root, -1)
 
-def le_check(n1, par1, edges1, info1, info2 : dict):
-    def dfs(n : int, par : int):
+def le_check(n1, par1, edges1, info1, info2 : dict) -> tuple[bool, int]:
+    def dfs(n : int, par : int) -> tuple[bool, int]:
         nonlocal info1, info2, edges1
         corr = info2[n]["clk"] if n in info2 else 0
         if info1[n]["clk"] > corr:
-            return False
+            return False, n
         
         for e in edges1[n]:
             if e == par:
                 continue
-            if not dfs(e, n):
-                return False
-        return True
+            subres = dfs(e, n)
+            if not subres[0]:
+                return subres
+        return True, -1
 
     return dfs(n1, par1)
 
-def dmono_check(root1, edges1, info1, info2 : dict):
-    def dfs(n : int, par : int):
+def dmono_check(root1, edges1, info1, info2 : dict) -> tuple[bool, int, int]:
+    def dfs(n : int, par : int) -> tuple[bool, int, int]:
         nonlocal info1, info2, edges1
         corr = info2[n]["clk"] if n in info2 else 0
         if info1[n]["clk"] <= corr:
-            if not le_check(n, par, edges1, info1, info2):
-                return False
+            subres = le_check(n, par, edges1, info1, info2)
+            if not subres[0]:
+                return False, n, subres[1]
             
         for e in edges1[n]:
             if e == par:
                 continue
-            if not dfs(e, n):
-                return False
-        return True
+            subres = dfs(e, n)
+            if not subres[0]:
+                return subres
+        return True, -1, -1
     
     return dfs(root1, -1)
 
-def imono_check(root1, edges1, info1, info2 : dict):
-    def dfs(n : int, par : int):
+def imono_check(root1, edges1, info1, info2 : dict) -> tuple[bool, int, int]:
+    def dfs(n : int, par : int) -> tuple[bool, int, int]:
         nonlocal info1, info2, edges1
         corr = info2[n]["clk"] if n in info2 else 0
             
         for e in edges1[n]:
             if e == par:
                 continue
-            if info1[n]["aclk"] <= corr:
-                if not le_check(e, n, edges1, info1, info2):
-                    return False
-            if not dfs(e, n):
-                return False
-        return True
+            if info1[e]["aclk"] <= corr:
+                subres = le_check(e, n, edges1, info1, info2)
+                if not subres[0]:
+                    return False, e, subres[1]
+            subres = dfs(e, n)
+            if not subres[0]:
+                return subres
+        return True, -1, -1
     
     return dfs(root1, -1)
 
@@ -105,9 +110,12 @@ def goodtreegen(treesize : int):
 
     return root, edges, info
 
+SIZE_LB = 9
+SIZE_RB = 12
+
 if __name__ == "__main__":
     while True:
-        n, m = cyaron.randint(6, 10), cyaron.randint(6, 10)
+        n, m = cyaron.randint(SIZE_LB, SIZE_RB), cyaron.randint(SIZE_LB, SIZE_RB)
         
         # see 2.test
         # if n > m:
@@ -116,7 +124,7 @@ if __name__ == "__main__":
         root1, edges1, info1 = goodtreegen(n)
         root2, edges2, info2 = goodtreegen(m)
 
-        if not dmono_check(root1, edges1, info1, info2) or not imono_check(root1, edges1, info1, info2):
+        if not dmono_check(root1, edges1, info1, info2)[0] or not imono_check(root1, edges1, info1, info2)[0]:
             continue
         
         # output 2 first

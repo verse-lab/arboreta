@@ -66,11 +66,35 @@ let sanity_check (tc : int treeclock) (tc_ : int treeclock) : bool =
   (* see 1.test *)
   (tc_rootinfo tc).info_clk >= (tc_getclk ( = ) (tc_rootinfo tc).info_tid tc_)
 
+let output_tree (tc : int treeclock) (filename : string) : unit =
+  let rec aux oc (Node ({ info_tid = x; info_clk = clk_x; info_aclk = aclk_x }, chn)) = begin
+    Printf.fprintf oc "%d\n%d\n%d\n%d\n" x clk_x aclk_x (List.length chn);
+    List.iter (aux oc) chn
+  end in
+  let oc = open_out filename in
+  aux oc tc; close_out oc
+
 let _ = 
-  assert (Array.length Sys.argv = 2);
-  let tc = construct_tree () in
-  let tc_ = construct_tree () in
-  if sanity_check tc tc_
-  then assert (test_join tc tc_ (int_of_string Sys.argv.(1)))
-  else ()
-      (* print_string "ok, let's skip this. \n" *)
+  assert (Array.length Sys.argv <= 4 && Array.length Sys.argv >= 2);
+  match Sys.argv.(1) with
+  | "print" -> begin
+    (* read from stdin *)
+    let treenum = (int_of_string Sys.argv.(2)) in
+    for i = 1 to treenum do
+      let tc = construct_tree () in
+      print_tree tc;
+      print_char '\n'
+    done
+  end
+  | "testjoin" -> begin
+    let tc = construct_tree () in
+    let tc_ = construct_tree () in
+    if sanity_check tc tc_
+    then begin
+      assert (test_join tc tc_ (int_of_string Sys.argv.(2)));
+      if (Array.length Sys.argv == 4)
+        then output_tree (tc_join ( = ) tc tc_) Sys.argv.(3)
+        else ()
+    end
+  end
+  | _ -> ()
