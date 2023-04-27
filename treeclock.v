@@ -1270,19 +1270,20 @@ Proof.
 Qed.
 
 Lemma tc_get_updated_nodes_join_aux_result tc u' chn_u'
-  (Haclk_impl_P : forall tc', In tc' chn_u' -> 
+  (Haclk_impl_clk : forall tc', In tc' chn_u' -> 
     tc_rootaclk tc' <= (tc_getclk u' tc) -> 
     tc_rootclk tc' <= (tc_getclk (tc_roottid tc') tc)) 
   (Hsorted: StronglySorted ge (map tc_rootaclk chn_u')) :
   exists chn_u'', list.sublist chn_u'' chn_u' /\
     (tc_get_updated_nodes_join_aux tc u' chn_u') = map (tc_get_updated_nodes_join tc) chn_u'' /\
     (Forall (fun tc' => In tc' chn_u'' <-> 
-      (tc_getclk (tc_roottid tc') tc) < tc_rootclk tc') chn_u').
+      ((tc_getclk (tc_roottid tc') tc) < tc_rootclk tc' /\
+        (tc_getclk u' tc) < tc_rootaclk tc')) chn_u').
 Proof.
   induction chn_u' as [ | tc_v' chn_u' IH ].
   - exists nil.
     intuition.
-  - simpl in Haclk_impl_P, Hsorted.
+  - simpl in Haclk_impl_clk, Hsorted.
     apply StronglySorted_inv in Hsorted.
     destruct Hsorted as (Hsorted & Hallle).
     destruct tc_v' as [(v', clk_v', aclk_v') chn_v'] eqn:Etc_v'.
@@ -1291,8 +1292,8 @@ Proof.
     removehead IH.
     2:{
       intros tc' ?.
-      specialize (Haclk_impl_P tc').
-      apply Haclk_impl_P.
+      specialize (Haclk_impl_clk tc').
+      apply Haclk_impl_clk.
       intuition.
     }
     removehead IH.
@@ -1316,11 +1317,11 @@ Proof.
           rewrite -> Forall_map in Hallle.
           rewrite -> List.Forall_forall in Hallle, Halllt.
           specialize (Hallle _ Hin').
-          specialize (Haclk_impl_P _ (or_intror Hin')).
-          removehead Haclk_impl_P.
+          specialize (Haclk_impl_clk _ (or_intror Hin')).
+          removehead Haclk_impl_clk.
           2: lia.
           exfalso.
-          revert Haclk_impl_P.
+          revert Haclk_impl_clk.
           apply Nat.nle_gt, Halllt; simpl; intuition.
         }
         exists nil.
@@ -1350,6 +1351,9 @@ Proof.
         lia.
     + pose proof Ecmp_clk_v' as Ecmp_clk_v'_lt.
       apply Nat.leb_gt in Ecmp_clk_v'_lt.
+      specialize (Haclk_impl_clk _ (or_introl eq_refl)).
+      rewrite <- ! Nat.nlt_ge, -> ! Etc_v' in Haclk_impl_clk.
+      simpl in Haclk_impl_clk.
       exists (tc_v' :: chn_u'').
       split.
       1: now constructor.
@@ -1357,7 +1361,9 @@ Proof.
       * rewrite -> Etc_v'.
         tc_get_updated_nodes_join_unfold.
         now f_equal.
-      * simpl.
+      * intros _.
+        rewrite -> Etc_v'.
+        simpl.
         intuition.
       * rewrite -> Etc_v'.
         now constructor.
@@ -1368,6 +1374,8 @@ Proof.
         rewrite <- HH.
         intuition.
         subst ch.
+        rewrite -> Etc_v' in HH.
+        simpl in HH.
         intuition.
 Qed.
 
@@ -1418,28 +1426,40 @@ Proof.
       firstorder.
 Qed.
 
+Fact imono_single_aclk_impl_clk tc u' clk_u' aclk_u' chn_u'
+  (Himono : imono_single tc (Node (mkInfo u' clk_u' aclk_u') chn_u')) :
+  forall tc', In tc' chn_u' -> 
+    tc_rootaclk tc' <= (tc_getclk u' tc) -> 
+    tc_rootclk tc' <= (tc_getclk (tc_roottid tc') tc).
+Proof.
+  intros tc_v' Hin' Hle.
+  (* use imono *)
+  simpl in Himono.
+  rewrite -> List.Forall_forall in Himono.
+  specialize (Himono _ Hin').
+  destruct tc_v' as [(v', clk_v', aclk_v') chn_v'].
+  simpl in Hle, Himono |- *.
+  now apply Himono, Foralltc_self in Hle.
+Qed.
+
 Lemma tc_get_updated_nodes_join_aux_result_regular tc u' clk_u' aclk_u' chn_u' 
   (Hshape_tc' : tc_shape_inv (Node (mkInfo u' clk_u' aclk_u') chn_u')) 
   (Hrespect : tc_respect (Node (mkInfo u' clk_u' aclk_u') chn_u') tc) :
   exists chn_u'', list.sublist chn_u'' chn_u' /\
     (tc_get_updated_nodes_join_aux tc u' chn_u') = map (tc_get_updated_nodes_join tc) chn_u'' /\
     (Forall (fun tc' => ~ In tc' chn_u'' <-> tc_ge tc tc') chn_u') /\
-    (Forall (fun tc' => In tc' chn_u'' <-> (tc_getclk (tc_roottid tc') tc) < tc_rootclk tc') chn_u').
+    (Forall (fun tc' => In tc' chn_u'' <-> (tc_getclk (tc_roottid tc') tc) < tc_rootclk tc') chn_u') /\
+    (Forall (fun tc' => (tc_getclk u' tc) < tc_rootaclk tc') chn_u'').
 Proof.
   pose proof (tc_get_updated_nodes_join_aux_result tc u' chn_u') as H.
+  (* get aclk_impl_clk *)
+  pose proof (imono _ _ Hrespect) as Himono.
+  apply Foralltc_cons_iff, proj1 in Himono.
+  pose proof (imono_single_aclk_impl_clk _ _ _ _ _ Himono) as Haclk_impl_clk.
+  pose proof (fun tc' H => contra_not (Haclk_impl_clk tc' H)) as Haclk_impl_clk'.
+  repeat setoid_rewrite -> Nat.nle_gt in Haclk_impl_clk'.
   removehead H.
-  2:{
-    intros tc_v' Hin' Hle.
-    (* use imono *)
-    apply imono, Foralltc_cons_iff in Hrespect.
-    destruct Hrespect as (Himono & _).
-    simpl in Himono.
-    rewrite -> List.Forall_forall in Himono.
-    specialize (Himono _ Hin').
-    destruct tc_v' as [(v', clk_v', aclk_v') chn_v'].
-    simpl in Hle, Himono |- *.
-    now apply Himono, Foralltc_self in Hle.
-  }
+  2: assumption.
   removehead H.
   2: now apply aclk_decsorted, Foralltc_cons_iff in Hshape_tc'.
   destruct H as (chn_u'' & Hsub & Hres & Halllt).
@@ -1448,22 +1468,35 @@ Proof.
   1: assumption.
   split.
   1: assumption.
-  split.
-  2: assumption.
-  rewrite -> List.Forall_forall in Halllt |- *.
-  intros ch Hin.
-  specialize (Halllt _ Hin).
-  rewrite -> Halllt, Nat.nlt_ge.
-  split; intros H.
-  2: apply Foralltc_self in H; now destruct ch as [(?, ?, ?) ?].
-  (* use dmono *)
-  apply dmono, Foralltc_cons_iff in Hrespect.
-  destruct Hrespect as (_ & Hdmono).
-  rewrite -> List.Forall_forall in Hdmono.
-  specialize (Hdmono _ Hin).
-  apply Foralltc_self in Hdmono.
-  destruct ch as [(?, ?, ?) ?].
-  firstorder.
+  (* the subsumption part *)
+  rewrite -> List.Forall_forall in Halllt.
+  assert (forall x : treeclock, In x chn_u' ->
+    ~ In x chn_u'' <-> tc_rootclk x <= tc_getclk (tc_roottid x) tc) as Halllt'.
+  {
+    intros ch Hin.
+    rewrite -> Halllt, <- Nat.nlt_ge; auto.
+    pose proof (Haclk_impl_clk' _ Hin).
+    intuition.
+  }
+  rewrite -> ! List.Forall_forall.
+  split; [ | split ].
+  - intros ch Hin.
+    specialize (Halllt' _ Hin).
+    rewrite -> Halllt'.
+    split; intros H.
+    2: apply Foralltc_self in H; now destruct ch as [(?, ?, ?) ?].
+    (* use dmono *)
+    apply dmono, Foralltc_cons_iff in Hrespect.
+    destruct Hrespect as (_ & Hdmono).
+    rewrite -> List.Forall_forall in Hdmono.
+    specialize (Hdmono _ Hin).
+    apply Foralltc_self in Hdmono.
+    destruct ch as [(?, ?, ?) ?].
+    firstorder.
+  - firstorder.
+  - intros ch Hin.
+    pose proof (sublist_In _ _ Hsub _ Hin).
+    firstorder.
 Qed.
 
 (* a node is in the gathered prefix iff it needs update *)
@@ -1489,7 +1522,7 @@ Proof.
   (* get the result of tc_get_updated_nodes_join_aux *)
   pose proof (tc_get_updated_nodes_join_aux_result_regular tc u' clk_u' aclk_u' chn') as Htmp.
   do 2 (removehead Htmp; [ | assumption ]).
-  destruct Htmp as (chn_u'' & Hsub & -> & Hgetjoinres & Halllt).
+  destruct Htmp as (chn_u'' & Hsub & -> & Hgetjoinres & Halllt & Halllt').
   rewrite -> List.Forall_forall in Hgetjoinres, Halllt.
   (* now check if t is in chn' *)
   rewrite -> ! find_first_some_correct.
