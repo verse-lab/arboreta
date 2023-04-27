@@ -21,3 +21,4 @@ extraction/lib/*.mli
 # others
 .depend
 .DS_Store
+__pycache__/
