@@ -1398,8 +1398,9 @@ Record tc_shape_inv tc : Prop := {
   (* tid_nodup: List.NoDup (map info_tid (tc_flatten tc)); *)
   tid_nodup: List.NoDup (map tc_roottid (tc_flatten tc));
   aclk_upperbound: Foralltc tc_chn_aclk_ub tc;
-  aclk_decsorted: Foralltc tc_chn_aclk_decsorted tc;
-  clk_lowerbound: Foralltc (fun tc' => 0 < tc_rootclk tc') tc
+  aclk_decsorted: Foralltc tc_chn_aclk_decsorted tc
+  (* this is only useful to guarantee that the domain of join is the union of two operands *)
+  (* clk_lowerbound: Foralltc (fun tc' => 0 < tc_rootclk tc') tc *)
 }.
 
 Lemma tid_nodup_chn_ch chn ch
@@ -1492,11 +1493,10 @@ Fact tc_shape_inv_conj_iff tc :
   tc_shape_inv tc <-> 
     (List.NoDup (map tc_roottid (tc_flatten tc))
     /\ Foralltc tc_chn_aclk_ub tc
-    /\ Foralltc tc_chn_aclk_decsorted tc
-    /\ Foralltc (fun tc' => 0 < tc_rootclk tc') tc).
+    /\ Foralltc tc_chn_aclk_decsorted tc).
 Proof.
   split.
-  - now intros [? ? ? ?].
+  - now intros [? ? ?].
   - intros.
     now constructor.
 Qed.
@@ -1508,7 +1508,7 @@ Proof.
   change tc_shape_inv with (fun tc' => tc_shape_inv tc').
   setoid_rewrite -> tc_shape_inv_conj_iff.
   repeat apply Forall_and.
-  2-4: now rewrite <- Foralltc_Forall_subtree, -> Foralltc_idempotent, -> Foralltc_Forall_subtree.
+  2-3: now rewrite <- Foralltc_Forall_subtree, -> Foralltc_idempotent, -> Foralltc_Forall_subtree.
   now rewrite <- Foralltc_Forall_subtree, <- tid_nodup_Foralltc_id.
 Qed.
 
@@ -1578,10 +1578,6 @@ Proof.
       eapply sublist_StronglySorted; eauto.
     + rewrite -> List.Forall_forall.
       firstorder.
-  - constructor.
-    + now apply clk_lowerbound, Foralltc_self in Hshape.
-    + rewrite -> List.Forall_forall.
-      firstorder.
 Qed.
 
 (* exploit some simple cases, which may be not generalizable but simpler ... *)
@@ -1634,12 +1630,6 @@ Proof.
     + apply aclk_decsorted in Hshape, Hshape_new.
       apply Foralltc_cons_iff in Hshape.
       now constructor.
-  - apply clk_lowerbound in Hshape, Hshape_new.
-    apply Foralltc_cons_iff in Hshape.
-    simpl in Hshape.
-    constructor.
-    + now simpl.
-    + now constructor.
 Qed.
 
 Lemma tc_get_updated_nodes_join_aux_result tc u' chn_u'
@@ -3128,8 +3118,7 @@ Lemma tc_shape_inv_simple_overlaytc_pre (P : thread -> list treeclock) (Q : thre
   (Haclk_lt : Foralltc (fun tc' => let: Node ni chn := tc' in
     Forall (fun tc' => Q (info_tid ni) < tc_rootaclk tc') chn) tc)
   : forall tc' (Hoverlay : simple_overlaytc P tc tc'),
-  Foralltc tc_chn_aclk_ub tc' /\ Foralltc tc_chn_aclk_decsorted tc' /\
-  Foralltc (fun tc' : treeclock => 0 < tc_rootclk tc') tc'.
+  Foralltc tc_chn_aclk_ub tc' /\ Foralltc tc_chn_aclk_decsorted tc'.
 Proof.
   induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros.
   destruct tc' as [(u', clk', aclk') chn'].
@@ -3145,15 +3134,15 @@ Proof.
   pose proof (tc_shape_inv_chn _ _ Hshape) as Hshape_chn.
   rewrite -> tc_shape_inv_conj_iff, -> ! Foralltc_cons_iff in Hshape_sub, Hshape.
   rewrite -> Foralltc_cons_iff in Haclk_lt, Hclk_lt.
-  destruct Hshape_sub as (_ & (Ha & Ha') & (Hb & Hb') & (Hc & Hc')), 
-    Hshape as (_ & (Ha'' & _) & (Hb'' & _) & (Hc'' & _)), 
+  destruct Hshape_sub as (_ & (Ha & Ha') & (Hb & Hb')), 
+    Hshape as (_ & (Ha'' & _) & (Hb'' & _)), 
     Haclk_lt as (Eaclk_lt & Haclk_lt), Hclk_lt as (Eclk_lt & Hclk_lt).
-  simpl in Ha, Hb, Hc, Eaclk_lt, Eclk_lt, Ha'', Hb'', Hc''.
+  simpl in Ha, Hb, Eaclk_lt, Eclk_lt, Ha'', Hb''.
 
   rewrite -> List.Forall_forall in Hshape_chn, Hclk_lt, Haclk_lt.
 
   (* TODO repetition elimination *)
-  split; [ | split ].
+  split.
   all: rewrite -> Foralltc_cons_iff, -> List.Forall_app.
   - split; [ | split ].
     + simpl.
@@ -3187,13 +3176,6 @@ Proof.
         change (fun tc' => _) with (fun tc' => (fun a => Q u < a) (tc_rootaclk tc')) in Eaclk_lt.
         rewrite <- Forall_map, -> List.Forall_forall in Ha, Ha'', Eaclk_lt.
         firstorder lia.
-    + rewrite -> List.Forall_forall.
-      intros new_ch Hin_newch.
-      pose proof (Hcorr_inr _ Hin_newch) as (ch & Hin_ch & Hso).
-      eapply IH; eauto.
-    + assumption.
-  - split; [ | split ].
-    + now simpl.
     + rewrite -> List.Forall_forall.
       intros new_ch Hin_newch.
       pose proof (Hcorr_inr _ Hin_newch) as (ch & Hin_ch & Hso).
@@ -3287,13 +3269,11 @@ Proof.
       exists 0.
       constructor.
       all: simpl.
-      2-4: rewrite -> Foralltc_cons_iff.
-      2-4: split; [ | constructor ].
-      2-4: simpl.
+      2-3: rewrite -> Foralltc_cons_iff.
+      2-3: split; [ | constructor ].
+      2-3: simpl.
       2-3: constructor.
-      1: now repeat constructor.
-      (* this is ... *)
-      admit.
+      now repeat constructor.
     }
     simpl.
     apply find_some in E.
@@ -3335,7 +3315,7 @@ Proof.
   }
 
   now apply tc_shape_inv_conj_iff.
-Admitted.
+Qed.
 
 (* 
   finally needed:
