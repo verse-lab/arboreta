@@ -979,6 +979,20 @@ Record tc_respect tc (tc' : treeclock) : Prop := {
   imono : Foralltc (imono_single tc') tc
 }.
 
+Fact tc_respect_nochn_trivial ni tc' : tc_respect (Node ni nil) tc'.
+Proof.
+  constructor.
+  - constructor; auto.
+    hnf.
+    destruct ni.
+    intros Hle.
+    unfold tc_ge.
+    constructor; simpl; auto.
+  - constructor; auto.
+    hnf.
+    now destruct ni.
+Qed.
+
 Fact tc_ge_all_getclk_ge tc tc_larger (H : tc_ge tc_larger tc) 
   t : tc_getclk t tc <= tc_getclk t tc_larger.
 Proof.
@@ -1023,6 +1037,32 @@ Proof.
   simpl in Hge2.
   pose proof (tc_ge_all_getclk_ge _ _ Hge1 t).
   lia.
+Qed.
+
+(* a typical corr proof. TODO summarize? *)
+
+Fact tc_ge_prefix_preserve tc : 
+  forall tc' (Hprefix : prefixtc tc' tc)
+    tc_larger (Hge : tc_ge tc_larger tc),
+  tc_ge tc_larger tc'.
+Proof.
+  induction tc as [(u, clk_u, aclk_u) chn IH] using treeclock_ind_2; intros.
+  destruct tc' as [(u', clk', aclk') chn'].
+  apply prefixtc_inv in Hprefix.
+  destruct Hprefix as (Htmp & (chn_sub & Hsub & Hcorr)).
+  injection Htmp as ->.
+  subst clk' aclk'.
+  unfold tc_ge in Hge |- *.
+  rewrite -> Foralltc_cons_iff in Hge |- *.
+  destruct Hge as (Ele & Hle).
+  split; [ assumption | ].
+  pose proof (sublist_In _ _ Hsub) as Hsub_in.
+  pose proof (Forall2_forall_exists_l _ _ _ Hcorr) as Hcorr_in.
+  rewrite -> List.Forall_forall in IH, Hle |- *.
+  intros ch' Hin'.
+  destruct (Hcorr_in _ Hin') as (ch & Hin_ch & Hprefix).
+  specialize (Hle _ (Hsub_in _ Hin_ch)).
+  eapply IH; eauto.
 Qed.
 
 Section Pointwise_Treeclock.
@@ -1101,6 +1141,96 @@ Proof.
   2: apply imono in H.
   all: rewrite -> Foralltc_cons_iff, List.Forall_forall in H.
   all: firstorder.
+Qed.
+
+Fact tc_respect_sub tc tc' (H : tc_respect tc tc') :
+  Foralltc (fun sub => tc_respect sub tc') tc.
+Proof.
+  pose proof (conj (dmono _ _ H) (imono _ _ H)) as HH.
+  rewrite <- Foralltc_and, <- Foralltc_idempotent in HH.
+  eapply Foralltc_impl.
+  2: apply HH.
+  simpl.
+  setoid_rewrite -> Foralltc_and.
+  intros. 
+  now constructor.
+Qed.
+
+Lemma dmono_prefix_preserve tc : 
+  forall tc' (Hprefix : prefixtc tc' tc)
+    tc_larger (Hdmono : Foralltc (dmono_single tc_larger) tc),
+  Foralltc (dmono_single tc_larger) tc'.
+Proof.
+  induction tc as [(u, clk_u, aclk_u) chn IH] using treeclock_ind_2; intros.
+  destruct tc' as [(u', clk', aclk') chn'].
+  pose proof Hprefix as Hprefix_backup.
+  apply prefixtc_inv in Hprefix.
+  destruct Hprefix as (Htmp & (chn_sub & Hsub & Hcorr)).
+  injection Htmp as ->.
+  subst clk' aclk'.
+  rewrite -> Foralltc_cons_iff in Hdmono |- *.
+  destruct Hdmono as (Hdmono & Hdmono_chn).
+  split.
+  - hnf in Hdmono |- *.
+    intros Hle.
+    eapply tc_ge_prefix_preserve.
+    1: apply Hprefix_backup.
+    intuition.
+  - pose proof (sublist_In _ _ Hsub) as Hsub_in.
+    pose proof (Forall2_forall_exists_l _ _ _ Hcorr) as Hcorr_in.
+    rewrite -> List.Forall_forall in IH, Hdmono_chn |- *.
+    intros ch' Hin'.
+    destruct (Hcorr_in _ Hin') as (ch & Hin_ch & Hprefix).
+    specialize (Hdmono_chn _ (Hsub_in _ Hin_ch)).
+    eapply IH; eauto.
+Qed.
+
+Lemma imono_prefix_preserve tc : 
+  forall tc' (Hprefix : prefixtc tc' tc)
+    tc_larger (Himono : Foralltc (imono_single tc_larger) tc),
+  Foralltc (imono_single tc_larger) tc'.
+Proof.
+  induction tc as [(u, clk_u, aclk_u) chn IH] using treeclock_ind_2; intros.
+  destruct tc' as [(u', clk', aclk') chn'].
+  apply prefixtc_inv in Hprefix.
+  destruct Hprefix as (Htmp & (chn_sub & Hsub & Hcorr)).
+  injection Htmp as ->.
+  subst clk' aclk'.
+  rewrite -> Foralltc_cons_iff in Himono |- *.
+  destruct Himono as (Himono & Himono_chn).
+  pose proof (sublist_In _ _ Hsub) as Hsub_in.
+  pose proof (Forall2_forall_exists_l _ _ _ Hcorr) as Hcorr_in.
+  split.
+  - hnf in Himono |- *.
+    rewrite -> List.Forall_forall in Himono |- *.
+    intros [(v', clk_v', aclk_v') chn_v'] Hin' Hle.
+    destruct (Hcorr_in _ Hin') as (ch & Hin_ch & Hprefix).
+    specialize (Himono _ (Hsub_in _ Hin_ch)).
+    destruct ch as [(v, clk_v, aclk_v) chn_v].
+    pose proof Hprefix as Hprefix_backup.
+    apply prefixtc_inv in Hprefix.
+    destruct Hprefix as (Htmp & _).
+    injection Htmp as ->.
+    subst clk_v' aclk_v'.
+    eapply tc_ge_prefix_preserve.
+    1: apply Hprefix_backup.
+    intuition.
+  - rewrite -> List.Forall_forall in IH, Himono_chn |- *.
+    intros ch' Hin'.
+    destruct (Hcorr_in _ Hin') as (ch & Hin_ch & Hprefix).
+    specialize (Himono_chn _ (Hsub_in _ Hin_ch)).
+    eapply IH; eauto.
+Qed.
+
+Lemma tc_respect_prefix_preserve tc tc' (Hprefix : prefixtc tc' tc)
+  tc_larger (Hrespect : tc_respect tc tc_larger) :
+  tc_respect tc' tc_larger.
+Proof.
+  constructor.
+  - apply dmono in Hrespect.
+    eapply dmono_prefix_preserve; eauto.
+  - apply imono in Hrespect.
+    eapply imono_prefix_preserve; eauto.
 Qed.
 
 Definition tc_chn_aclk_decsorted tc := 
@@ -2368,7 +2498,156 @@ Proof.
     + assumption.
 Qed.
 
+Lemma tc_ge_with_subdmono_simple_overlaytc (P : thread -> list treeclock) (Q : thread -> nat) tc_larger
+  (Hdmono_sub : forall t, exists aclk, Foralltc (dmono_single tc_larger) (Node (mkInfo t (Q t) aclk) (P t)))
+  tc (Hge : tc_ge tc_larger tc)
+  (* needed for using dmono on (P t) *)
+  (Hclk_le : Foralltc (fun tc' => Q (tc_roottid tc') <= tc_rootclk tc') tc)
+  : forall tc' (Hoverlay : simple_overlaytc P tc tc'),
+  tc_ge tc_larger tc'.
+Proof.
+  induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros.
+  destruct tc' as [(u', clk', aclk') chn'].
+  apply simple_overlaytc_inv in Hoverlay.
+  simpl in Hoverlay.
+  destruct Hoverlay as (new_chn & ? & Htmp & -> & -> & Hcorr & Hinfosame).
+  injection Htmp as <-.
+  subst clk' aclk'.
+  rewrite -> List.Forall_forall in IH.
+  pose proof (Forall2_forall_exists_r _ _ _ Hcorr) as Hcorr_inr.
+  specialize (Hdmono_sub u).
+  destruct Hdmono_sub as (aclk' & Hdmono_sub).
+  unfold tc_ge in Hge |- *.
+  rewrite -> Foralltc_cons_iff in Hclk_le, Hdmono_sub, Hge |- *.
+  destruct Hge as (Ege & Hge), Hclk_le as (Eclk_le & Hclk_le), 
+    Hdmono_sub as (Hdmono_sub & _).
+  rewrite -> List.Forall_forall in Hge, Hclk_le.
+  simpl in Eclk_le, Hdmono_sub.
+  removehead Hdmono_sub.
+  2: lia.
+  split; auto.
+  apply List.Forall_app.
+  split.
+  2: now apply Foralltc_cons_iff in Hdmono_sub.
+  rewrite -> List.Forall_forall.
+  intros new_ch Hin_newch.
+  pose proof (Hcorr_inr _ Hin_newch) as (ch & Hin_ch & Hso).
+  specialize (IH _ Hin_ch (Hge _ Hin_ch) (Hclk_le _ Hin_ch) _ Hso).
+  now apply IH.
+Qed.
+
+Corollary dmono_simple_overlaytc_pre (P : thread -> list treeclock) (Q : thread -> nat) tc_larger
+  (Hdmono_sub : forall t, exists aclk, Foralltc (dmono_single tc_larger) (Node (mkInfo t (Q t) aclk) (P t)))
+  tc (Hdmono : Foralltc (dmono_single tc_larger) tc)
+  (* needed for using dmono on (P t) *)
+  (Hclk_le : Foralltc (fun tc' => Q (tc_roottid tc') <= tc_rootclk tc') tc)
+  : forall tc' (Hoverlay : simple_overlaytc P tc tc'),
+  Foralltc (dmono_single tc_larger) tc'.
+Proof.
+  induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros.
+  destruct tc' as [(u', clk', aclk') chn'].
+  pose proof Hoverlay as Hoverlay_backup.
+  apply simple_overlaytc_inv in Hoverlay.
+  simpl in Hoverlay.
+  destruct Hoverlay as (new_chn & ? & Htmp & -> & -> & Hcorr & Hinfosame).
+  injection Htmp as <-.
+  subst clk' aclk'.
+  rewrite -> List.Forall_forall in IH.
+  pose proof (Forall2_forall_exists_r _ _ _ Hcorr) as Hcorr_inr.
+  constructor.
+  - intros Hle.
+    eapply tc_ge_with_subdmono_simple_overlaytc with (P:=P) (Q:=Q).
+    4: apply Hoverlay_backup.
+    all: try assumption.
+    apply Foralltc_self in Hdmono.
+    intuition.
+  - apply List.Forall_app.
+    split.
+    + rewrite -> Foralltc_cons_iff in Hdmono, Hclk_le.
+      destruct Hdmono as (_ & Hdmono_chn), Hclk_le as (_ & Hclk_le).
+      rewrite -> List.Forall_forall in Hdmono_chn, Hclk_le |- *.
+      firstorder.
+    + specialize (Hdmono_sub u).
+      destruct Hdmono_sub as (aclk' & Hdmono_sub).
+      now apply Foralltc_cons_iff in Hdmono_sub.
+Qed.
+
+Lemma imono_simple_overlaytc_pre (P : thread -> list treeclock) (Q : thread -> nat) tc_larger
+  (Hdmono_sub : forall t, exists aclk, Foralltc (dmono_single tc_larger) (Node (mkInfo t (Q t) aclk) (P t)))
+  (Himono_sub : forall t, exists aclk, Foralltc (imono_single tc_larger) (Node (mkInfo t (Q t) aclk) (P t)))
+  tc (Himono : Foralltc (imono_single tc_larger) tc)
+  (Hclk_le : Foralltc (fun tc' => Q (tc_roottid tc') <= tc_rootclk tc') tc)
+  : forall tc' (Hoverlay : simple_overlaytc P tc tc'),
+  Foralltc (imono_single tc_larger) tc'.
+Proof.
+  induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros.
+  destruct tc' as [(u', clk', aclk') chn'].
+  apply simple_overlaytc_inv in Hoverlay.
+  simpl in Hoverlay.
+  destruct Hoverlay as (new_chn & ? & Htmp & -> & -> & Hcorr & Hinfosame).
+  injection Htmp as <-.
+  subst clk' aclk'.
+  rewrite -> List.Forall_forall in IH.
+  pose proof (Forall2_forall_exists_r _ _ _ Hcorr) as Hcorr_inr.
+  pose proof (Himono_sub u) as (aclk' & Himono_sub').
+  rewrite -> Foralltc_cons_iff in Himono, Hclk_le, Himono_sub' |- *.
+  destruct Himono as (Himono & Himono_chn), Hclk_le as (Eclk_le & Hclk_le), 
+    Himono_sub' as (Himono_sub' & Himono_subchn).
+  simpl in Eclk_le.
+  split.
+  - apply List.Forall_app.
+    split.
+    2: assumption.
+    hnf in Himono |- *.
+    rewrite -> List.Forall_forall in Himono, Hclk_le |- *.
+    intros [(v, clk_v, aclk_v) chn_v] Hin_newch.
+    intros Hle.
+    pose proof (Hcorr_inr _ Hin_newch) as (ch & Hin_ch & Hso).
+    eapply tc_ge_with_subdmono_simple_overlaytc with (P:=P) (Q:=Q).
+    4: apply Hso.
+    all: try assumption.
+    + (* TODO this inversion may be as a tactic ... *)
+      destruct ch as [(v', clk_v', aclk_v') ?].
+      apply simple_overlaytc_inv in Hso.
+      simpl in Hso.
+      destruct Hso as (_ & _ & Htmp & _ & _ & _ & _).
+      injection Htmp as ->.
+      subst clk_v' aclk_v'.
+      specialize (Himono _ Hin_ch).
+      intuition.
+    + intuition.
+  - apply List.Forall_app.
+    split.
+    + rewrite -> List.Forall_forall in Himono_chn, Hclk_le |- *.
+      firstorder.
+    + assumption.
+Qed.
+
+Corollary tc_respect_simple_overlaytc_pre (P : thread -> list treeclock) (Q : thread -> nat) tc_larger
+  (Hrespect_sub : forall t, exists aclk, tc_respect (Node (mkInfo t (Q t) aclk) (P t)) tc_larger)
+  tc (Hrespect : tc_respect tc tc_larger)
+  (Hclk_le : Foralltc (fun tc' => Q (tc_roottid tc') <= tc_rootclk tc') tc)
+  : forall tc' (Hoverlay : simple_overlaytc P tc tc'),
+  tc_respect tc' tc_larger.
+Proof.
+  constructor.
+  - apply dmono in Hrespect.
+    eapply dmono_simple_overlaytc_pre; eauto.
+    intros t.
+    destruct (Hrespect_sub t) as (aclk & H).
+    exists aclk.
+    now apply dmono.
+  - apply imono in Hrespect.
+    eapply imono_simple_overlaytc_pre; eauto.
+    all: intros t.
+    all: destruct (Hrespect_sub t) as (aclk & H).
+    all: exists aclk.
+    + now apply dmono.
+    + now apply imono.
+Qed.
+
 (* now, put everything together *)
+(* TODO revise the following two proofs *)
 
 Lemma tc_attach_nodes_tc_shape_inv tc tc' 
   (Hshape : tc_shape_inv tc) (Hshape' : tc_shape_inv tc') 
@@ -2509,6 +2788,71 @@ Proof.
   }
 
   now apply tc_shape_inv_conj_iff.
+Qed.
+
+Lemma tc_attach_nodes_respect tc tc' 
+  (Hshape : tc_shape_inv tc) (Hshape' : tc_shape_inv tc') 
+  (Hroot_clk_le : tc_getclk (tc_roottid tc') tc < tc_rootclk tc')
+  (Hrespect : tc_respect tc' tc) tc_larger 
+    (Hrespect1 : tc_respect tc tc_larger)
+    (Hrespect2 : tc_respect tc' tc_larger) :
+  tc_respect (tc_attach_nodes 
+    (snd (tc_detach_nodes (tc_get_updated_nodes_join tc tc') tc)) 
+    (tc_get_updated_nodes_join tc tc')) tc_larger.
+Proof.
+  pose proof (tc_attach_nodes_result 
+    (snd (tc_detach_nodes (tc_get_updated_nodes_join tc tc') tc))
+    (tc_get_updated_nodes_join tc tc')) as Hso.
+  remember (tc_get_updated_nodes_join tc tc') as prefix_tc' eqn:Eprefix.
+  destruct (tc_detach_nodes prefix_tc' tc) as (pivot, forest) eqn:Edetach.
+  simpl in Hso |- *.
+  pose proof (tc_get_updated_nodes_join_is_prefix tc tc') as Hprefix.
+  assert (forest = snd (tc_detach_nodes prefix_tc' tc)) as Eforest by now rewrite -> Edetach.
+  rewrite <- Eprefix in Hprefix.
+  revert Hso.
+  apply tc_respect_simple_overlaytc_pre with (Q:=fun t => tc_getclk t tc).
+  - intros t.
+    destruct (find (has_same_tid t) forest) as [ [(t', clk, aclk) chn] | ] eqn:E.
+    2:{
+      exists 0.
+      now apply tc_respect_nochn_trivial.
+    }
+    simpl.
+    apply find_some in E.
+    rewrite -> has_same_tid_true in E.
+    simpl in E.
+    destruct E as (Hin & <-).
+    (* unify getclk t tc and clk ... slightly troublesome *)
+    pose proof (tc_detach_nodes_snd_is_subprefix prefix_tc' tc) as Hsnd2pf.
+    pose proof (tc_shape_inv_tc_detach_nodes_snd prefix_tc' tc Hshape) as Hshape_forest.
+    rewrite <- Eforest, -> List.Forall_forall in Hsnd2pf, Hshape_forest.
+    specialize (Hsnd2pf _ Hin).
+    specialize (Hshape_forest _ Hin).
+    destruct Hsnd2pf as (sub & Hin_sub & E).
+    pose proof (prefixtc_rootinfo_same _ _ E) as Einfo.
+    pose proof (tid_nodup_find_self_sub _ (tid_nodup _ Hshape) _ Hin_sub) as Hres.
+    apply option.fmap_Some in Hres.
+    destruct Hres as (res & Hres & Einfo').
+    unfold tc_roottid in Hres.
+    rewrite <- Einfo in Hres.
+    simpl in Hres.
+    assert (tc_getclk t tc = clk) as <-.
+    {
+      unfold tc_getclk, tc_rootclk.
+      now rewrite -> Hres, <- Einfo', <- Einfo.
+    }
+    exists aclk.
+    pose proof (tc_respect_sub _ _ Hrespect1) as Hrespect_sub.
+    rewrite -> Foralltc_Forall_subtree, -> List.Forall_forall in Hrespect_sub.
+    specialize (Hrespect_sub _ Hin_sub).
+    eapply tc_respect_prefix_preserve; eauto.
+  - eapply tc_respect_prefix_preserve; eauto.
+  - pose proof (tc_get_updated_nodes_join_shape _ Hshape' _ Hrespect Hroot_clk_le).
+    subst prefix_tc'.
+    eapply Foralltc_impl.
+    2: apply (proj1 H).
+    simpl.
+    lia.
 Qed.
 
 Section TC_Join.
@@ -2971,6 +3315,96 @@ Section TC_Join.
     4: apply Hrespect2.
     1: apply tc_join_pointwise_max.
     all: now apply tid_nodup.
+  Qed.
+
+  Lemma tc_join_respect tc''
+    (Hrespect1 : tc_respect tc tc'') (Hrespect2 : tc_respect tc' tc'') 
+    (* ensure that there is no dmono at the root *)
+    (Hroot_clk_lt' : tc_getclk (tc_roottid tc) tc'' < tc_rootclk tc) :
+    tc_respect (tc_join tc tc') tc''.
+  Proof.
+    destruct tc' as [(u', clk_u', aclk_u') chn'] eqn:Etc'.
+    unfold tc_join.
+    cbn delta [tc_rootinfo] beta iota.
+    destruct (clk_u' <=? tc_getclk u' tc) eqn:Eclk_lt.
+    1: assumption.
+    apply Nat.leb_gt in Eclk_lt.
+    rewrite <- ! Etc'.
+    remember (tc_get_updated_nodes_join tc tc') as prefix_tc' eqn:Eprefix.
+    destruct (tc_detach_nodes prefix_tc' tc) as (pivot, forest) eqn:Edetach.
+    destruct (tc_attach_nodes forest prefix_tc') as [ni chn_w] eqn:Eattach.
+    assert (ni = mkInfo u' clk_u' aclk_u') as ->.
+    {
+      (* TODO extract the two rootinfoeq out? *)
+      pose proof (tc_get_updated_nodes_join_is_prefix tc tc') as E.
+      apply prefixtc_rootinfo_same in E.
+      rewrite <- Eprefix in E.
+      destruct prefix_tc' as [ni' ?].
+      simpl in Eattach.
+      injection Eattach as ->.
+      subst tc'.
+      now simpl in E.
+    }
+    destruct pivot as [ni_z chn_z] eqn:Epivot.
+    assert (ni_z = tc_rootinfo tc) as Eni_z.
+    {
+      destruct tc as [ni' ?].
+      simpl in Edetach |- *.
+      destruct (List.split (map (tc_detach_nodes prefix_tc') chn)) as (new_chn, ?),
+        (partition (fun tc' : treeclock => tc_getnode (tc_roottid tc') prefix_tc') new_chn).
+      congruence.
+    }
+    (* prepare *)
+    pose proof (tc_detach_nodes_fst_is_prefix prefix_tc' tc) as Hprefix_pivot.
+    rewrite -> Edetach in Hprefix_pivot.
+    simpl in Hprefix_pivot.
+    pose proof (tc_respect_prefix_preserve _ _ Hprefix_pivot _ Hrespect1) as Hrespect_pivot.
+    pose proof (tc_attach_nodes_respect _ _ Hshape Hshape' Eclk_lt Hrespect _ Hrespect1 Hrespect2) as Hrespect_attach.
+    rewrite <- Etc', <- Eprefix, -> Edetach in Hrespect_attach.
+    simpl in Hrespect_attach.
+    rewrite -> Eattach in Hrespect_attach.
+    constructor.
+    - constructor.
+      + (* impossible by assumption *)
+        simpl.
+        subst ni_z.
+        destruct tc as [(?, ?, ?) ?].
+        simpl in Hroot_clk_lt' |- *.
+        lia.
+      + constructor.
+        * (* the difference of aclk is troublesome ... *)
+          apply dmono in Hrespect_attach.
+          rewrite -> Foralltc_cons_iff in Hrespect_attach |- *.
+          split; [ | intuition ].
+          apply proj1 in Hrespect_attach.
+          simpl in Hrespect_attach |- *.
+          unfold tc_ge in Hrespect_attach |- *.
+          now rewrite -> Foralltc_cons_iff in Hrespect_attach |- *.
+        * eapply List.Forall_impl.
+          2: apply tc_respect_chn in Hrespect_pivot; apply Hrespect_pivot.
+          simpl.
+          intros.
+          now apply dmono.
+    - constructor.
+      + unfold imono_single.
+        subst ni_z.
+        destruct tc as [(z, clk_z, aclk_z) chn_z'].
+        simpl.
+        constructor.
+        * (* impossible by assumption *)
+          simpl in Hroot_clk_lt'.
+          lia.
+        * now apply imono, Foralltc_cons_iff, proj1 in Hrespect_pivot.
+      + constructor.
+        * (* the difference of aclk is troublesome ... *)
+          apply imono in Hrespect_attach.
+          rewrite -> Foralltc_cons_iff in Hrespect_attach |- *.
+          split; intuition.
+        * eapply List.Forall_impl.
+          2: apply tc_respect_chn in Hrespect_pivot; apply Hrespect_pivot.
+          simpl.
+          intros.
+          now apply imono.
   Qed.
 
 End TC_Join.

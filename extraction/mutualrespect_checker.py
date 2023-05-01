@@ -45,6 +45,11 @@ def read_tree(filename, treenum):
 
     return res
 
+def sanity_check(root_ret, edges_ret, info_ret, info_prime):
+    if root_ret not in info_prime:
+        return True
+    return info_ret[root_ret]["clk"] > info_prime[root_ret]["clk"]
+
 if __name__ == "__main__":
     assert (len(sys.argv) == 5)
     inputfile = sys.argv[1]
@@ -69,7 +74,8 @@ if __name__ == "__main__":
             if not dmono_check(root1, edges1, info1, info_prime)[0] or \
                 not imono_check(root1, edges1, info1, info_prime)[0] or \
                 not dmono_check(root2, edges2, info2, info_prime)[0] or \
-                not imono_check(root2, edges2, info2, info_prime)[0]:
+                not imono_check(root2, edges2, info2, info_prime)[0] or \
+                not sanity_check(root_ret, edges_ret, info_ret, info_prime):
                 continue
             
             # now check the operation result also respects it
