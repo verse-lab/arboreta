@@ -2298,10 +2298,10 @@ Lemma tc_shape_inv_simple_overlaytc_pre (P : thread -> list treeclock) (Q : thre
   (Hcomple : forall t, exists aclk, tc_shape_inv (Node (mkInfo t (Q t) aclk) (P t)))
   tc (Hshape : tc_shape_inv tc)
   (* needed for aclk upperbound *)
-  (Hclk_lt : Foralltc (fun tc' => Q (tc_roottid tc') < tc_rootclk tc') tc)
+  (Hclk_lt : Foralltc (fun tc' => Q (tc_roottid tc') <= tc_rootclk tc') tc)
   (* needed for aclk sorted *)
   (Haclk_lt : Foralltc (fun tc' => let: Node ni chn := tc' in
-    Forall (fun tc' => Q (info_tid ni) < tc_rootaclk tc') chn) tc)
+    Forall (fun tc' => Q (info_tid ni) <= tc_rootaclk tc') chn) tc)
   : forall tc' (Hoverlay : simple_overlaytc P tc tc'),
   Foralltc tc_chn_aclk_ub tc' /\ Foralltc tc_chn_aclk_decsorted tc'.
 Proof.
@@ -2358,7 +2358,7 @@ Proof.
       * assumption.
       * change (fun tc' => _) with (fun tc' => (fun a => a <= clk) (tc_rootaclk tc')) in Ha''.
         change (fun tc' => _) with (fun tc' => (fun a => a <= Q u) (tc_rootaclk tc')) in Ha.
-        change (fun tc' => _) with (fun tc' => (fun a => Q u < a) (tc_rootaclk tc')) in Eaclk_lt.
+        change (fun tc' => _) with (fun tc' => (fun a => Q u <= a) (tc_rootaclk tc')) in Eaclk_lt.
         rewrite <- Forall_map, -> List.Forall_forall in Ha, Ha'', Eaclk_lt.
         firstorder lia.
     + rewrite -> List.Forall_forall.
@@ -2492,11 +2492,20 @@ Proof.
   }
   2:{
     pose proof (tc_get_updated_nodes_join_shape _ Hshape' _ Hrespect Hroot_clk_le).
-    intuition congruence.
+    subst prefix_tc'.
+    eapply Foralltc_impl.
+    2: apply (proj1 H).
+    simpl.
+    lia.
   }
   2:{
     pose proof (tc_get_updated_nodes_join_shape _ Hshape' _ Hrespect Hroot_clk_le).
-    intuition congruence.
+    subst prefix_tc'.
+    eapply Foralltc_impl.
+    2: apply (proj2 H).
+    intros [? ?].
+    apply List.Forall_impl.
+    lia.
   }
 
   now apply tc_shape_inv_conj_iff.
