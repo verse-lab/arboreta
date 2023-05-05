@@ -5,6 +5,10 @@
 *.vos
 *.aux
 *.cache
+Makefile.coq
+CoqMakefile.conf
+Makefile.coq.conf
+.Makefile.coq.d
 
 # OCaml related
 *.cmi

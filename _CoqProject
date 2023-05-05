@@ -1,0 +1,9 @@
+-Q utils distributedclocks.utils
+
+-arg -w -arg -notation-overridden
+-arg -w -arg -local-declaration
+-arg -w -arg -redundant-canonical-projection
+-arg -w -arg -projection-no-head-constant
+
+utils/libtac.v
+utils/util.v
