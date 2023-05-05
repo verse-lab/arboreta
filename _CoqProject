@@ -1,4 +1,5 @@
 -Q utils distributedclocks.utils
+-Q clocks distributedclocks.clocks
 
 -arg -w -arg -notation-overridden
 -arg -w -arg -local-declaration
@@ -7,3 +8,4 @@
 
 utils/libtac.v
 utils/util.v
+clocks/treeclock.v
