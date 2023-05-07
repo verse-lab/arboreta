@@ -5,9 +5,15 @@ Import ssreflect.SsrSyntax.
 
 From stdpp Require list.
 
+(* TODO maybe this should be replaced with eqType in the future *)
+
+Class EqDec (A : Type) := {
+  eqdec : forall (x y : A), {x = y} + {x <> y}
+}.
+
 Section TreeClock.
 
-Context {thread : Type} (thread_eqdec : forall (t1 t2 : thread), {t1 = t2} + {t1 <> t2}).
+Context {thread : Type} `{thread_eqdec : EqDec thread}.
 
 (* OK, let's try making info_aclk not an option by making the aclk of the root useless. *)
 
@@ -20,7 +26,8 @@ Record nodeinfo : Type := mkInfo {
 Definition nodeinfo_eqdec (ni ni' : nodeinfo) : {ni = ni'} + {ni <> ni'}.
 Proof.
   decide equality.
-  all: apply Nat.eq_dec.
+  1-2: apply Nat.eq_dec.
+  apply eqdec.
 Qed.
 
 Inductive treeclock : Type :=
@@ -179,15 +186,15 @@ Proof. intros [(?, ?, ?) ?] [(?, ?, ?) ?]. simpl. congruence. Qed.
 
 (* this is_left is for better printing of find (has_same_tid t) *)
 
-Definition has_same_tid t tc := is_left (thread_eqdec (tc_roottid tc) t).
+Definition has_same_tid t tc := is_left (eqdec (tc_roottid tc) t).
 
 Global Arguments has_same_tid _ !_ /.
 
 Fact has_same_tid_true t tc : has_same_tid t tc = true <-> t = tc_roottid tc.
-Proof. unfold has_same_tid. destruct (thread_eqdec (tc_roottid tc) t) as [ <- | ]; simpl; intuition congruence. Qed.
+Proof. unfold has_same_tid. destruct (eqdec (tc_roottid tc) t) as [ <- | ]; simpl; intuition congruence. Qed.
 
 Fact has_same_tid_false t tc : has_same_tid t tc = false <-> t <> tc_roottid tc.
-Proof. unfold has_same_tid. destruct (thread_eqdec (tc_roottid tc) t) as [ <- | ]; simpl; intuition congruence. Qed.
+Proof. unfold has_same_tid. destruct (eqdec (tc_roottid tc) t) as [ <- | ]; simpl; intuition congruence. Qed.
 
 (* only for some domain-based reasoning; not for finding *)
 
@@ -259,7 +266,7 @@ Fact tc_getnode_self tc : tc_getnode (tc_roottid tc) tc = Some tc.
 Proof.
   destruct tc as [(u, ?, ?) ?].
   simpl.
-  now destruct (thread_eqdec u u).
+  now destruct (eqdec u u).
 Qed.
 
 Tactic Notation "tc_getnode_unfold" :=
@@ -309,7 +316,7 @@ Section Old_Complaints.
 
   Fixpoint tc_getnode_deprecated t tc :=
     let: Node ni chn := tc in 
-    if thread_eqdec t (info_tid ni)
+    if eqdec t (info_tid ni)
     then Some tc
     else find_first_some (map (tc_getnode_deprecated t) chn).
 
@@ -318,7 +325,7 @@ Section Old_Complaints.
   Proof.
     induction tc as [(u, clk_u, aclk_u) chn IH] using treeclock_ind_2; intros.
     simpl in Hres.
-    destruct (thread_eqdec t u) as [ <- | Hneq ].
+    destruct (eqdec t u) as [ <- | Hneq ].
     1:{
       simpl.
       injection Hres as <-.
@@ -341,9 +348,9 @@ Section Old_Complaints.
   Proof.
     induction tc as [(u, clk_u, aclk_u) chn IH] using treeclock_ind_2; intros.
     simpl.
-    destruct (thread_eqdec t u) as [ <- | ] eqn:E.
+    destruct (eqdec t u) as [ <- | ] eqn:E.
     - now rewrite -> E.
-    - destruct (thread_eqdec u t) as [ -> | ].
+    - destruct (eqdec u t) as [ -> | ].
       1: congruence.
       simpl.
       rewrite -> find_first_some_correct.
@@ -543,7 +550,7 @@ Proof.
   specialize (IH Hnodup).
   constructor.
   - unfold has_same_tid.
-    destruct (thread_eqdec (tc_roottid tc) (tc_roottid tc)).
+    destruct (eqdec (tc_roottid tc) (tc_roottid tc)).
     2: contradiction.
     now simpl.
   - rewrite -> List.Forall_forall in IH |- *.
@@ -637,7 +644,7 @@ Fixpoint tc_detach_nodes subtree_tc' tc : treeclock * list treeclock :=
 Fixpoint tc_attach_nodes forest tc' : treeclock :=
   let: Node info_u' chn' := tc' in
   (* try finding a tree in the forest with the same root thread *)
-  (* let: u_pre := List.find (fun tc => thread_eqdec (tc_roottid tc) (info_tid info_u')) forest in *)
+  (* let: u_pre := List.find (fun tc => eqdec (tc_roottid tc) (info_tid info_u')) forest in *)
   let: u_pre := List.find (has_same_tid (info_tid info_u')) forest in
   let: chn_u := (match u_pre with Some u => tc_rootchn u | None => nil end) in
   (* for u', inherit clk and aclk anyway; prepend all children of u' *)
@@ -1486,7 +1493,7 @@ Proof.
   tc_get_updated_nodes_join_unfold.
   unfold tc_getclk in Hlt at 2.
   cbn in Hlt |- *.
-  destruct (thread_eqdec u' t) as [ <- | Htneq ] eqn:Etdec.
+  destruct (eqdec u' t) as [ <- | Htneq ] eqn:Etdec.
   1: intuition.
   (* get sub inv *)
   assert (NoDup (map tc_roottid (flat_map tc_flatten chn'))) as Hnodup_chn'
@@ -2001,7 +2008,6 @@ Qed.
 
 Lemma tc_attach_nodes_result forest tc :
   simple_overlaytc (fun t =>
-    (* match List.find (fun tc => thread_eqdec (tc_roottid tc) t) forest with *)
     match List.find (has_same_tid t) forest with
     | Some res => tc_rootchn res
     | None => nil
@@ -2953,7 +2959,7 @@ Section TC_Join.
     - (* not in the join result, then both must be 0 *)
       match type of E with ?a = _ => assert (~ a) as Hnotin by now rewrite -> E end.
       rewrite <- tc_getnode_subtc_iff in Hnotin.
-      destruct (in_dec thread_eqdec t (map tc_roottid (tc_flatten (tc_get_updated_nodes_join tc tc')))) as [ Hin' | Hnotin' ].
+      destruct (in_dec eqdec t (map tc_roottid (tc_flatten (tc_get_updated_nodes_join tc tc')))) as [ Hin' | Hnotin' ].
       + exfalso.
         apply Hnotin.
         eapply Permutation.Permutation_in.
@@ -2961,7 +2967,7 @@ Section TC_Join.
         rewrite -> ! in_app_iff.
         intuition.
       + rewrite -> tc_getnode_subtc_iff, <- tc_get_updated_nodes_join_adequacy in Hnotin'; auto.
-        destruct (in_dec thread_eqdec t (map tc_roottid (tc_flatten tc))) as [ Hin'' | Hnotin'' ].
+        destruct (in_dec eqdec t (map tc_roottid (tc_flatten tc))) as [ Hin'' | Hnotin'' ].
         * now apply tc_join_dom_incl_operand in Hin''.
         * rewrite -> tc_getnode_subtc_iff in Hnotin''.
           assert (tc_getclk t tc = 0) as Eclk.
