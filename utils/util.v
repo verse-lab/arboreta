@@ -288,3 +288,32 @@ Qed.
 Fact pair_equal_split [A B : Type] (a b : A) (c d : B) 
   (E : (a, c) = (b, d)) : a = b /\ c = d.
 Proof. intuition congruence. Qed.
+
+Definition filtermap [A B : Type] (f : A -> bool) (g : A -> B) :=
+  fun (l : list A) => 
+  let fix filtermap l :=
+    match l with
+    | nil => nil
+    | a :: l' => if f a then (g a) :: filtermap l' else filtermap l'
+    end in filtermap l.
+
+Lemma filtermap_correct [A B : Type] (f : A -> bool) (g : A -> B) l :
+  filtermap f g l = map g (filter f l).
+Proof.
+  induction l as [ | x l IH ].
+  - reflexivity.
+  - simpl.
+    rewrite -> ! IH.
+    now destruct (f x).
+Qed.
+
+Lemma Forall2_mapself_l [A B : Type] (f : A -> B) (l : list A)
+  (P : B -> A -> Prop) :
+  Forall2 P (map f l) l <-> Forall (fun x => P (f x) x) l.
+Proof.
+  induction l as [ | x l IH ].
+  - intuition constructor.
+  - simpl.
+    rewrite -> list.Forall2_cons, -> Forall_cons_iff.
+    intuition.
+Qed.

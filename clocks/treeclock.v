@@ -952,9 +952,9 @@ Record tc_shape_inv tc : Prop := {
   (* clk_lowerbound: Foralltc (fun tc' => 0 < tc_rootclk tc') tc *)
 }.
 
-Lemma tid_nodup_chn_ch chn ch
+Lemma tid_nodup_chn_ch chn
   (H : List.NoDup (map tc_roottid (flat_map tc_flatten chn)))
-  (Hin : In ch chn) : List.NoDup (map tc_roottid (tc_flatten ch)).
+  ch (Hin : In ch chn) : List.NoDup (map tc_roottid (tc_flatten ch)).
 Proof.
   rewrite -> flat_map_concat_map, -> concat_map, -> map_map in H.
   apply NoDup_concat in H.
@@ -1321,16 +1321,10 @@ Proof.
     as (chn'' & Hsub & ->).
   econstructor.
   1: apply Hsub.
-  revert chn' IH Hsub.
-  induction chn'' as [ | ch chn'' IH' ]; intros.
-  - now simpl.
-  - simpl.
-    constructor.
-    + apply sublist_cons_In in Hsub.
-      rewrite -> Forall_forall in IH.
-      firstorder.
-    + apply sublist_cons_remove in Hsub.
-      firstorder.
+  apply Forall2_mapself_l.
+  pose proof (sublist_In _ _ Hsub).
+  rewrite -> List.Forall_forall in IH |- *.
+  firstorder.
 Qed.
 
 Fact imono_single_aclk_impl_clk tc u' clk_u' aclk_u' chn_u'
