@@ -273,6 +273,17 @@ Proof.
     lia.
 Qed.
 
+Definition tc_join_degen tc tc' :=
+  let: mkInfo z' clk_z' aclk_z' := tc_rootinfo tc' in
+  if clk_z' <=? (tc_getclk z' tc)
+  then tc
+  else 
+    let: subtree_tc' := tc_get_updated_nodes_join_degen tc tc' in
+    let: (pivot, forest) := tc_detach_nodes subtree_tc' tc in
+    let: Node (mkInfo w clk_w _) chn_w := tc_attach_nodes forest subtree_tc' in
+    let: Node info_z chn_z := pivot in 
+    Node info_z ((Node (mkInfo w clk_w (info_clk info_z)) chn_w) :: chn_z).
+
 Fixpoint tc_eraseaclk (tc : @treeclock thread) := 
   let: Node (mkInfo u clk _) chn := tc in Node (mkInfo u clk 0) (map tc_eraseaclk chn).
 

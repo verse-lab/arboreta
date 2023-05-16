@@ -159,6 +159,9 @@ Qed.
 
 Definition tc_init t := Node (mkInfo t 0 0) nil.
 
+Definition tc_incr tc amount := 
+  let: Node (mkInfo t clk aclk) chn := tc in Node (mkInfo t (PeanoNat.Nat.add clk amount) aclk) chn.
+
 Definition tc_rootinfo tc :=
   let: Node ni _ := tc in ni.
 

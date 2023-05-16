@@ -9,3 +9,4 @@
 utils/libtac.v
 utils/util.v
 clocks/treeclock.v
+clocks/degenerated_treeclock.v
