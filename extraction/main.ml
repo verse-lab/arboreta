@@ -74,6 +74,44 @@ let output_tree (tc : int treeclock) (filename : string) : unit =
   let oc = open_out filename in
   aux oc tc; close_out oc
 
+let rec normalize_tree (tc : int treeclock) : int treeclock =
+  let Node (ni, chn) = tc in
+  let chn_ = List.sort (fun tc tc_ -> compare (tc_roottid tc) (tc_roottid tc_)) (List.map normalize_tree chn) in
+  Node (ni, chn_)
+
+type event = { sender : int; sendtime : int; receiver : int; recvtime : int }
+
+let read_event () : event =
+  let sender = read_int () in
+  let sendtime = read_int () in
+  let receiver = read_int () in
+  let recvtime = read_int () in
+  { sender; sendtime; receiver; recvtime }
+
+let read_history () : int * event list =
+  let rec aux n =
+    if n <= 0
+    then []
+    else 
+      let ch = read_event () in
+      ch :: (aux (n-1))
+  in 
+  let num_process = read_int () in
+  let num_message = read_int () in
+  (num_process, aux num_message)
+
+let clock_simulate (num_process : int) (history : event list) : int treeclock list =
+  let local_clocks = Array.init num_process (fun (i : int) -> tc_init i) in
+  let simulate_step (e : event) : unit = begin
+    let snd = e.sender - 1 in
+    let rcv = e.receiver - 1 in
+    local_clocks.(snd) <- tc_incr local_clocks.(snd) 1;
+    local_clocks.(rcv) <- tc_incr local_clocks.(rcv) 1;
+    local_clocks.(rcv) <- tc_join ( = ) local_clocks.(rcv) local_clocks.(snd)
+  end in
+  List.iter simulate_step history;
+  Array.to_list local_clocks
+
 let _ = 
   assert (Array.length Sys.argv <= 4 && Array.length Sys.argv >= 2);
   match Sys.argv.(1) with
@@ -96,5 +134,12 @@ let _ =
         then output_tree (tc_join ( = ) tc tc_) Sys.argv.(3)
         else ()
     end
+  end
+  | "simulate" -> begin
+    (* read from stdin *)
+    let num_process, history = read_history () in
+    let res = clock_simulate num_process history in
+    let res_ = List.map (fun tc -> normalize_tree (tc_eraseaclk tc)) res in
+    List.iteri (fun i tc -> output_tree tc (Sys.argv.(2) ^ (string_of_int i) ^ ".tr")) res_
   end
   | _ -> ()
