@@ -11,7 +11,7 @@ num_tests="${1:-1000}"
 tmpdirname=mc_vs_tc_tmp
 mkdir -p ${tmpdirname}
 
-for i in {1..${num_tests}}
+for i in $(seq 1 "${num_tests}")
 do
     testname=test_${i}
     historyname=${tmpdirname}/history_${testname}.out
@@ -23,4 +23,4 @@ do
     dune exec ./main.exe simulate ${tmpdirname}/tc_${testname}_ < ${historyname}
 done
 
-python3 mc_vs_tc_checker.py 1 1000 mc_vs_tc_tmp/history_test_%d.out mc_vs_tc_tmp/mc_test_%d_%d.out mc_vs_tc_tmp/tc_test_%d_%d.tr
+python3 mc_vs_tc_checker.py 1 ${num_tests} mc_vs_tc_tmp/history_test_%d.out mc_vs_tc_tmp/mc_test_%d_%d.out mc_vs_tc_tmp/tc_test_%d_%d.tr
