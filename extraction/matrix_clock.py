@@ -17,3 +17,7 @@ def mc_print(mc):
 
 def mc_to_string(mc):
     return "\n".join([str(vc) for vc in mc])
+
+def string_to_mc(s):
+    s = s.strip()
+    return [eval(x) for x in s.split("\n")]

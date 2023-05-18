@@ -2,9 +2,13 @@
 
 import os, sys
 
-def get_num_process(history_filename):
+def get_num_process_and_history(history_filename):
+    num_process = -1
+    history = ""
     with open(history_filename) as f:
-        return int(f.readline())
+        num_process = int(f.readline())
+        history = f.read()
+    return num_process, history
 
 if __name__ == "__main__":
     assert(len(sys.argv) == 6)
@@ -15,10 +19,16 @@ if __name__ == "__main__":
     tc_filename_template = sys.argv[5]
 
     res = dict()
+    history_set = set()
     
     for i in range(gen_lb, gen_rb + 1):
         history_filename = history_filename_template % i
-        n = get_num_process(history_filename)
+        n, history = get_num_process_and_history(history_filename)
+        # avoid checking identical histories
+        if history in history_set:
+            continue
+        history_set.add(history)
+
         if n not in res:
             res[n] = dict()
         

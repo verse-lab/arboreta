@@ -1,12 +1,12 @@
 open TClib.Tcimpl
 
-let print_tree tc : unit =
+let print_tree ?(offset=0) tc : unit =
   let rec aux dep tc = 
     let Node ({ info_tid = x; info_clk = clk_x; info_aclk = aclk_x }, chn) = tc in
     for i = 1 to dep do
       print_char ' '
     done;
-    print_int x; 
+    print_int (x + offset);
     print_string "   clk: ";
     print_int clk_x;
     print_string "   aclk: ";
@@ -100,14 +100,27 @@ let read_history () : int * event list =
   let num_message = read_int () in
   (num_process, aux num_message)
 
-let clock_simulate (num_process : int) (history : event list) : int treeclock list =
+let string_of_event ({ sender; sendtime; receiver; recvtime } : event) : string =
+  String.concat "" ["process #"; string_of_int sender; 
+  " (local time: "; string_of_int sendtime; ") --> process #"; string_of_int receiver; 
+  " (local time: "; string_of_int recvtime; ")"]
+
+let clock_simulate (num_process : int) (history : event list) (print_trace : bool) : int treeclock list =
   let local_clocks = Array.init num_process (fun (i : int) -> tc_init i) in
   let simulate_step (e : event) : unit = begin
     let snd = e.sender - 1 in
     let rcv = e.receiver - 1 in
     local_clocks.(snd) <- tc_incr local_clocks.(snd) 1;
     local_clocks.(rcv) <- tc_incr local_clocks.(rcv) 1;
-    local_clocks.(rcv) <- tc_join ( = ) local_clocks.(rcv) local_clocks.(snd)
+    local_clocks.(rcv) <- tc_join ( = ) local_clocks.(rcv) local_clocks.(snd);
+    if print_trace
+    then begin
+      print_string (string_of_event e); 
+      print_char '\n';
+      print_string "resulting treeclock (normalized): \n";
+      print_tree local_clocks.(rcv) ~offset:1;
+      print_char '\n'
+    end else ()
   end in
   List.iter simulate_step history;
   Array.to_list local_clocks
@@ -138,7 +151,8 @@ let _ =
   | "simulate" -> begin
     (* read from stdin *)
     let num_process, history = read_history () in
-    let res = clock_simulate num_process history in
+    let print_trace = if Array.length Sys.argv = 4 then (int_of_string Sys.argv.(3) > 0) else false in
+    let res = clock_simulate num_process history print_trace in
     let res_ = List.map (fun tc -> normalize_tree (tc_eraseaclk tc)) res in
     List.iteri (fun i tc -> output_tree tc (Sys.argv.(2) ^ (string_of_int i) ^ ".tr")) res_
   end
