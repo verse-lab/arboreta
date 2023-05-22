@@ -1,49 +1,7 @@
 import sys, cyaron, os
-from treegen import SIZE_LB, SIZE_RB, goodtreegen, imono_check, dmono_check, treeprint
-
-def read_tree(filename, treenum):
-    number_lis = []
-    with open(filename) as f:
-        text = "".join(f.readlines())
-        number_lis = text.strip().split()
-    
-    cur = 0
-    res = []
-
-    def get_num():
-        nonlocal number_lis, cur
-        n = int(number_lis[cur])
-        cur += 1
-        return n
-
-    def dfs(info : dict, edges : list) -> int :
-        nonlocal get_num
-        tid = get_num()
-        clk = get_num()
-        aclk = get_num()
-        chn_sz = get_num()
-
-        while tid >= len(edges):
-            edges.append([])
-        
-        info[tid] = dict()
-        info[tid]["clk"] = clk
-        info[tid]["aclk"] = aclk
-        info[tid]["chn_sz"] = chn_sz
-        for _ in range(chn_sz):
-            ch = dfs(info, edges)
-            edges[tid].append(ch)
-            edges[ch].append(tid)
-        
-        return tid
-
-    for _ in range(treenum):
-        info = dict()
-        edges = []
-        rt = dfs(info, edges)
-        res.append((rt, edges, info))
-
-    return res
+from respect_treegen import SIZE_LB, SIZE_RB
+from tree_clock import imono_check, dmono_check, treeprint, read_tree_from_file
+from treegen import goodtreegen
 
 def sanity_check(root_ret, edges_ret, info_ret, info_prime):
     if root_ret not in info_prime:
@@ -58,8 +16,8 @@ if __name__ == "__main__":
     if not os.path.exists(outputfile):
         exit(0)
 
-    (root1, edges1, info1), (root2, edges2, info2) = read_tree(inputfile, 2)
-    root_ret, edges_ret, info_ret = read_tree(outputfile, 1)[0]
+    (root1, edges1, info1), (root2, edges2, info2) = read_tree_from_file(inputfile, 2)
+    root_ret, edges_ret, info_ret = read_tree_from_file(outputfile, 1)[0]
 
     round = int(sys.argv[3])
 

@@ -1,7 +1,7 @@
 failed=0
 for i in {1..1000}
 do
-    python3 treegen.py > a.tr
+    python3 respect_treegen.py > a.tr
     if dune exec ./main.exe testjoin 0 b.tr < a.tr
     then 
         if ((i % 100 == 0))

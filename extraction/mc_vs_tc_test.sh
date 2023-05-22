@@ -17,10 +17,10 @@ do
     historyname=${tmpdirname}/history_${testname}.out
 
     # step 1 & 2
-    python3 mc_vs_tc_main.py ${historyname} ${tmpdirname}/mc_${testname}_
+    python3 mc_vs_tc_main.py ${historyname} ${tmpdirname}/mc_${testname}_ 0
 
     # step 3
-    dune exec ./main.exe simulate ${tmpdirname}/tc_${testname}_ < ${historyname}
+    dune exec ./main.exe simulate 0 ${tmpdirname}/tc_${testname}_ < ${historyname}
 done
 
 python3 mc_vs_tc_checker.py 1 ${num_tests} mc_vs_tc_tmp/history_test_%d.out mc_vs_tc_tmp/mc_test_%d_%d.out mc_vs_tc_tmp/tc_test_%d_%d.tr

@@ -17,7 +17,7 @@ if __name__ == "__main__":
     edges = random_history_gen(n, m)
     history_dump(n, edges, history_filename)
 
-    mcs = mc_simulate(n, edges)
+    mcs = mc_simulate(n, edges, 0)
     # print the clocks into different files
     for i, mc in enumerate(mcs):
         with open(mc_filename_prefix + str(i) + ".out", "w") as f:

@@ -71,7 +71,8 @@ if __name__ == "__main__":
                     # avoid symmetric output; the same for below
                     mc_same_but_tc_not_same = { x for x in mc_same_but_tc_not_same if x > testid }
                     if mc_same_but_tc_not_same:
-                        print(testid, mc_same_but_tc_not_same)
+                        print("for history #%d, the mc_same_but_tc_not_same set is " % testid, end="")
+                        print(mc_same_but_tc_not_same)
             
             print("tc_same_but_mc_not_same: ")
             for k, this_st in st_tc.items():
@@ -81,6 +82,7 @@ if __name__ == "__main__":
                     tc_same_but_mc_not_same = this_st.difference(this_st2)
                     tc_same_but_mc_not_same = { x for x in tc_same_but_mc_not_same if x > testid }
                     if tc_same_but_mc_not_same:
-                        print(testid, tc_same_but_mc_not_same)
+                        print("for history #%d, the tc_same_but_mc_not_same set is " % testid, end="")
+                        print(tc_same_but_mc_not_same)
 
             print()

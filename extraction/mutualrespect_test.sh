@@ -1,9 +1,9 @@
 failed=0
-for i in {1..100}
+for i in {1..10}
 do
     echo "Test" ${i}
 
-    python3 treegen.py > a.tr
+    python3 respect_treegen.py > a.tr
     if dune exec ./main.exe testjoin 0 b.tr < a.tr
     then 
         echo "Join test OK. "

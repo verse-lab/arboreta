@@ -16,6 +16,7 @@ let print_tree ?(offset=0) tc : unit =
   in aux 0 tc
 
 let rec construct_tree () : int treeclock =
+  (* read from stdin *)
   let x = read_int () in
   let clk_x = read_int () in
   let aclk_x = read_int () in
@@ -89,6 +90,7 @@ let read_event () : event =
   { sender; sendtime; receiver; recvtime }
 
 let read_history () : int * event list =
+  (* history: a list of events *)
   let rec aux n =
     if n <= 0
     then []
@@ -118,7 +120,8 @@ let clock_simulate (num_process : int) (history : event list) (print_trace : boo
       print_string (string_of_event e); 
       print_char '\n';
       print_string "resulting treeclock (normalized): \n";
-      print_tree local_clocks.(rcv) ~offset:1;
+      (* by default the result is normalized; disallow normalization by modifying this line *)
+      print_tree (normalize_tree (tc_eraseaclk local_clocks.(rcv))) ~offset:1;
       print_char '\n'
     end else ()
   end in
@@ -126,10 +129,8 @@ let clock_simulate (num_process : int) (history : event list) (print_trace : boo
   Array.to_list local_clocks
 
 let _ = 
-  assert (Array.length Sys.argv <= 4 && Array.length Sys.argv >= 2);
   match Sys.argv.(1) with
   | "print" -> begin
-    (* read from stdin *)
     let treenum = (int_of_string Sys.argv.(2)) in
     for i = 1 to treenum do
       let tc = construct_tree () in
@@ -143,17 +144,19 @@ let _ =
     if sanity_check tc tc_
     then begin
       assert (test_join tc tc_ (int_of_string Sys.argv.(2)));
-      if (Array.length Sys.argv == 4)
-        then output_tree (tc_join ( = ) tc tc_) Sys.argv.(3)
-        else ()
+      if Array.length Sys.argv = 4
+      (* print the result of join into specified path *)
+      then output_tree (tc_join ( = ) tc tc_) Sys.argv.(3)
+      else ()
     end
   end
   | "simulate" -> begin
-    (* read from stdin *)
     let num_process, history = read_history () in
-    let print_trace = if Array.length Sys.argv = 4 then (int_of_string Sys.argv.(3) > 0) else false in
+    let print_trace = (int_of_string Sys.argv.(2) > 0) in
     let res = clock_simulate num_process history print_trace in
     let res_ = List.map (fun tc -> normalize_tree (tc_eraseaclk tc)) res in
-    List.iteri (fun i tc -> output_tree tc (Sys.argv.(2) ^ (string_of_int i) ^ ".tr")) res_
+    if Array.length Sys.argv = 4
+    then List.iteri (fun i tc -> output_tree tc (Sys.argv.(3) ^ (string_of_int i) ^ ".tr")) res_
+    else ()
   end
   | _ -> ()
