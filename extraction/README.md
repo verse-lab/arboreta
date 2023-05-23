@@ -25,6 +25,7 @@ For generating random data:
 - `treegen.py`: Generating random tree clocks satisfying shape conditions. 
 - `respect_treegen.py`: Generating two tree clocks such that the former one respects the latter one. 
 - `historygen.py`: Generating random histories. The only type of event in the history is sending and receiving messages. 
+  - Known issue: it cannot generate histories with crosses. Example: `(p, 1) --> (q, 2)`, `(p, 2) --> (q, 1)`
 
 For testing the join operation of tree clock: 
 - `join_test.sh`
