@@ -1,5 +1,6 @@
 -Q utils distributedclocks.utils
 -Q clocks distributedclocks.clocks
+-Q vst distributedclocks.vst
 
 -arg -w -arg -notation-overridden
 -arg -w -arg -local-declaration
@@ -11,3 +12,4 @@ utils/util.v
 clocks/treeclock.v
 clocks/degenerated_treeclock.v
 extraction/extract_driver.v
+vst/treeclock_clight.v
