@@ -247,6 +247,31 @@ Local Tactic Notation "saturate_lemmas" :=
   gen short_max_signed_gt_0;  *)
   gen Int.min_signed_neg.
 
+(* TODO two design choices: make a pair of tactics (with aux equations), 
+  or make a customized Corollary *)
+
+Local Tactic Notation "array_focus" constr(idx) constr(lstruct) "witheqn" ident(Hy) :=
+  match goal with |- context[data_at Tsh (tarray _ ?size) lstruct _] => 
+    sep_apply (SingletonHole.array_with_hole_intro Tsh _ idx size lstruct); try lia end;
+  match goal with |- context[field_address (tarray ?a ?size) (SUB ?b) ?c] => 
+    assert (field_address (tarray a size) (SUB b) c = offset_val (sizeof a * b) c) as Hy
+    by (apply arr_field_address; try lia; try assumption) end.
+
+Local Tactic Notation "read_clock" "witheqn" hyp(Eclock_payload) :=
+  match type of Eclock_payload with 
+  Znth ?n ?lclk = clock_payload ?clk ?aclk => 
+    unfold clock_payload in Eclock_payload; 
+    rewrite -> Eclock_payload; 
+    forward; 
+    rewrite <- Eclock_payload;
+    fold (clock_payload clk aclk) in Eclock_payload
+  end.
+
+Local Tactic Notation "array_unfocus" "witheqn" hyp(Hy) :=
+  rewrite <- Hy; 
+  sep_apply SingletonHole.array_with_hole_elim;
+  rewrite upd_Znth_triv; try lia; try reflexivity; clear Hy.
+
 (*
 Local Corollary array_with_hole_intro_alt : forall (sh : Share.t) (t : type) (i n : Z) 
     (al : list (reptype t)) (p : val),
@@ -274,21 +299,23 @@ Proof.
   match goal with HH : context [is_tc_clockarray_proj _ tc'] |- _ =>
     pose proof (is_tc_clockarray_proj_nth _ _ HH) as Hca_tc' end.
 
-  forward.
+  forward. forward. forward. forward.
   (* 1:{ entailer!. unfold is_pos_tshort, short_max_signed in *. 
     rewrite Int.signed_repr; try lia. 
     rewrite -> ! two_power_pos_nat. simpl. lia.
   } *)
-  forward.
-  forward.
-  forward.
 
   (* pre *) assert_PROP (field_compatible (tarray t_struct_clock dim) [] plclk') as Hcomp by entailer.
+  array_focus (Z.of_nat (tc_roottid tc')) lclk' witheqn Etmp.
+  (* replacing the following thing *)
+  (* 
   sep_apply (SingletonHole.array_with_hole_intro Tsh _ 
     (Z.of_nat (tc_roottid tc')) dim lclk'); try lia.
   match goal with |- context[field_address (tarray ?a ?size) (SUB ?b) ?c] => 
     assert (field_address (tarray a size) (SUB b) c = offset_val (sizeof a * b) c) as Etmp
-    by (apply arr_field_address; try lia; try assumption) end.
+    by (apply arr_field_address; try lia; try assumption) end. 
+  *)
+
   (* match goal with |- context[field_address (tarray ?a ?size) (SUB ?b) ?c] => 
     remember (field_address a b c) as ad eqn:Earroff end.
   pose proof Earroff as Etmp.
@@ -316,18 +343,21 @@ Proof.
   simpl in Etmp.
   *)
   Intros.
-  pose proof (Foralltc_self _ _ Hca_tc') as Etmp2.
-  rewrite -> Etmp2.
-  unfold clock_payload.
+  pose proof (Foralltc_self _ _ Hca_tc') as Etmp2. cbn in Etmp2.
   rewrite -> Etmp.
+  read_clock witheqn Etmp2. clear Etmp2.
+  (* replacing *)
+  (*
+  unfold clock_payload in Etmp2.
+  rewrite -> Etmp2.
+  (* unfold clock_payload. *)
+  (* if do rewrite -> Etmp earlier then simpl will unfold "sizeof", which is troublesome *)
   (* here, temp _zprime_clocks must be the shape of offset_val; otherwise it cannot forward *)
   forward.
-  rewrite <- Etmp.
-  fold (clock_payload (Z.of_nat (tc_rootclk tc')) (Z.of_nat (tc_rootaclk tc'))).
   rewrite <- Etmp2.
-  clear Etmp Etmp2.
-  sep_apply SingletonHole.array_with_hole_elim.
-  rewrite upd_Znth_triv; try lia; try reflexivity.
+  fold (clock_payload (Z.of_nat (tc_rootclk tc')) (Z.of_nat (tc_rootaclk tc'))) in Etmp2.
+  *)
+  array_unfocus witheqn Etmp.
 
   forward.
   forward.
