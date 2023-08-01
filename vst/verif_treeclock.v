@@ -167,6 +167,17 @@ Definition treeclock_rep (dim : Z) (tc : @treeclock nat) (plclk plnode : val)
   (* data_at Tsh (tarray tshort dim) lstk plstk. *)
   data_at Tsh (tarray tint dim) lstk plstk.
 
+Fact is_tc_clockarray_proj_nth lclk tc (Hproj : is_tc_clockarray_proj lclk tc) :
+  Foralltc (fun tc' => (Znth (Z.of_nat (tc_roottid tc')) lclk) = 
+    clock_payload (Z.of_nat (tc_rootclk tc')) (Z.of_nat (tc_rootaclk tc'))) tc.
+Proof.
+  eapply Foralltc_impl. 2: apply Hproj. 
+  simpl. intros tc' H.
+  apply List.nth_error_nth with (d:=default) in H.
+  rewrite <- nth_Znth', -> H.
+  reflexivity.
+Qed.
+
 (* simple malloc/free spec; TODO may use the one in VSU? *)
 Definition malloc_spec :=
   DECLARE _malloc
@@ -229,23 +240,39 @@ Definition Gprog : funspecs :=
   ]).
 
 Section Main_Proof.
-(*
+
 Local Tactic Notation "saturate_lemmas" :=
   let gen lm := (let Hq := fresh "_Hyp" in pose proof lm as Hq) in
-  gen short_max_signed_le_int_max_signed; 
-  gen short_max_signed_gt_0; 
+  (* gen short_max_signed_le_int_max_signed; 
+  gen short_max_signed_gt_0;  *)
   gen Int.min_signed_neg.
+
+(*
+Local Corollary array_with_hole_intro_alt : forall (sh : Share.t) (t : type) (i n : Z) 
+    (al : list (reptype t)) (p : val),
+  0 <= i < n ->
+  data_at sh (tarray t n) al p
+  |-- data_at sh t (Znth i al) (field_address (tarray t n) (SUB i) p)
+        * SingletonHole.array_with_hole sh t i n al p.
+Proof SingletonHole.array_with_hole_intro.
 *)
+
 Theorem body_join: 
   semax_body Vprog Gprog f_join join_spec.
 Proof.
-  (* saturate_lemmas. *)
+  saturate_lemmas.
+
   start_function.
   unfold treeclock_rep.
   Intros. Intros lclk_ptrs lnode_ptrs lclk lnode lstk.
   (* TODO cannot customize the name? *)
   Intros. Intros lclk_ptrs' lnode_ptrs' lclk' lnode' lstk'.
   unfold treeclock_payload.
+  unfold is_pos_tint in *.
+  match goal with HH : context [is_tc_clockarray_proj _ tc] |- _ =>
+    pose proof (is_tc_clockarray_proj_nth _ _ HH) as Hca_tc end.
+  match goal with HH : context [is_tc_clockarray_proj _ tc'] |- _ =>
+    pose proof (is_tc_clockarray_proj_nth _ _ HH) as Hca_tc' end.
 
   forward.
   (* 1:{ entailer!. unfold is_pos_tshort, short_max_signed in *. 
@@ -254,18 +281,25 @@ Proof.
   } *)
   forward.
   forward.
-  forward. deadvars.
+  forward.
 
-  (* ee *)
-  assert_PROP (field_compatible (tarray t_struct_clock dim) [] plclk') as Hcomp by entailer.
+  (* pre *) assert_PROP (field_compatible (tarray t_struct_clock dim) [] plclk') as Hcomp by entailer.
   sep_apply (SingletonHole.array_with_hole_intro Tsh _ 
     (Z.of_nat (tc_roottid tc')) dim lclk'); try lia.
-  match goal with |- context[field_address ?a ?b ?c] => 
+  match goal with |- context[field_address (tarray ?a ?size) (SUB ?b) ?c] => 
+    assert (field_address (tarray a size) (SUB b) c = offset_val (sizeof a * b) c) as Etmp
+    by (apply arr_field_address; try lia; try assumption) end.
+  (* match goal with |- context[field_address (tarray ?a ?size) (SUB ?b) ?c] => 
     remember (field_address a b c) as ad eqn:Earroff end.
   pose proof Earroff as Etmp.
-  rewrite arr_field_address in Etmp; try lia; try assumption.
+  (* need compatible *)
+  rewrite arr_field_address in Etmp; try lia; try assumption. *)
 
-  simpl. 
+  simpl.
+  (* pre *) assert_PROP (isptr plclk') as Hip by entailer.
+  (* need isptr *)
+  rewrite -> sem_add_pi'; auto; try lia.
+  (*
   unfold sem_add_ptr_int.
   replace (complete_type cenv_cs (Tstruct _Clock noattr)) with true by now compute.
 
@@ -280,31 +314,20 @@ Proof.
   }
   rewrite ptrofs_mul_repr.
   simpl in Etmp.
-
+  *)
   Intros.
-  (* before this ... *)
-  assert ((Znth (Z.of_nat (tc_roottid tc')) lclk') = 
-    clock_payload (Z.of_nat (tc_rootclk tc')) (Z.of_nat (tc_rootaclk tc'))) as Etmp2.
-  {
-    match goal with Hq : is_tc_clockarray_proj lclk' tc' |- _ =>
-      rename Hq into Hca end.
-    hnf in Hca.
-    apply Foralltc_self in Hca.
-    apply List.nth_error_nth with (d:=default) in Hca.
-    rewrite <- nth_Znth', -> Hca.
-    reflexivity.
-  }
+  pose proof (Foralltc_self _ _ Hca_tc') as Etmp2.
   rewrite -> Etmp2.
   unfold clock_payload.
   rewrite -> Etmp.
+  (* here, temp _zprime_clocks must be the shape of offset_val; otherwise it cannot forward *)
   forward.
-  rewrite <- Etmp, -> Earroff.
+  rewrite <- Etmp.
   fold (clock_payload (Z.of_nat (tc_rootclk tc')) (Z.of_nat (tc_rootaclk tc'))).
-  rewrite <- Etmp2, <- Eplclk'.
+  rewrite <- Etmp2.
+  clear Etmp Etmp2.
   sep_apply SingletonHole.array_with_hole_elim.
   rewrite upd_Znth_triv; try lia; try reflexivity.
-
-  deadvars.
 
   forward.
   forward.
