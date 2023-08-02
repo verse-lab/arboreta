@@ -9,6 +9,8 @@
 #define get_node(tree_this, tid) ((tree_this->tree) + tid)
 #define get_clock(tree_this, tid) ((tree_this->clocks) + tid)
 
+#define NODE_NULL -1
+
 struct Node {
     int node_next;
     int node_prev;
@@ -18,8 +20,8 @@ struct Node {
 
 // TODO can also be written as all field == 0
 int node_is_null(struct Node* nd){
-    return nd->node_next == 0 && nd->node_prev == 0 && 
-        nd->node_par == 0 && nd->node_headch == 0;
+    return nd->node_next == NODE_NULL && nd->node_prev == NODE_NULL && 
+        nd->node_par == NODE_NULL && nd->node_headch == NODE_NULL;
 }
 
 // typedef struct Node* Node_T;
@@ -75,6 +77,14 @@ TreeClock_T tree_clock_init(int dim){
 
     return tc_new;
 }
+
+// struct Clock* get_clock(TreeClock_T tree_this, int tid){
+//     return ((tree_this->clocks) + tid);
+// }
+
+// struct Node* get_node(TreeClock_T tree_this, int tid){
+//     return ((tree_this->tree) + tid);
+// }
 
 void join(TreeClock_T self, TreeClock_T tc){
     int root_tid_this = self->root_tid;
