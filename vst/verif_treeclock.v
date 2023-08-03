@@ -159,16 +159,25 @@ Definition treeclock_payload (dim rootid : Z) (clockarr nodearr : val)
 (* sometimes the treeclock corresponds to an empty tree, but do not consider it for now *)
 
 (* factor the dim out; it should not change during the operation? *)
+(* seems like top should be consistently -1 *)
 Definition treeclock_rep (dim : Z) (tc : @treeclock nat) (plclk plnode : val) 
-  (plstk : val) (top : Z) p : mpred :=
+  (plstk : val) p : mpred :=
   (* EX dim : Z,  *)
   EX lclk_ptrs : list val, 
   EX lnode_ptrs : list val, 
+  (* TODO should this be raw (reptype t_struct_clock) or the result of some (map list)? *)
   EX lclk : list (reptype t_struct_clock), 
   EX lnode : list (reptype t_struct_node), 
 
   EX lstk : list val, 
 
+  (* TODO the clk and aclk must become bounded somewhere.
+      if they are bounded with a Foralltc, then we may simply bound tid as well 
+        so that we do not need the tid_bounded lemmas and nth_error 
+    but for now, we only bound clk and aclk to avoid premature optimization
+  *)
+  !! (Foralltc (fun sub => Z.of_nat (tc_rootclk sub) < Int.max_signed /\ 
+    Z.of_nat (tc_rootaclk sub) < Int.max_signed) tc) &&
   (* this is necessary in the current setting, since the root may not appear in the node array *)
   !! (Z.of_nat (tc_roottid tc) < dim) &&
   !! (Zlength lclk_ptrs = dim) && !! (Zlength lclk = dim) &&
@@ -178,7 +187,7 @@ Definition treeclock_rep (dim : Z) (tc : @treeclock nat) (plclk plnode : val)
   (* TODO this should be subsumed? *)
   (* !! (Foralltc (fun t => Z.of_nat (tc_roottid t) < dim) tc) && *)
   data_at Tsh t_struct_treeclock (treeclock_payload dim (Z.of_nat (tc_roottid tc)) 
-    plclk plnode plstk top) p * 
+    plclk plnode plstk (-1)) p * 
   data_at Tsh (tarray t_struct_clock dim) lclk plclk *
   data_at Tsh (tarray t_struct_node dim) lnode plnode *
   (* data_at Tsh (tarray tshort dim) lstk plstk. *)
@@ -363,12 +372,9 @@ Proof.
   induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros. *)
   apply Forall_Znth.
   intros n Hr. destruct (tc_getnode (Z.to_nat n) tc) as [ res | ] eqn:E.
-  - apply is_tc_nodearray_proj_full_regular_wk, Foralltc_Forall_subtree in Hproj1.
-    rewrite -> Forall_forall in Hproj1.
-    assert (Datatypes.is_true (ssrbool.isSome (tc_getnode (Z.to_nat n) tc))) as H by now rewrite E.
-    apply tc_getnode_subtc_iff, in_map_iff in H.
-    destruct H as (sub & Eid & Hin). apply Hproj1 in Hin.
-    rewrite -> Eid, -> Z2Nat.id in Hin; auto; try lia.
+  - apply is_tc_nodearray_proj_full_regular_wk in Hproj1.
+    apply (tc_getnode_res_Foralltc Hproj1) in E.
+    destruct E as (E & Eid). rewrite -> Eid, -> Z2Nat.id in E; auto; try lia.
   - destruct (nth_error lnode (Z.to_nat n)) eqn:Ee.
     2:{ apply nth_error_None in Ee. rewrite <- ZtoNat_Zlength in Ee. lia. }
     pose proof Ee as Ee'.
@@ -419,19 +425,21 @@ Definition memset_spec :=
 Definition join_spec :=
   DECLARE _join
   WITH dim : Z, 
-    tc : (@treeclock nat), plclk : val, plnode : val, plstk : val, top : Z, p : val,
-    tc' : (@treeclock nat), plclk' : val, plnode' : val, plstk' : val, top' : Z, p' : val
+    tc : (@treeclock nat), plclk : val, plnode : val, plstk : val, p : val,
+    tc' : (@treeclock nat), plclk' : val, plnode' : val, plstk' : val, p' : val
   PRE [ tptr t_struct_treeclock, tptr t_struct_treeclock ]
     (* PROP (is_pos_tshort dim) *)
-    PROP (is_pos_tint dim)
+    PROP (is_pos_tint dim; 
+      (* join requirement *)
+      tc_shape_inv tc; tc_shape_inv tc'; tc_respect tc' tc; 
+      (tc_getclk (tc_roottid tc) tc' <= tc_rootclk tc)%nat)
     PARAMS (p; p')
-    SEP (treeclock_rep dim tc plclk plnode plstk top p * treeclock_rep dim tc' plclk' plnode' plstk' top' p')
+    SEP (treeclock_rep dim tc plclk plnode plstk p * treeclock_rep dim tc' plclk' plnode' plstk' p')
   POST [ tvoid ]
-    EX top_ : Z, 
     PROP () 
     RETURN ()
     (* nothing should change for p' *)
-    SEP (treeclock_rep dim (tc_join tc tc') plclk plnode plstk top_ p * treeclock_rep dim tc' plclk' plnode' plstk' top' p').
+    SEP (treeclock_rep dim (tc_join tc tc') plclk plnode plstk p * treeclock_rep dim tc' plclk' plnode' plstk' p').
 
 (* make two function specs for node_is_null; one is straightforward, another is for use *)
 
@@ -697,9 +705,7 @@ Proof.
     + remember (ch :: chn) as chnn eqn:Echn.
       match goal with H : context[is_tc_nodearray_proj_full] |- _ => 
         destruct H as (Hca & Hproj) end.
-      assert (Datatypes.is_true (ssrbool.isSome (tc_getnode idx tc))) as HH by now rewrite Etc, E.
-      apply tc_getnode_subtc_iff, in_map_iff in HH.
-      destruct HH as (sub & Eid & Hin). rewrite Etc in Hin.
+      apply tc_getnode_has_tid in E. destruct E as (Hin & Eid).
       simpl in Hin. destruct Hin as [ <- | Hin ].
       * simpl in Eid. subst u.
         hnf in Hca. simpl in Hca.
@@ -754,12 +760,50 @@ Proof.
   Intros. Intros lclk_ptrs' lnode_ptrs' lclk' lnode' lstk'.
   unfold treeclock_payload.
   unfold is_pos_tint in *.
+  (* avoid discontinuous hyp naming *)
+  match goal with HH : context [Foralltc ?a tc] |- _ => 
+    match a with context[tc_rootclk] => rename HH into Hcb_tc; pose proof True as HH end end.
+  match goal with HH : context [Foralltc ?a tc'] |- _ => 
+    match a with context[tc_rootclk] => rename HH into Hcb_tc'; pose proof True as HH end end.
   match goal with HH : context [is_tc_clockarray_proj _ tc] |- _ =>
     pose proof (is_tc_clockarray_proj_nth _ _ HH) as Hca_tc end.
   match goal with HH : context [is_tc_clockarray_proj _ tc'] |- _ =>
     pose proof (is_tc_clockarray_proj_nth _ _ HH) as Hca_tc' end.
 
-  forward. forward. forward. forward.
+  forward. forward. 
+  forward_if.
+  {
+    match goal with H : _ |- _ => apply Nat2Z.inj in H; rename H into Erootid end.
+    (* tc.join(tc') = tc *)
+    assert (tc_join tc tc' = tc) as Ejoin.
+    { 
+      destruct tc' as [(z', clk_z', ?) ?], tc as [(z, clk_z, ?) ?]. 
+      unfold tc_join. simpl.
+      simpl in Erootid, H3. subst z.
+      unfold tc_getclk in *.
+      simpl in H3 |- *. destruct (eqdec z' z'); try eqsolve.
+      simpl in H3 |- *. apply Nat.leb_le in H3. now rewrite -> H3.
+    }
+    (* do some grouping *)
+    (* seems like doing two freeze will be troublesome *)
+    freeze (4 :: 5 :: 6 :: 7 :: nil) group'.
+    gather_SEP' (1 :: 2 :: 3 :: 4 :: nil).
+    (* freeze (1 :: 2 :: 3 :: 4 :: nil) group. *)
+    forward.
+    apply sepcon_derives.
+    - unfold treeclock_rep, treeclock_payload.
+      Exists lclk_ptrs lnode_ptrs lclk lnode lstk.
+      entailer!.
+      all: now rewrite -> ! Ejoin.
+    - thaw group'. simpl.
+      unfold treeclock_rep, treeclock_payload.
+      Exists lclk_ptrs' lnode_ptrs' lclk' lnode' lstk'.
+      entailer!.
+  }
+
+  match goal with H : _ |- _ => rewrite -> Nat2Z.inj_iff in H; rename H into Hrootid end.
+  forward. forward. forward.
+
   (* 1:{ entailer!. unfold is_pos_tshort, short_max_signed in *. 
     rewrite Int.signed_repr; try lia. 
     rewrite -> ! two_power_pos_nat. simpl. lia.
@@ -831,7 +875,8 @@ Proof.
   rewrite -> ! sem_add_pi'; auto; try lia.
   *)
 
-
+  (* forward_if is really tedious. *)
+  (*
   forward_if (temp _t'1 (Val.of_bool (ssrbool.isSome (tc_getnode (tc_roottid tc') tc)))).
   { forward.
     entailer!.
@@ -849,6 +894,68 @@ Proof.
     - destruct (tc_getnode (tc_roottid tc') tc) as [ res | ] eqn:E; simpl; auto.
       rewrite -> orb_true_r in H19. eqsolve.
   }
+  *)
+  forward_call.
+  Intros vret.
+  (* retract vret *)
+  match goal with Hvret : vret = (_ || ?a)%bool |- _ => 
+    assert (vret = a) as Evret; [ | clear Hvret ] end.
+  { subst vret. destruct tc as [(u, ?, ?) [ | ]]; simpl; auto.
+    simpl in Hrootid. apply Nat.eqb_neq in Hrootid. now rewrite -> Nat.eqb_sym, -> Hrootid.
+  }
+
+  forward_if.
+  { destruct vret.
+    1:{ unfold eval_unop in H24. simpl in H24. apply typed_true_tint_Vint in H24. eqsolve. }
+    destruct (tc_getnode (tc_roottid tc') tc) as [ res | ] eqn:Eres; try eqsolve.
+    array_focus (Z.of_nat (tc_roottid tc')) lclk witheqn Etmp.
+    rewrite -> Etmp.
+    pose proof Eres as Eclock.
+    apply (tc_getnode_res_Foralltc Hca_tc) in Eclock.
+    destruct Eclock as (Eclock & Eid_res). 
+    rewrite -> Eid_res in Eclock.
+    read_clock witheqn Eclock. clear Eclock.
+    array_unfocus witheqn Etmp.
+
+    forward_if.
+    {
+      pose proof Eres as Ecb.
+      apply (tc_getnode_res_Foralltc Hcb_tc) in Ecb.
+      pose proof (Foralltc_self _ _ Hcb_tc') as Hcb_tc'root. simpl in Hcb_tc'root.
+      rewrite -> ! Int.signed_repr, <- Nat2Z.inj_ge in H25; try lia.
+      replace (tc_rootclk res) with (tc_getclk (tc_roottid tc') tc) in H25
+        by (unfold tc_getclk; now rewrite Eres).
+      (* early return; TODO repeating above? maybe still need to move root eq check here *)
+      (* tc.join(tc') = tc *)
+      assert (tc_join tc tc' = tc) as Ejoin.
+      { 
+        destruct tc' as [(z', clk_z', ?) ?], tc as [(z, clk_z, ?) ?]. 
+        unfold tc_join. simpl.
+        (* ..? *)
+        unfold tc_getclk in H25 |- *. simpl in H25, Eres |- *. rewrite -> Eres in H25 |- *.
+        assert (clk_z' <= tc_rootclk res)%nat as Hle by lia.
+        apply Nat.leb_le in Hle. now rewrite -> Hle.
+      }
+      (* do some grouping *)
+      (* seems like doing two freeze will be troublesome *)
+      freeze (3 :: 5 :: 6 :: 7 :: nil) group'.
+      gather_SEP' (1 :: 2 :: 3 :: 4 :: nil).
+      (* freeze (1 :: 2 :: 3 :: 4 :: nil) group. *)
+      forward.
+      apply sepcon_derives.
+      - unfold treeclock_rep, treeclock_payload.
+        Exists lclk_ptrs lnode_ptrs lclk lnode lstk.
+        entailer!.
+        all: now rewrite -> ! Ejoin.
+      - thaw group'. simpl.
+        unfold treeclock_rep, treeclock_payload.
+        Exists lclk_ptrs' lnode_ptrs' lclk' lnode' lstk'.
+        entailer!.
+    }
+    { give_up. }
+  }
+
+  (* change into another lnode *)
 
 Abort.
 

@@ -6,6 +6,8 @@
 
 // #define get_tid(x) (x-1)
 // #define set_tid(x) (x+1)
+#define get_tid(x) (x)
+#define set_tid(x) (x)
 #define get_node(tree_this, tid) ((tree_this->tree) + tid)
 #define get_clock(tree_this, tid) ((tree_this->clocks) + tid)
 
@@ -88,6 +90,11 @@ TreeClock_T tree_clock_init(int dim){
 
 void join(TreeClock_T self, TreeClock_T tc){
     int root_tid_this = self->root_tid;
+
+    // originally this check is done at !node_is_null(z_node); would this be better?
+    if (root_tid_this == tc->root_tid){
+        return ;
+    }
     
 /*
     if (root_tid_this == zprime_tid || zprime_tid < 0){
@@ -106,7 +113,7 @@ void join(TreeClock_T self, TreeClock_T tc){
     struct Clock* z_clocks = get_clock(self, zprime_tid);
     int z_clock = 0;
     // if (!node_is_null(z_node)){
-    if (root_tid_this == zprime_tid || !node_is_null(z_node)){
+    if (!node_is_null(z_node)){
         z_clock = z_clocks->clock_clk;
         if (zprime_clock <= z_clock){
             return;
@@ -115,6 +122,7 @@ void join(TreeClock_T self, TreeClock_T tc){
             detach_from_neighbors(self, zprime_tid, z_node);
 */
         }
+        z_clock = z_clocks->clock_clk;
     }
 
     // z_clocks->clock_clk = zprime_clocks->clock_clk;

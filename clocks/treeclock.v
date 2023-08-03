@@ -287,7 +287,8 @@ Definition tc_getclk t tc :=
   end.
 
 Section Old_Complaints.
-
+(* things here can be still kept, but no longer useful *)
+(*
   (* seemingly a wrapper of find *)
 
   Fixpoint find_first_some [A : Type] (l : list (option A)) : option A :=
@@ -369,7 +370,7 @@ Section Old_Complaints.
       + now rewrite <- HH.
       + now rewrite <- HH.
   Qed.
-
+*)
 End Old_Complaints.
 
 (* Forall over all subtrees *)
@@ -541,6 +542,24 @@ Qed.
 Corollary tc_getnode_subtc_iff t tc : 
   In t (map tc_roottid (tc_flatten tc)) <-> tc_getnode t tc.
 Proof. apply tc_getnode_in_iff. Qed.
+
+Fact tc_getnode_has_tid t tc res
+  (Hres : tc_getnode t tc = Some res) : In res (tc_flatten tc) /\ tc_roottid res = t.
+Proof. 
+  apply find_some in Hres.
+  now rewrite -> has_same_tid_true in Hres.
+Qed.
+
+Fact tc_getnode_res_Foralltc [t tc res] [P : treeclock -> Prop]
+  (Hp : Foralltc P tc) (Hres : tc_getnode t tc = Some res) : 
+  P res /\ tc_roottid res = t.
+Proof.
+  apply find_some in Hres.
+  rewrite -> has_same_tid_true in Hres.
+  destruct Hres as (Hin & ->).
+  rewrite -> Foralltc_Forall_subtree, -> Forall_forall in Hp.
+  firstorder. 
+Qed.
 
 Fact tid_nodup_find_self tcs (Hnodup : List.NoDup (map tc_roottid tcs)) :
   Forall (fun tc => find (has_same_tid (tc_roottid tc)) tcs = Some tc) tcs.
