@@ -1,6 +1,7 @@
 Require Import VST.floyd.proofauto.
 Require Import distributedclocks.clocks.treeclock.
 From distributedclocks.vst Require Import treeclock_clight util_vst.
+From distributedclocks.utils Require Import libtac.
 
 #[export] Instance CompSpecs : compspecs. make_compspecs prog. Defined.
 Definition Vprog : varspecs. mk_varspecs prog. Defined.
@@ -78,7 +79,9 @@ Definition default_nodefield := (-1)%Z.
 Definition default_nodestruct := node_payload default_nodefield default_nodefield default_nodefield default_nodefield.
 
 Definition tc_headch_Z (tc : @treeclock nat) : Z := 
-  match tc_rootchn tc with nil => (-1)%Z | ch :: _ => Z.of_nat (tc_roottid ch) end.
+  match tc_rootchn tc with nil => default_nodefield | ch :: _ => Z.of_nat (tc_roottid ch) end.
+
+Global Arguments tc_headch_Z _/.
 
 Definition is_tc_nodearray_proj_chnaux (par : nat) (l : list (reptype t_struct_node)) :
   forall (lch : Z) (chn : list treeclock), Prop := 
@@ -171,7 +174,7 @@ Definition treeclock_rep (dim : Z) (tc : @treeclock nat) (plclk plnode : val)
   !! (Zlength lclk_ptrs = dim) && !! (Zlength lclk = dim) &&
   !! (Zlength lnode_ptrs = dim) && !! (Zlength lnode = dim) &&
   !! (is_tc_clockarray_proj lclk tc) && !! (clockarray_emptypart lclk tc) &&
-  !! (is_tc_nodearray_proj lnode tc) && !! (nodearray_emptypart lnode tc) &&
+  !! (is_tc_nodearray_proj_full lnode tc) && !! (nodearray_emptypart lnode tc) &&
   (* TODO this should be subsumed? *)
   (* !! (Foralltc (fun t => Z.of_nat (tc_roottid t) < dim) tc) && *)
   data_at Tsh t_struct_treeclock (treeclock_payload dim (Z.of_nat (tc_roottid tc)) 
@@ -216,13 +219,31 @@ Proof.
   intros ch Hin. specialize (Hproj _ Hin). specialize (Hchn _ Hin). apply IH; auto.
 Qed.
 
-Definition node_struct_regular dim np : Prop :=
+(* TODO is the exists a good design or not? *)
+
+Definition node_struct_regular_wk dim np : Prop :=
   exists z1 z2 z3 z4, 
     np = node_payload z1 z2 z3 z4 /\
     default_nodefield <= z1 < dim /\
     default_nodefield <= z2 < dim /\
     default_nodefield <= z3 < dim /\
     default_nodefield <= z4 < dim.
+
+(* generally, par will not be default *)
+Definition node_struct_regular dim np : Prop :=
+  exists z1 z2 z3 z4, 
+    np = node_payload z1 z2 z3 z4 /\
+    default_nodefield <= z1 < dim /\
+    default_nodefield <= z2 < dim /\
+    default_nodefield < z3 < dim /\
+    default_nodefield <= z4 < dim.
+
+Fact node_struct_regular_weaken dim np : 
+  node_struct_regular dim np -> node_struct_regular_wk dim np.
+Proof.
+  intros (z1 & z2 & z3 & z4 & -> & ? & ? & ? & ?).
+  hnf. exists z1, z2, z3, z4. unfold default_nodefield in *. intuition lia.
+Qed.
 
 Fact is_tc_nodearray_proj_chnaux_regular lnode par lch chn (Hproj : is_tc_nodearray_proj_chnaux par lnode lch chn)
   (* dim (Hlen : Zlength lnode = dim)  *)
@@ -261,30 +282,25 @@ Proof.
 Qed.
 *)
 
-(* TODO may need revise *)
-
 Fact is_tc_nodearray_proj_headch_inrange lnode tc (Hproj : is_tc_nodearray_proj lnode tc) :
   default_nodefield <= tc_headch_Z tc < Zlength lnode.
 Proof.
-  unfold default_nodefield, tc_headch_Z.
   pose proof (Zlength_nonneg lnode).
-  destruct tc as [ ? [ | ] ]; simpl; try lia.
+  destruct tc as [ ? [ | ] ]; simpl; unfold default_nodefield; simpl; try lia.
   apply Foralltc_self in Hproj. 
   apply is_tc_nodearray_proj_chnaux_tid_bounded in Hproj; auto.
   inversion_clear Hproj. lia.
 Qed.
 
-Fact is_tc_nodearray_proj_regular lnode tc (Hproj : is_tc_nodearray_proj lnode tc)
-  (* dim (Hlen : Zlength lnode = dim)  *)
-  (Hu : Z.of_nat (tc_roottid tc) < (Zlength lnode))
-  (HH : node_struct_regular (Zlength lnode) (Znth (Z.of_nat (tc_roottid tc)) lnode)) :
-  Foralltc (fun tc' => node_struct_regular (Zlength lnode) (Znth (Z.of_nat (tc_roottid tc')) lnode)) tc.
+(* leave out the root is more convenient for this proof *)
+Fact is_tc_nodearray_proj_regular_chn lnode tc (Hproj : is_tc_nodearray_proj lnode tc)
+  (Hu : Z.of_nat (tc_roottid tc) < (Zlength lnode)) :
+  Forall (Foralltc (fun tc' => node_struct_regular (Zlength lnode) (Znth (Z.of_nat (tc_roottid tc')) lnode))) (tc_rootchn tc).
 Proof.
-  revert lnode Hproj Hu HH.
+  revert lnode Hproj Hu.
   induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros.
-  simpl in HH, Hu.
-  apply Foralltc_cons_iff in Hproj. destruct Hproj as (Hchn & Hproj). 
-  constructor; simpl; auto.
+  simpl in Hu.
+  apply Foralltc_cons_iff in Hproj. destruct Hproj as (Hchn & Hproj). simpl in Hchn. 
   simpl in Hchn.
   pose proof Hchn as Hchn'. apply is_tc_nodearray_proj_chnaux_tid_bounded in Hchn'.
   apply is_tc_nodearray_proj_chnaux_regular in Hchn; simpl; auto.
@@ -295,35 +311,59 @@ Proof.
     now apply is_tc_nodearray_proj_headch_inrange in Hproj.
   }
   rewrite -> Forall_forall in IH, Hproj, Hchn, Hchn' |- *.
-  intros ch Hin. specialize (Hproj _ Hin). specialize (Hchn _ Hin). specialize (Hchn' _ Hin). 
-  apply IH; auto.
+  intros ch Hin. specialize (Hproj _ Hin). specialize (Hchn _ Hin). specialize (Hchn' _ Hin).
+  destruct ch as [(v, ?, ?) chn_ch] eqn:Ech. simpl in *.
+  constructor; simpl; auto.
+  replace chn_ch with (tc_rootchn ch) by now rewrite Ech.
+  apply IH; rewrite Ech; auto.
 Qed.
 
-Fact is_tc_nodearray_proj_full_regular lnode tc (Hproj : is_tc_nodearray_proj_full lnode tc) :
+Fact is_tc_nodearray_proj_regular lnode tc (Hproj : is_tc_nodearray_proj lnode tc)
   (* dim (Hlen : Zlength lnode = dim)  *)
-  (* (Hu : Z.of_nat (tc_roottid tc) < (Zlength lnode))  *)
+  (Hu : Z.of_nat (tc_roottid tc) < (Zlength lnode))
+  (HH : node_struct_regular (Zlength lnode) (Znth (Z.of_nat (tc_roottid tc)) lnode)) :
   Foralltc (fun tc' => node_struct_regular (Zlength lnode) (Znth (Z.of_nat (tc_roottid tc')) lnode)) tc.
 Proof.
+  destruct tc as [(u, ?, ?) chn] eqn:Etc. simpl in *.
+  constructor; simpl; auto.
+  replace chn with (tc_rootchn tc) by now rewrite Etc.
+  apply is_tc_nodearray_proj_regular_chn; rewrite Etc; auto.
+Qed.
+
+Fact is_tc_nodearray_proj_full_regular_wk lnode tc (Hproj : is_tc_nodearray_proj_full lnode tc) :
+  (* dim (Hlen : Zlength lnode = dim)  *)
+  (* (Hu : Z.of_nat (tc_roottid tc) < (Zlength lnode))  *)
+  Foralltc (fun tc' => node_struct_regular_wk (Zlength lnode) (Znth (Z.of_nat (tc_roottid tc')) lnode)) tc.
+Proof.
+  (* eapply Foralltc_impl. 1: intros ?; apply node_struct_regular_weaken. *)
   destruct Hproj as (Hroot & Hproj). hnf in Hroot.
-  apply is_tc_nodearray_proj_regular; auto.
-  - now apply nth_error_some_inrange_Z in Hroot.
-  - apply nth_error_Znth_result in Hroot.
+  destruct tc as [(u, ?, ?) chn] eqn:Etc. simpl in *.
+  constructor.
+  - simpl. apply nth_error_Znth_result in Hroot.
     hnf. do 4 eexists. rewrite -> Hroot. split; [ reflexivity | ].
     apply is_tc_nodearray_proj_headch_inrange in Hproj.
     pose proof (Zlength_nonneg lnode).
     unfold default_nodefield. intuition lia.
+  - eapply Forall_impl.
+    + intros ? HH; eapply Foralltc_impl.
+      intros ?; apply node_struct_regular_weaken.
+      apply HH.
+    + replace chn with (tc_rootchn tc) by now rewrite Etc.
+      apply is_tc_nodearray_proj_regular_chn.
+      * now subst tc.
+      * rewrite Etc. simpl. now apply nth_error_some_inrange_Z in Hroot.
 Qed.
 
 Fact nodearray_proj_regular lnode tc (Hproj1 : is_tc_nodearray_proj_full lnode tc) 
   (Hproj2 : nodearray_emptypart lnode tc) :
   (* dim (Hlen : Zlength lnode = dim)  *)
-  Forall (node_struct_regular (Zlength lnode)) lnode.
+  Forall (node_struct_regular_wk (Zlength lnode)) lnode.
 Proof.
   (* revert lnode Hproj1 Hproj2.
   induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros. *)
   apply Forall_Znth.
   intros n Hr. destruct (tc_getnode (Z.to_nat n) tc) as [ res | ] eqn:E.
-  - apply is_tc_nodearray_proj_full_regular, Foralltc_Forall_subtree in Hproj1.
+  - apply is_tc_nodearray_proj_full_regular_wk, Foralltc_Forall_subtree in Hproj1.
     rewrite -> Forall_forall in Hproj1.
     assert (Datatypes.is_true (ssrbool.isSome (tc_getnode (Z.to_nat n) tc))) as H by now rewrite E.
     apply tc_getnode_subtc_iff, in_map_iff in H.
@@ -393,6 +433,27 @@ Definition join_spec :=
     (* nothing should change for p' *)
     SEP (treeclock_rep dim (tc_join tc tc') plclk plnode plstk top_ p * treeclock_rep dim tc' plclk' plnode' plstk' top' p').
 
+(* make two function specs for node_is_null; one is straightforward, another is for use *)
+
+Definition node_is_null_spec_local :=
+  DECLARE _node_is_null
+  (* WITH dim : Z, p : val, np : reptype t_struct_node *)
+  WITH dim : Z, p : val, z1 : Z, z2 : Z, z3 : Z, z4 : Z
+  PRE [ tptr t_struct_node ]
+    (* PROP (0 <= dim <= Int.max_signed; node_struct_regular dim np) *)
+    PROP (0 <= dim <= Int.max_signed; 
+      default_nodefield <= z1 < dim;
+      default_nodefield <= z2 < dim;
+      default_nodefield <= z3 < dim;
+      default_nodefield <= z4 < dim)
+    PARAMS (p)
+    SEP (data_at Tsh t_struct_node (node_payload z1 z2 z3 z4) p)
+  POST [ tint ]
+    PROP () 
+    RETURN (Val.of_bool ((z1 =? default_nodefield) && (z2 =? default_nodefield) &&
+      (z3 =? default_nodefield) && (z4 =? default_nodefield))%bool)
+    SEP (data_at Tsh t_struct_node (node_payload z1 z2 z3 z4) p).
+
 Definition node_is_null_spec :=
   DECLARE _node_is_null
   WITH dim : Z, idx : nat, lnode : list (reptype t_struct_node),
@@ -401,19 +462,20 @@ Definition node_is_null_spec :=
     PROP (0 <= dim <= Int.max_signed; Z.of_nat idx < dim; 
       Z.of_nat (tc_roottid tc) < dim; 
       Zlength lnode = dim; 
-      nodearray_emptypart lnode tc; is_tc_nodearray_proj lnode tc)
+      nodearray_emptypart lnode tc; is_tc_nodearray_proj_full lnode tc)
     PARAMS (offset_val (sizeof t_struct_node * Z.of_nat idx) plnode)
     SEP (data_at Tsh (tarray t_struct_node dim) lnode plnode;
       data_at Tsh t_struct_treeclock
         (Vint (Int.repr dim), (Vint (Int.repr (Z.of_nat (tc_roottid tc))), 
           (v1, (plnode, (v2, v3))))) p)
   POST [ tint ]
-    PROP () 
-    RETURN (Val.of_bool (
+    (* use a tmp var to avoid bad type checking; see the subsumption proof for reason *)
+    EX tmp : bool,
+    PROP (tmp = (
       (match tc with Node (mkInfo idx' _ _) nil => Nat.eqb idx idx' | _ => false end) ||
       (match tc_getnode idx tc with None => true | _ => false end)
-    )%bool)
-
+    )%bool) 
+    RETURN (Val.of_bool tmp)
     SEP (data_at Tsh (tarray t_struct_node dim) lnode plnode;
       data_at Tsh t_struct_treeclock
         (Vint (Int.repr dim), (Vint (Int.repr (Z.of_nat (tc_roottid tc))), 
@@ -441,10 +503,10 @@ Definition Gprog : funspecs :=
 Section Main_Proof.
 
 Local Tactic Notation "saturate_lemmas" :=
-  let gen lm := (let Hq := fresh "_Hyp" in pose proof lm as Hq) in
+  let simplegen lm := (let Hq := fresh "_Hyp" in pose proof lm as Hq) in
   (* gen short_max_signed_le_int_max_signed; 
   gen short_max_signed_gt_0;  *)
-  gen Int.min_signed_neg.
+  simplegen Int.min_signed_neg.
 
 (* TODO two design choices: make a pair of tactics (with aux equations), 
   or make a customized Corollary *)
@@ -497,19 +559,188 @@ Local Corollary array_with_hole_intro_alt : forall (sh : Share.t) (t : type) (i 
 Proof SingletonHole.array_with_hole_intro.
 *)
 
-Lemma body_node_is_null: 
-  semax_body Vprog Gprog f_node_is_null node_is_null_spec.
+Local Tactic Notation "repable_signed_gen" constr(lis) :=
+  let rec gen q := 
+    (match eval cbn in q with
+    | nil => idtac
+    | ?x :: ?q' => 
+      (let Hq := fresh "_Hyp" in assert (repable_signed x) as Hq by (hnf; lia));
+      gen q'
+    end) in gen lis.
+
+Lemma body_node_is_null_pre: 
+  semax_body Vprog Gprog f_node_is_null node_is_null_spec_local.
 Proof.
   saturate_lemmas.
 
   start_function.
-  array_focus (Z.of_nat idx) lnode witheqn Etmp.
-  rewrite -> Etmp.
-
-
-
+  (* destruct H0 as (z1 & z2 & z3 & z4 & -> & Hz1 & Hz2 & Hz3 & Hz4). *)
+  (* TODO here we have to unfold default_nodefield ... this is not very good *)
+  unfold node_payload, default_nodefield in *.
+  repable_signed_gen (z1 :: z2 :: z3 :: z4 :: nil).
   forward.
-Abort.
+  remember ((Z.eqb z2 (-1)) && (Z.eqb z1 (-1)))%bool as b1.
+  forward_if (temp _t'1 (Val.of_bool b1)).
+  { rewrite -> neg_repr in H4. apply repr_inj_signed in H4; auto.
+    forward. forward.
+    entailer!.
+    rewrite -> Z.eqb_refl. simpl.
+    f_equal. now apply repable_signed_Z_eqb_Int_eq.
+  }
+  { rewrite -> neg_repr in H4. apply repr_inj_signed' in H4; auto.
+    forward.
+    entailer!.
+    apply Z.eqb_neq in H4. change (-(1)) with (-1) in H4. now rewrite -> H4.
+  }
+  remember (b1 && (Z.eqb z3 (-1)))%bool as b2.
+  forward_if (temp _t'2 (Val.of_bool b2)).
+  { clear Heqb1. subst b1. simpl in Heqb2.
+    forward. forward.
+    entailer!.
+    f_equal. now apply repable_signed_Z_eqb_Int_eq.
+  }
+  { clear Heqb1. subst b1. simpl in Heqb2.
+    forward.
+    entailer!.
+  }
+  remember (b2 && (Z.eqb z4 (-1)))%bool as b3.
+  forward_if (temp _t'3 (Val.of_bool b3)).
+  { clear Heqb2. subst b2. simpl in Heqb3.
+    forward. forward.
+    entailer!.
+    f_equal. now apply repable_signed_Z_eqb_Int_eq.
+  }
+  { clear Heqb2. subst b2. simpl in Heqb3.
+    forward.
+    entailer!.
+  }
+  forward.
+  entailer!. f_equal. now rewrite -> andb_comm with (b1:=(z1 =? -1)).
+Qed.
+
+Fact node_payload_cmp z1 z2 z3 z4 z1' z2' z3' z4' dim (Hdim : 0 <= dim <= Int.max_signed)
+  (H1 : default_nodefield <= z1 < dim) (H1' : default_nodefield <= z1' < dim)
+  (H2 : default_nodefield <= z2 < dim) (H2' : default_nodefield <= z2' < dim)
+  (H3 : default_nodefield <= z3 < dim) (H3' : default_nodefield <= z3' < dim)
+  (H4 : default_nodefield <= z4 < dim) (H4' : default_nodefield <= z4' < dim) :
+  node_payload z1 z2 z3 z4 = node_payload z1' z2' z3' z4' <->
+  z1 = z1' /\ z2 = z2' /\ z3 = z3' /\ z4 = z4'.
+Proof.
+  split.
+  - intros H.
+    saturate_lemmas.
+    unfold node_payload in H.
+    unfold default_nodefield in *.
+    repable_signed_gen (z1 :: z2 :: z3 :: z4 :: z1' :: z2' :: z3' :: z4' :: nil).
+    let rec gen lis := (match lis with nil => idtac 
+      | (?x, ?y) :: ?lis' => 
+        (let Hq := fresh "Hqq" in 
+          assert (Int.repr x = Int.repr y) as Hq by congruence;
+          apply repr_inj_signed in Hq; auto; subst x); 
+        gen lis'
+    end) in gen ((z1, z1') :: (z2, z2') :: (z3, z3') :: (z4, z4') :: nil).
+  - now intros (-> & -> & -> & ->).
+Qed.
+
+Fact default_nodestruct_cmp z1 z2 z3 z4 dim (Hdim : 0 <= dim <= Int.max_signed)
+  (H1 : default_nodefield <= z1 < dim)
+  (H2 : default_nodefield <= z2 < dim)
+  (H3 : default_nodefield <= z3 < dim)
+  (H4 : default_nodefield <= z4 < dim) :
+  node_payload z1 z2 z3 z4 = default_nodestruct <->
+  z1 = default_nodefield /\ z2 = default_nodefield /\ z3 = default_nodefield /\ z4 = default_nodefield.
+Proof.
+  apply node_payload_cmp with (dim:=dim); auto.
+  all: unfold default_nodefield; lia.
+Qed.
+
+Lemma subsume_node_is_null : funspec_sub (snd node_is_null_spec_local) (snd node_is_null_spec).
+Proof.
+  saturate_lemmas.
+
+  do_funspec_sub.
+  destruct w as ((((((((dim, idx), lnode), tc), ?), plnode), ?), ?), p).
+  entailer!.
+  array_focus (Z.of_nat idx) lnode witheqn Etmp.
+  match goal with H1 : context[is_tc_nodearray_proj_full], 
+    H2 : context[nodearray_emptypart] |- _ => 
+    pose proof (nodearray_proj_regular _ _ H1 H2) as Hreg end.
+  rewrite -> Forall_forall_Znth in Hreg. 
+  specialize (Hreg _ (conj (Zle_0_nat idx) H1)).
+  destruct Hreg as (z1 & z2 & z3 & z4 & Es & Hz1 & Hz2 & Hz3 & Hz4).
+  rewrite -> Es.
+  match type of Etmp with _ = ?v => Exists (((((Zlength lnode, v), z1), z2), z3), z4) end.
+  match goal with |- (_ * ?a * ?b) |-- _ => Exists (a * b)%logic end.
+  rewrite -> Etmp. (* ? *)
+  entailer!.
+  intros.
+  EExists. entailer!. (* eauto for tmp *)
+  2: array_unfocus witheqn Etmp; auto.
+
+  (* pure proof *)
+  split. 2: match goal with |- Val.of_bool ?b <> _ => now destruct b end.
+  match goal with HH : _ = ?b |- _ = ?b => rewrite <- HH; clear HH end.
+  f_equal.
+  destruct (tc_getnode idx tc) as [ res | ] eqn:E.
+  - rewrite -> orb_false_r.
+    destruct tc as [ (u, ?, ?) [ | ch chn ] ] eqn:Etc.
+    + simpl in E. 
+      destruct (eqdec u idx) as [ -> | ]; simpl in E; try eqsolve.
+      injection E as <-.
+      match goal with H : context[is_tc_nodearray_proj_full] |- _ => 
+        destruct H as (Hca & _) end.
+      hnf in Hca. simpl in Hca.
+      apply nth_error_Znth_result in Hca. rewrite -> Hca in Es.
+      symmetry in Es. rewrite -> default_nodestruct_cmp with (dim:=Zlength lnode) in Es; auto.
+      destruct Es as (-> & -> & -> & ->).
+      now rewrite -> Nat.eqb_refl, -> ! Z.eqb_refl.
+    + remember (ch :: chn) as chnn eqn:Echn.
+      match goal with H : context[is_tc_nodearray_proj_full] |- _ => 
+        destruct H as (Hca & Hproj) end.
+      assert (Datatypes.is_true (ssrbool.isSome (tc_getnode idx tc))) as HH by now rewrite Etc, E.
+      apply tc_getnode_subtc_iff, in_map_iff in HH.
+      destruct HH as (sub & Eid & Hin). rewrite Etc in Hin.
+      simpl in Hin. destruct Hin as [ <- | Hin ].
+      * simpl in Eid. subst u.
+        hnf in Hca. simpl in Hca.
+        apply nth_error_Znth_result in Hca. rewrite -> Hca, -> Echn in Es.
+        rewrite -> node_payload_cmp with (dim:=Zlength lnode) in Es; auto.
+        all: try solve [ unfold default_nodefield; lia ].
+        apply is_tc_nodearray_proj_headch_inrange in Hproj.
+        now rewrite -> Echn in Hproj.
+      * apply is_tc_nodearray_proj_regular_chn in Hproj; auto.
+        simpl in Hproj.
+        apply in_flat_map in Hin. destruct Hin as (ch' & Hin_ch' & Hin).
+        rewrite -> Forall_forall in Hproj. specialize (Hproj _ Hin_ch').
+        rewrite -> Foralltc_Forall_subtree, -> Forall_forall in Hproj. specialize (Hproj _ Hin).
+        rewrite -> Eid in Hproj. 
+        destruct Hproj as (z1' & z2' & z3' & z4' & Estruct & ? & ? & ? & ?).
+        (* lia is more powerful than I have thought. *)
+        rewrite -> Estruct, -> node_payload_cmp with (dim:=Zlength lnode) in Es; auto; try lia.
+  - rewrite -> orb_true_r. 
+    (* TODO repeating somewhere above? *)
+    destruct (nth_error lnode idx) eqn:Ee.
+    2:{ apply nth_error_None in Ee. rewrite <- ZtoNat_Zlength in Ee. lia. }
+    pose proof Ee as Ee'. 
+    apply nth_error_Znth_result in Ee'. 
+    match goal with H : context[nodearray_emptypart] |- _ => 
+      apply H in Ee; auto end. subst r.
+    rewrite -> Es in Ee'. 
+
+    rewrite -> default_nodestruct_cmp with (dim:=Zlength lnode) in Ee'; auto.
+    destruct Ee' as (-> & -> & -> & ->).
+    now rewrite -> ! Z.eqb_refl.
+Qed.
+
+Lemma body_node_is_null: 
+  semax_body Vprog Gprog f_node_is_null node_is_null_spec.
+Proof.
+  eapply semax_body_funspec_sub.
+  1: apply body_node_is_null_pre.
+  1: apply subsume_node_is_null.
+  compute. (* ? *)
+  repeat constructor; simpl; lia.
+Qed.
 
 Theorem body_join: 
   semax_body Vprog Gprog f_join join_spec.
@@ -601,15 +832,24 @@ Proof.
   *)
 
 
+  forward_if (temp _t'1 (Val.of_bool (ssrbool.isSome (tc_getnode (tc_roottid tc') tc)))).
+  { forward.
+    entailer!.
+    apply Nat2Z.inj in H18.
+    destruct tc as [(?, ?, ?) ?]. simpl in H18. rewrite -> H18.
+    simpl. destruct (eqdec (tc_roottid tc') (tc_roottid tc')); simpl; auto; try contradiction.
+  }
+  { forward_call.
+    Intros vret.
+    forward.
+    destruct vret; entailer!.
+    - destruct (tc_getnode (tc_roottid tc') tc) as [ res | ] eqn:E; simpl; auto.
+      destruct tc as [ (u, ?, ?) [ | ] ]; simpl in E, H19; try eqsolve.
+      destruct (eqdec u (tc_roottid tc')) as [ -> | ]; simpl in E; eqsolve.
+    - destruct (tc_getnode (tc_roottid tc') tc) as [ res | ] eqn:E; simpl; auto.
+      rewrite -> orb_true_r in H19. eqsolve.
+  }
 
-
-(*
-  forward_if (temp _t'1 (Val.of_bool (orb
-    (Nat.eqb (tc_roottid tc) (tc_roottid tc'))
-    ()))).
-
-  forward.
-*)
 Abort.
 
 End Main_Proof.

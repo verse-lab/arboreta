@@ -6,3 +6,6 @@ Global Tactic Notation "removehead" hyp(H) :=
     [ pose proof (H qq) as qq2; clear H; rename qq2 into H; clear qq | ]
   end
 .
+
+Global Tactic Notation "eqsolve" := 
+  intuition congruence; intuition discriminate.

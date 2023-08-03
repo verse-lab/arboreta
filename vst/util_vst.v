@@ -55,3 +55,15 @@ Proof.
   intros HH. apply List.nth_error_nth with (d:=default) in HH.
   now rewrite <- nth_Znth'.
 Qed.
+
+Fact repable_signed_Z_eqb_Int_eq (x y : Z) 
+  (Hx : repable_signed x) (Hy : repable_signed y) :
+  Z.eqb x y = Int.eq (Int.repr x) (Int.repr y).
+Proof.
+  pose proof (int_cmp_repr Ceq _ _ Hx Hy) as H.
+  pose proof (int_cmp_repr Cne _ _ Hx Hy) as H0.
+  simpl in H, H0.
+  destruct (Int.eq (Int.repr x) (Int.repr y)) eqn:E; intuition.
+  - now apply Z.eqb_eq.
+  - now apply Z.eqb_neq.
+Qed.

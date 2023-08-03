@@ -88,17 +88,20 @@ TreeClock_T tree_clock_init(int dim){
 
 void join(TreeClock_T self, TreeClock_T tc){
     int root_tid_this = self->root_tid;
-    int zprime_tid = tc->root_tid;
+    
 /*
     if (root_tid_this == zprime_tid || zprime_tid < 0){
         return ;
     }
 */
     // struct Clock* zprime_clocks = get_local_root_data(tc);
-    struct Clock* zprime_clocks = get_clock(tc, zprime_tid);
     // struct Clock* zprime_clocks = &(tc->clocks[zprime_tid]);
-    int zprime_clock = zprime_clocks->clock_clk;
 
+    int zprime_tid = tc->root_tid;
+    struct Clock* zprime_clocks = get_clock(tc, zprime_tid);
+    // for alignment, this line should be removed.
+    //      ... but complete alignment is hard (due to the root check), so skip for now
+    int zprime_clock = zprime_clocks->clock_clk;
     struct Node* z_node = get_node(self, zprime_tid);
     struct Clock* z_clocks = get_clock(self, zprime_tid);
     int z_clock = 0;
@@ -117,15 +120,13 @@ void join(TreeClock_T self, TreeClock_T tc){
     // z_clocks->clock_clk = zprime_clocks->clock_clk;
     // // copy the clock of this.clocks[this.rootTid] to zprime_clocks's aclk and return
     // z_clocks->clock_aclk = (get_clock(self, root_tid_this))->clock_clk;
-    // struct Node* this_root_node = get_node(self, root_tid_this);
 
-    // int root_head_child = -1;
-    // if (this_root_node->node_headch != 0){
-    //     root_head_child = get_tid(this_root_node->node_headch);
+    // struct Node* this_root_node = get_node(self, root_tid_this);
+    // int root_head_child = get_tid(this_root_node->node_headch);
+    // if (root_head_child != -1){
     //     struct Node *ndtmp = get_node(self, root_head_child);
     //     ndtmp->node_prev = set_tid(zprime_tid);
     // }
-
     // z_node->node_next = set_tid(root_head_child);
     // z_node->node_par = set_tid(root_tid_this);
     // // noop: this.clocks[zprime_tid] = z_clocks;
@@ -163,6 +164,7 @@ void join(TreeClock_T self, TreeClock_T tc){
     //     u_clocks->clock_aclk = uprime_clocks->clock_aclk;
         
     //     int y = get_tid((get_node(tc, uprime_tid))->node_par);
+
     //     struct Node* y_node = get_node(self, y);
     //     int head_child = get_tid(y_node->node_headch);
     //     // here, little change of the condition
@@ -170,7 +172,6 @@ void join(TreeClock_T self, TreeClock_T tc){
     //         struct Node *ndtmp = get_node(self, head_child);
     //         ndtmp->node_prev = set_tid(uprime_tid);
     //     }
-
     //     u_node->node_next = set_tid(head_child);
     //     u_node->node_par = set_tid(y);
     //     // noop: this.tree[uprime_tid] = u_node;
