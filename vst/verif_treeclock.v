@@ -78,9 +78,12 @@ Definition default_nodefield := (-1)%Z.
 
 Definition default_nodestruct := node_payload default_nodefield default_nodefield default_nodefield default_nodefield.
 
-Definition tc_headch_Z (tc : @treeclock nat) : Z := 
-  match tc_rootchn tc with nil => default_nodefield | ch :: _ => Z.of_nat (tc_roottid ch) end.
+Definition tcs_head_Z (tcs : list (@treeclock nat)) : Z := 
+  match tcs with nil => default_nodefield | ch :: _ => Z.of_nat (tc_roottid ch) end.
 
+Definition tc_headch_Z (tc : @treeclock nat) : Z := tcs_head_Z (tc_rootchn tc).
+
+Global Arguments tcs_head_Z _/.
 Global Arguments tc_headch_Z _/.
 
 Definition is_tc_nodearray_proj_chnaux (par : nat) (l : list (reptype t_struct_node)) :
@@ -1020,6 +1023,23 @@ Proof.
   - rewrite -> IH. now destruct (List.split l1), (List.split l2).
 Qed.
 
+(* FIXME: this is way too long. need revise *)
+
+Fact par_subtc_trace tc res l tc_par (Hsub : subtc_witness l tc_par tc) (Hin : In res (tc_rootchn tc_par)) :
+  exists ch, In ch (tc_rootchn tc) /\ subtc res ch.
+Proof.
+  destruct tc as [(u, clk, aclk) chn].
+  destruct l as [ | x l ].
+  - hnf in Hsub. simpl in Hsub. injection Hsub as <-. simpl in Hin.
+    exists res. split; auto. hnf. apply tc_flatten_self_in.
+  - hnf in Hsub. simpl in Hsub.
+    destruct (nth_error chn x) as [ ch | ] eqn:Enth; try eqsolve.
+    pose proof Enth as Hin_ch. apply nth_error_In in Hin_ch.
+    exists ch. split; auto. eapply subtc_trans.
+    + apply subtc_chn, Hin.
+    + apply subtc_witness_iff. eauto.
+Qed.
+
 Fact tc_detach_single_node tc
   (Hnodup : NoDup (map tc_roottid (tc_flatten tc))) :
   forall res 
@@ -1033,6 +1053,9 @@ Proof.
   simpl in Hnodup.
   rewrite -> NoDup_cons_iff in Hnodup. destruct Hnodup as (Hnotin & Hnodup).
   (* only one special child to be considered *)
+  pose proof Hsub as Htmp. eapply par_subtc_trace with (res:=res) in Htmp; auto.
+  simpl in Htmp. destruct Htmp as (ch & Hin_ch & Hsub_ch).
+  (*
   assert (exists ch, In ch chn /\ subtc res ch) as (ch & Hin_ch & Hsub_ch).
   {
     destruct l as [ | x l ].
@@ -1045,6 +1068,7 @@ Proof.
       + apply subtc_chn, Hin.
       + apply subtc_witness_iff. eauto.
   }
+  *)
   pose proof (in_split _ _ Hin_ch) as (pre & suf & Echn).
   rewrite Echn in Hnodup. rewrite <- flat_map_app, -> map_app in Hnodup.
   simpl in Hnodup. rewrite -> map_app in Hnodup.
@@ -1216,8 +1240,21 @@ Proof.
       all: subst; apply List.Forall_map; now apply Forall_forall.
     }
 
-    assert (tc_roottid ch <> tc_roottid res) as Hneq by admit.
-    assert (tc_roottid res' <> tc_roottid res) as Hneq' by admit.
+    assert (tc_roottid ch <> tc_roottid res) as Hneq.
+    {
+      destruct ch as [(v, ?, ?) ?]. simpl. intros ->.
+      simpl in Hnodup_ch. apply NoDup_cons_iff, proj1 in Hnodup_ch.
+      apply par_subtc_trace with (res:=res) in Hsub; auto.
+      simpl in Hsub. destruct Hsub as (ch0 & Hin0 & Hsub0).
+      apply Hnodup_ch, map_flat_map_In.
+      exists ch0. split; auto. now apply in_map.
+    }
+    assert (tc_roottid res' <> tc_roottid res) as Hneq'.
+    {
+      epose proof (tc_detach_nodes_fst_is_prefix _ _) as Htmp.
+      rewrite IH in Htmp. simpl in Htmp. 
+      apply prefixtc_rootinfo_same, tc_rootinfo_tid_inj in Htmp. eqsolve.
+    }
     (* TODO repeating *)
     simpl. f_equal. 1: f_equal. 2: f_equal.
     all: subst new_chn' forest' chn; rewrite -> filter_app; simpl.
@@ -1231,7 +1268,7 @@ Proof.
     all: destruct (eqdec (tc_roottid res) (tc_roottid res')); simpl; try eqsolve.
     rewrite -> upd_Znth_char; auto.
     subst x. apply Zlength_correct.
-Admitted.
+Qed.
 
 (*
     pose proof Enth as Hin_ch. apply nth_error_In in Hin_ch.
@@ -1319,6 +1356,32 @@ Admitted.
 
 (* rather customized *)
 
+(*
+Fact is_tc_nodearray_proj_chnaux_congr chn : forall lnode par prev chn' 
+  (Hcong : map tc_rootinfo chn = map tc_rootinfo chn')
+  (Hproj : is_tc_nodearray_proj_chnaux par lnode prev chn),
+  is_tc_nodearray_proj_chnaux par lnode prev chn'.
+Proof.
+  induction chn as [ | ch chn IH ]; intros.
+  - destruct chn'; simpl in Hcong; try eqsolve.
+  - destruct chn' as [ | ch' chn' ]; simpl in Hcong; try eqsolve.
+    inversion Hcong.
+    simpl in Hproj |- *. destruct Hproj as (HH & Hproj).
+    eapply IH in H1. 2: apply Hproj.
+    apply tc_rootinfo_tid_inj in H0. 
+    split; try eqsolve. 
+*)
+
+(*
+Fact is_tc_nodearray_proj_chnaux_congr lnode par 
+
+Fact tc_locate_update_remove_ch_rootinfo_intact ch l tc_par idx
+  (Hsub : tc_locate ch l = Some tc_par) :
+  (tc_rootinfo (tc_locate_update ch l (tc_remove_ch tc_par idx))) = 
+  (tc_rootinfo ch).
+Proof.
+*)
+
 Definition node_struct_upd_next (next : Z) (np : reptype t_struct_node) :=
   match np with (_, (z2, (z3, z4))) => (Vint (Int.repr next), (z2, (z3, z4))) end.
 
@@ -1330,6 +1393,111 @@ Definition node_struct_upd_par (par : Z) (np : reptype t_struct_node) :=
 
 Definition node_struct_upd_headch (headch : Z) (np : reptype t_struct_node) :=
   match np with (z1, (z2, (z3, _))) => (z1, (z2, (z3, Vint (Int.repr headch)))) end.
+
+Fact is_tc_nodearray_proj_chnaux_indom_preserve chn : forall lnode par prev
+  (Hproj : is_tc_nodearray_proj_chnaux par lnode prev chn)
+  lnode' (Hlen : Zlength lnode = Zlength lnode')
+  (Hpre : forall idx, In idx (map tc_roottid chn) -> 
+    Znth (Z.of_nat idx) lnode = Znth (Z.of_nat idx) lnode'),
+  is_tc_nodearray_proj_chnaux par lnode' prev chn.
+Proof.
+  induction chn as [ | ch chn IH ]; intros; simpl in *; auto.
+  destruct Hproj as (HH & Hproj). split.
+  - apply Znth_nth_error_result.
+    1: rewrite <- ZtoNat_Zlength, <- Hlen, -> ZtoNat_Zlength; 
+      now apply nth_error_some_inrange in HH.
+    apply nth_error_Znth_result in HH.
+    rewrite <- Hpre; auto. 
+  - eapply IH; eauto.
+Qed.
+
+(*
+Fact is_tc_nodearray_proj_chnaux_upd_preserve chn : forall lnode par prev
+  (Hproj : is_tc_nodearray_proj_chnaux par lnode prev chn)
+  idx (Hnotin : ~ In idx (map tc_roottid chn)) np, 
+  is_tc_nodearray_proj_chnaux par (upd_Znth (Z.of_nat idx) lnode np) prev chn.
+Proof.
+  induction chn as [ | ch chn IH ]; intros; simpl in *; auto.
+  destruct Hproj as (HH & Hproj). split.
+  - apply Znth_nth_error_result.
+    1: rewrite <- ZtoNat_Zlength, -> Zlength_upd_Znth, -> ZtoNat_Zlength; 
+      now apply nth_error_some_inrange in HH.
+    apply nth_error_Znth_result in HH.
+    rewrite <- HH. rewrite -> Znth_upd_Znth_diff; auto; lia.
+  - apply IH; eqsolve.
+Qed.
+*)
+
+Fact is_tc_nodearray_proj_indom_preserve lnode tc (Hproj : is_tc_nodearray_proj lnode tc) :
+  forall lnode' (Hlen : Zlength lnode = Zlength lnode')
+  (Hpre : forall idx, In idx (map tc_roottid (tc_flatten tc)) -> 
+    Znth (Z.of_nat idx) lnode = Znth (Z.of_nat idx) lnode'),
+  is_tc_nodearray_proj lnode' tc.
+Proof.
+  induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros.
+  simpl in Hpre.
+  setoid_rewrite -> map_flat_map_In in Hpre.
+  hnf in Hproj |- *. rewrite -> Foralltc_cons_iff in Hproj. destruct Hproj as (H & Hproj).
+  constructor.
+  - eapply is_tc_nodearray_proj_chnaux_indom_preserve; eauto.
+    simpl. setoid_rewrite in_map_iff. intros idx (ch & <- & Hin). apply Hpre. right. 
+    exists ch. split; auto. apply in_map, tc_flatten_self_in.
+  - rewrite -> Forall_forall in IH, Hproj |- *.
+    intros ch Hin. apply IH; auto. 1: apply Hproj; auto.
+    intros idx HH. apply Hpre. right. eauto.
+Qed.
+
+Fact is_tc_nodearray_proj_upd_preserve lnode tc (Hproj : is_tc_nodearray_proj lnode tc)
+  idx (Hnotin : ~ In idx (map tc_roottid (tc_flatten tc))) np :
+  is_tc_nodearray_proj (upd_Znth (Z.of_nat idx) lnode np) tc.
+Proof.
+  eapply is_tc_nodearray_proj_indom_preserve. 
+  - apply Hproj.
+  - now rewrite -> Zlength_upd_Znth.
+  - intros idx' Hin. destruct (Nat.eq_dec idx idx') as [ <- | Hneq ]; try eqsolve.
+    rewrite -> Znth_upd_Znth_diff; auto; try lia.
+Qed.
+
+(*
+Fact is_tc_nodearray_proj_upd_preserve lnode tc (Hproj : is_tc_nodearray_proj lnode tc) :
+  forall idx (Hnotin : ~ In idx (map tc_roottid (tc_flatten tc))) np, 
+  is_tc_nodearray_proj (upd_Znth (Z.of_nat idx) lnode np) tc.
+Proof.
+  induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros.
+  simpl in Hnotin.
+  apply Decidable.not_or in Hnotin. destruct Hnotin as (Hneq & Hnotin).
+  rewrite -> map_flat_map_In in Hnotin.
+  hnf in Hproj |- *. rewrite -> Foralltc_cons_iff in Hproj. destruct Hproj as (H & Hproj).
+  constructor.
+  - apply is_tc_nodearray_proj_chnaux_upd_preserve; auto.
+    simpl. rewrite in_map_iff. intros (ch & <- & Hin). apply Hnotin.
+    exists ch. split; auto. apply in_map, tc_flatten_self_in.
+  - rewrite -> Forall_forall in IH, Hproj |- *.
+    intros ch Hin. apply IH; auto. 1: apply Hproj; auto.
+    intros HH. apply Hnotin. eauto.
+Qed.
+*)
+
+Definition tc_detach_par_upd idx (pre suf : list (@treeclock nat)) lnode :=
+  match pre with 
+  | _ :: _ => lnode 
+  | nil => upd_Znth (Z.of_nat idx) lnode 
+    (node_struct_upd_headch (tcs_head_Z suf) (Znth (Z.of_nat idx) lnode))
+  end.
+
+Definition tc_detach_prev_upd (pre suf : list (@treeclock nat)) lnode :=
+  match rev pre with 
+  | nil => lnode
+  | prev :: _ => upd_Znth (Z.of_nat (tc_roottid prev)) lnode 
+    (node_struct_upd_headch (tcs_head_Z suf) (Znth (Z.of_nat (tc_roottid prev)) lnode))
+  end.
+
+Definition tc_detach_next_upd (pre suf : list (@treeclock nat)) lnode :=
+  match suf with 
+  | nil => lnode
+  | next :: _ => upd_Znth (Z.of_nat (tc_roottid next)) lnode 
+    (node_struct_upd_headch (tcs_head_Z (rev pre)) (Znth (Z.of_nat (tc_roottid next)) lnode))
+  end.
 
 Fact tc_locate_update_remove_ch_proj l :
   forall res tc
@@ -1364,7 +1532,34 @@ Fact tc_locate_update_remove_ch_proj l :
   is_tc_nodearray_proj lnode' tc_pivot /\ is_tc_nodearray_proj lnode' res.
 Proof.
   induction l as [ | x l IH ]; intros.
-  - admit.
+  - hnf in Hsub. simpl in Hsub. injection Hsub as <-.
+    destruct tc as [ni chn] eqn:Etc.
+    assert (tc_remove_ch (Node ni chn) (tc_roottid res) = Node ni (pre ++ suf)) as Eremovech.
+    {
+      (* TODO will repeat here? *)
+      (* rewrite -> Echn_par, -> filter_app in Etc_pivot. simpl in Etc_pivot. *)
+      admit.
+    }
+    rewrite -> Eremovech in Etc_pivot. simpl in Echn_par, Etc_pivot. subst tc_pivot.
+    
+    rewrite -> Echn_par in Hproj. hnf in Hproj.
+    rewrite -> Foralltc_cons_iff, -> List.Forall_app, -> Forall_cons_iff in Hproj.
+    split.
+    + admit.
+    + eapply is_tc_nodearray_proj_upd_preserve. 1: apply Hproj.
+      1: admit.
+
+
+    
+
+
+    
+
+    hnf in Hproj. 
+
+
+
+    admit.
   - destruct tc as [ni chn] eqn:Etc.
     hnf in Hsub. simpl in Hsub, Etc_pivot.
     destruct (nth_error chn x) as [ ch | ] eqn:Enth; try eqsolve.
@@ -1374,6 +1569,7 @@ Proof.
     + split; try tauto. destruct Hcon as (Hcon & _).
       constructor.
       * (* as long as the list of ni does not change ... *)
+        simpl.
         admit.
       * apply nth_error_split in Enth.
         destruct Enth as (pre' & suf' & Echn & Elen).

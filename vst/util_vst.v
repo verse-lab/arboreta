@@ -56,6 +56,14 @@ Proof.
   now rewrite <- nth_Znth'.
 Qed.
 
+Fact Znth_nth_error_result {A : Type} `{Inhabitant A} n (l : list A) res 
+  (Hlt : (n < length l)%nat) :
+  Znth (Z.of_nat n) l = res -> nth_error l n = Some res.
+Proof.
+  intros HH. apply nth_error_nth' with (d:=default) in Hlt.
+  rewrite -> Hlt, <- HH. f_equal. now apply nth_Znth'.
+Qed.
+
 Fact repable_signed_Z_eqb_Int_eq (x y : Z) 
   (Hx : repable_signed x) (Hy : repable_signed y) :
   Z.eqb x y = Int.eq (Int.repr x) (Int.repr y).
