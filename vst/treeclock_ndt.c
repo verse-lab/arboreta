@@ -80,6 +80,31 @@ TreeClock_T tree_clock_init(int dim){
     return tc_new;
 }
 
+void detach_from_neighbors(TreeClock_T self, int t, struct Node* nd){
+    int t_next = get_tid(nd->node_next);
+    int t_prev = get_tid(nd->node_prev);
+    int t_parent = get_tid(nd->node_par);
+
+    // FIXME: this is not necessary, but would make things slightly easier?
+    // nd->node_next = NODE_NULL;
+    // nd->node_prev = NODE_NULL;
+    // nd->node_par = NODE_NULL;
+
+    struct Node* parent_node = get_node(self, t_parent);
+
+    if (get_tid(parent_node->node_headch) == t) {
+        parent_node->node_headch = set_tid(t_next);
+    } else {
+        struct Node* prev_node = get_node(self, t_prev);
+        prev_node->node_next = set_tid(t_next);
+    }
+
+    if (t_next != NODE_NULL) {
+        struct Node* next_node = get_node(self, t_next);
+        next_node->node_prev = set_tid(t_prev);
+    }
+}
+
 // struct Clock* get_clock(TreeClock_T tree_this, int tid){
 //     return ((tree_this->clocks) + tid);
 // }
@@ -117,29 +142,26 @@ void join(TreeClock_T self, TreeClock_T tc){
         z_clock = z_clocks->clock_clk;
         if (zprime_clock <= z_clock){
             return;
-/*
         } else {
             detach_from_neighbors(self, zprime_tid, z_node);
-*/
         }
-        z_clock = z_clocks->clock_clk;
     }
 
-    // z_clocks->clock_clk = zprime_clocks->clock_clk;
+    z_clocks->clock_clk = zprime_clocks->clock_clk;
     // // copy the clock of this.clocks[this.rootTid] to zprime_clocks's aclk and return
-    // z_clocks->clock_aclk = (get_clock(self, root_tid_this))->clock_clk;
+    z_clocks->clock_aclk = (get_clock(self, root_tid_this))->clock_clk;
 
-    // struct Node* this_root_node = get_node(self, root_tid_this);
-    // int root_head_child = get_tid(this_root_node->node_headch);
-    // if (root_head_child != -1){
-    //     struct Node *ndtmp = get_node(self, root_head_child);
-    //     ndtmp->node_prev = set_tid(zprime_tid);
-    // }
-    // z_node->node_next = set_tid(root_head_child);
-    // z_node->node_par = set_tid(root_tid_this);
-    // // noop: this.clocks[zprime_tid] = z_clocks;
-    // // noop: this.tree[zprime_tid] = z_node;
-    // this_root_node->node_headch = set_tid(zprime_tid);
+    struct Node* this_root_node = get_node(self, root_tid_this);
+    int root_head_child = get_tid(this_root_node->node_headch);
+    if (root_head_child != NODE_NULL){
+        struct Node *ndtmp = get_node(self, root_head_child);
+        ndtmp->node_prev = set_tid(zprime_tid);
+    }
+    z_node->node_next = set_tid(root_head_child);
+    z_node->node_par = set_tid(root_tid_this);
+    // noop: this.clocks[zprime_tid] = z_clocks;
+    // noop: this.tree[zprime_tid] = z_node;
+    this_root_node->node_headch = set_tid(zprime_tid);
 
     // int vprime_tid = get_tid((get_node(tc, zprime_tid))->node_headch);
     // while (vprime_tid != 0){
