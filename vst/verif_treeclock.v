@@ -1447,6 +1447,18 @@ Proof.
   - eapply IH; eauto.
 Qed.
 
+Fact is_tc_nodearray_proj_chnaux_upd_preserve chn : forall lnode par prev
+  (Hproj : is_tc_nodearray_proj_chnaux par lnode prev chn)
+  idx (Hnotin : ~ In idx (map tc_roottid chn)) np,
+  is_tc_nodearray_proj_chnaux par (upd_Znth (Z.of_nat idx) lnode np) prev chn.
+Proof.
+  intros. eapply is_tc_nodearray_proj_chnaux_indom_preserve. 
+  - apply Hproj.
+  - now rewrite -> Zlength_upd_Znth.
+  - intros idx' Hin. destruct (Nat.eq_dec idx idx') as [ <- | Hneq ]; try eqsolve.
+    rewrite -> Znth_upd_Znth_diff; auto; try lia.
+Qed.
+
 (*
 Fact is_tc_nodearray_proj_chnaux_upd_preserve chn : forall lnode par prev
   (Hproj : is_tc_nodearray_proj_chnaux par lnode prev chn)
@@ -1586,6 +1598,150 @@ Proof.
     apply is_tc_nodearray_proj_upd_preserve; auto.
 Qed.
 
+(* TODO why this is not proved? *)
+
+Fact Foralltc_subtc P (tc : @treeclock nat) sub (Hsub : subtc sub tc)
+  (H : Foralltc P tc) : P sub.
+Proof. rewrite -> Foralltc_Forall_subtree, -> Forall_forall in H. auto. Qed. 
+
+Fact tc_remove_ch_chnaux_proj_pre : forall pre res lnode par suf
+  (Hnodup : NoDup (map tc_roottid (pre ++ res :: suf)))
+  prev (Hproj : is_tc_nodearray_proj_chnaux par lnode prev (pre ++ res :: suf))
+  f_prev_upd (Efprev : f_prev_upd = tc_detach_prev_upd pre suf)
+  f_next_upd (Efnext : f_next_upd = fun lnodee => match suf with
+    | [] => lnodee
+    | next :: _ =>
+        upd_Znth (Z.of_nat (tc_roottid next)) lnodee
+          (node_struct_upd_prev (match (rev pre) with nil => prev 
+            | ch :: _ => Z.of_nat (tc_roottid ch) end)
+            (Znth (Z.of_nat (tc_roottid next)) lnodee))
+    end)
+  lnode'
+  (Elnode' : lnode' = (fold_right (fun f l => f l) lnode [f_next_upd; f_prev_upd])),
+  is_tc_nodearray_proj_chnaux par lnode' prev (pre ++ suf).
+Proof.
+  intros pre res lnode par. 
+  induction pre as [ | q pre IH ]; intros; simpl.
+  - unfold tc_detach_prev_upd in Efprev. simpl in Efprev. 
+    subst f_prev_upd f_next_upd. simpl in Elnode'.
+    simpl in Hproj. apply proj2 in Hproj.
+    destruct suf as [ | next suf ]; auto.
+    simpl in Hproj |- *. destruct Hproj as (Hnext & Hproj). split.
+    + (* the length is so ... *)
+      pose proof Hnext as Htmp1. apply nth_error_some_inrange in Htmp1.
+      pose proof Hnext as Htmp2. apply nth_error_some_inrange_Z in Htmp2.
+      apply Znth_nth_error_result.  
+      1: subst lnode'; rewrite <- ZtoNat_Zlength, -> Zlength_upd_Znth, -> ZtoNat_Zlength; auto.
+      subst lnode'. rewrite -> upd_Znth_same; auto; try lia.
+      apply nth_error_Znth_result in Hnext. now rewrite Hnext.
+    + subst lnode'. apply is_tc_nodearray_proj_chnaux_upd_preserve; auto.
+      simpl in Hnodup. rewrite -> ! NoDup_cons_iff in Hnodup. tauto.
+  - simpl in Hnodup. rewrite -> NoDup_cons_iff in Hnodup.
+    destruct Hnodup as (Hdj & Hnodup).
+    simpl in Hproj. destruct Hproj as (Hq & Hproj).
+    (* ! *)
+    pose proof Hq as Htmp1. apply nth_error_some_inrange in Htmp1.
+    pose proof Hq as Htmp2. apply nth_error_some_inrange_Z in Htmp2.
+    apply nth_error_Znth_result in Hq. 
+    destruct pre eqn:Epre.
+    + simpl in Hq, Hproj |- *. apply proj2 in Hproj.
+      unfold tc_detach_prev_upd in Efprev. simpl in Efprev. subst f_prev_upd.
+      split.
+      (* destruct suf as [ | next suf ]. *)
+      * (* TODO repeat? *)
+        subst f_next_upd. 
+        apply Znth_nth_error_result.
+        1: destruct suf; simpl in Elnode'; subst lnode'; 
+          rewrite <- ZtoNat_Zlength, -> ! Zlength_upd_Znth, -> ZtoNat_Zlength; auto.
+        subst lnode'.
+        destruct suf as [ | next suf ]; simpl. 
+        --rewrite -> ! upd_Znth_same; auto; try lia. now rewrite Hq.
+        --simpl in Hdj. assert (tc_roottid next <> tc_roottid q) as Hneq by eqsolve.
+          rewrite -> Znth_upd_Znth_diff; try lia.
+          rewrite -> ! upd_Znth_same; auto; try lia. now rewrite Hq.
+      * destruct suf as [ | next suf ]; auto.
+        subst f_next_upd. simpl in Elnode'.
+        (* still repeat? *)
+        simpl in Hdj. assert (tc_roottid next <> tc_roottid q) as Hneq by eqsolve.
+        rewrite -> Znth_upd_Znth_diff in Elnode'; try lia.
+        simpl in Hproj |- *. destruct Hproj as (Hnext & Hproj).
+        (* ! *)
+        pose proof Hnext as Htmp1'. apply nth_error_some_inrange in Htmp1'.
+        pose proof Hnext as Htmp2'. apply nth_error_some_inrange_Z in Htmp2'.
+        apply nth_error_Znth_result in Hnext. split. 
+        --apply Znth_nth_error_result.
+          1: destruct suf; simpl in Elnode'; subst lnode'; 
+            rewrite <- ZtoNat_Zlength, -> ! Zlength_upd_Znth, -> ZtoNat_Zlength; auto.
+          subst lnode'.
+          rewrite -> upd_Znth_same; auto; try lia. 2: rewrite -> ! Zlength_upd_Znth; lia.
+          now rewrite Hnext.
+        --subst lnode'. 
+          apply is_tc_nodearray_proj_chnaux_upd_preserve; auto.
+          2: simpl in Hnodup; rewrite -> ! NoDup_cons_iff in Hnodup; tauto.
+          apply is_tc_nodearray_proj_chnaux_upd_preserve; auto.
+    + rewrite <- ! Epre in *. assert (pre <> nil) as Htmp by eqsolve. 
+      apply exists_last in Htmp. destruct Htmp as (pre' & prev' & Epre').
+      rewrite Epre at 1. simpl.
+      rewrite Epre in Hq at 1. simpl in Hq.
+      unfold tc_detach_prev_upd in Efprev. 
+      rewrite -> Epre' in Efnext, Efprev. simpl in Efnext, Efprev.
+      rewrite -> rev_app_distr in Efnext, Efprev. simpl in Efnext, Efprev.
+      
+
+      split.
+      * rewrite <- Hq. 
+
+      erewrite -> IH with (suf:=suf). 2: reflexivity.
+      
+Admitted.
+          
+          now rewrite Hq.
+
+          
+          
+        rewrite -> ! upd_Znth_same; auto; try lia. now rewrite Hq.
+
+        
+
+
+        
+
+      * (* TODO repeat? *)
+        simpl in Hproj |- *. destruct Hproj as (Hnext & Hproj). split.
+        pose proof Hnext as Htmp1. apply nth_error_some_inrange in Htmp1.
+        pose proof Hnext as Htmp2. apply nth_error_some_inrange_Z in Htmp2.
+        apply Znth_nth_error_result.  
+        1: subst lnode'; rewrite <- ZtoNat_Zlength, -> Zlength_upd_Znth, -> ZtoNat_Zlength; auto.
+        subst lnode'. rewrite -> upd_Znth_same; auto; try lia.
+        apply nth_error_Znth_result in Hnext. now rewrite Hnext.
+      split.
+      * admit.
+      * destruct
+        subst lnode'. simpl. apply is_tc_nodearray_proj_chnaux_upd_preserve; auto.
+        simpl in Hnodup. rewrite -> ! NoDup_cons_iff in Hnodup. tauto.
+
+
+    split.
+    + 
+    + 
+      eapply IH. 2: apply  
+  
+    remember (q :: pre) 
+
+      
+      Zlength_upd_Znth; now 
+
+
+  2: destruct pre eqn:E.
+  1-2: simpl in Echn; subst chn; simpl in *; now apply nth_error_Znth_result.
+  rewrite <- ! E in *. assert (pre <> nil) as Htmp by eqsolve. clear E.
+  subst chn. simpl in Hproj. destruct Hproj as (_ & Hproj).
+  erewrite -> IH with (suf:=suf). 2: reflexivity.
+  2: simpl; rewrite -> in_app; simpl; tauto.
+  2: apply Hproj.
+  f_equal. apply exists_last in Htmp. destruct Htmp as (pre' & prev' & E).
+  simpl. rewrite -> E, -> rev_app_distr. now simpl.
+
 Fact tc_locate_update_remove_ch_proj l :
   forall res tc
   (Hnodup : NoDup (map tc_roottid (tc_flatten tc)))
@@ -1625,19 +1781,43 @@ Proof.
   induction l as [ | x l IH ]; intros.
   - hnf in Hsub. simpl in Hsub. injection Hsub as <-.
     destruct tc as [ni chn] eqn:Etc.
-    (* TODO still repeat *)
-    (*
-    simpl in Echn_par. rewrite Echn in Hnodup. rewrite <- flat_map_app, -> map_app in Hnodup.
-    simpl in Hnodup. rewrite -> map_app in Hnodup.
+    (* TODO still repeating the proof in tc_detach_nodes_single? *)
+    simpl in Echn_par. rewrite Echn_par in Hnodup.
+    simpl in Hnodup. rewrite -> NoDup_cons_iff, <- ! flat_map_app, -> ! map_app, -> ! in_app_iff in Hnodup. 
+    simpl in Hnodup. rewrite -> map_app, -> ! in_app_iff in Hnodup. destruct Hnodup as (Hnotin_tc & Hnodup).
     apply NoDup_app in Hnodup. destruct Hnodup as (Hnodup_pre & Hnodup & Hdj1).
     apply NoDup_app in Hnodup. destruct Hnodup as (Hnodup_ch & Hnodup_suf & Hdj2).
-    *)
-    
+    setoid_rewrite -> in_app_iff in Hdj1.
+    assert (forall ch', In ch' pre \/ In ch' suf -> ~ In (tc_roottid res) (map tc_roottid (tc_flatten ch'))) as Hnotin'.
+    {
+      intros ch' H Hn.
+      specialize (Hdj1 (tc_roottid res)). specialize (Hdj2 (tc_roottid res)).
+      rewrite -> map_flat_map_In in Hdj1, Hdj2.
+      rewrite -> 1 in_map_iff in Hdj1, Hdj2.
+      destruct H as [ H | H ].
+      - apply Hdj1. 1: eauto. left. 
+        exists res. split; auto. apply tc_flatten_self_in.
+      - apply Hdj2; eauto.
+        exists res. split; auto. apply tc_flatten_self_in.
+    }
+    assert (forall ch' : treeclock, In ch' pre \/ In ch' suf -> 
+      tc_roottid ch' <> tc_roottid res) as Hnotin''.
+    {
+      intros ch' Hin'. apply Hnotin' in Hin'.
+      intros E. rewrite <- E in Hin'. 
+      (* TODO why this is repeating? *)
+      apply False_ind, Hin', in_map, tc_flatten_self_in.
+    }
     assert (tc_remove_ch (Node ni chn) (tc_roottid res) = Node ni (pre ++ suf)) as Eremovech.
     {
-      (* TODO will repeat here? *)
-      (* rewrite -> Echn_par, -> filter_app in Etc_pivot. simpl in Etc_pivot. *)
-      admit.
+      simpl. f_equal. rewrite -> Echn_par, -> filter_app. simpl. 
+      rewrite -> ! filter_all_true; auto.
+      2-3: intros ch' Hin'; apply negb_true_iff, has_same_tid_false.
+      3: specialize (Hnotin' _ (or_introl Hin')).
+      2: specialize (Hnotin' _ (or_intror Hin')).
+      2-3: intros EE; rewrite -> EE in Hnotin'; apply Hnotin', in_map, tc_flatten_self_in.
+      unfold has_same_tid. 
+      now destruct (eqdec (tc_roottid res) (tc_roottid res)).
     }
     rewrite -> Eremovech in Etc_pivot. simpl in Echn_par, Etc_pivot. subst tc_pivot.
 
@@ -1653,12 +1833,39 @@ Proof.
     rewrite -> Echn_par in Hproj. hnf in Hproj.
     rewrite -> Foralltc_cons_iff, -> List.Forall_app, -> Forall_cons_iff in Hproj.
     split.
-    + admit.
+    + constructor.
+      * simpl. apply proj1 in Hproj. simpl in Hproj.
+
+      * admit.
     + rewrite Elnode'. eapply nodearray_proj_lnode_regalter_preserve. 
       2: apply Hrega. 1: tauto.
-      subst lo. simpl.
-      (* tedious *)
-      admit.
+      (* strengthen *)
+      assert (forall idx, In (Some idx) lo -> In idx (map tc_roottid (flat_map tc_flatten pre)) \/
+        In idx (map tc_roottid (flat_map tc_flatten suf)) \/ idx = tc_roottid tc) as Htmp.
+      {
+        (* changed compared with below ... *)
+        intros idx Hin. subst lo.
+        simpl in Hin. destruct Hin as [ H | [H | [H | []]] ]; try eqsolve.
+        1: destruct (hd_error suf) as [ next | ] eqn:E; simpl in H; try eqsolve.
+        2: destruct (hd_error (rev pre)) as [ prev | ] eqn:E; simpl in H; try eqsolve.
+        all: injection H as <-.
+        1: right; left.
+        2: left.
+        all: apply in_map. 
+        - destruct suf; simpl in E; try eqsolve. injection E as ->. 
+          simpl. apply in_app, or_introl, tc_flatten_self_in.
+        - destruct pre eqn:E'. 1: simpl in E; try eqsolve. 
+          rewrite <- E' in *. assert (pre <> nil) as Htmp by eqsolve. clear E'.
+          apply exists_last in Htmp. destruct Htmp as (pre'' & prev' & Htmp).
+          rewrite -> Htmp, -> rev_app_distr in E. simpl in E. injection E as ->.
+          rewrite -> Htmp, <- flat_map_app, -> in_app_iff.
+          simpl. rewrite app_nil_r. apply or_intror, tc_flatten_self_in.
+      }
+      intros idx Hin. apply Htmp in Hin.
+      destruct Hin as [ H | [ H | -> ]].
+      * apply Hdj1 in H. eqsolve.
+      * intros Hq. apply Hdj2 in Hq. eqsolve.
+      * subst tc. destruct ni as (u, ?, ?). simpl in *. eqsolve.
   - destruct tc as [ni chn] eqn:Etc.
     hnf in Hsub. simpl in Hsub, Etc_pivot.
     destruct (nth_error chn x) as [ ch | ] eqn:Enth; try eqsolve.
@@ -1683,8 +1890,102 @@ Proof.
         }
         rewrite -> Echn, -> upd_Znth_char, -> List.Forall_app, -> Forall_cons_iff; auto.
         *)
+
+        (* non-disjoint *)
+        (* FIXME: so much repeat! *)
+        pose (lo:=[base.fmap tc_roottid (hd_error suf); base.fmap tc_roottid (hd_error (rev pre)); Some (tc_roottid tc_par)]).
+        assert (Forall2 lnode_regalter [f_next_upd; f_prev_upd; f_par_upd] lo) as Hrega.
+        {
+          subst. subst lo.
+          constructor. 1: apply tc_detach_next_upd_regalter.
+          constructor. 1: apply tc_detach_prev_upd_regalter.
+          constructor; auto. apply tc_detach_par_upd_regalter.
+        }
+
+        (* strengthen *)
+        assert (forall idx, In (Some idx) lo -> In idx (map tc_roottid (tc_flatten tc_par))) as Htmp.
+        {
+          intros idx Hin. subst lo.
+          simpl in Hin. destruct Hin as [ H | [H | [H | []]] ]; try eqsolve.
+          3: injection H as <-; apply in_map, tc_flatten_self_in.
+          1: destruct (hd_error suf) as [ next | ] eqn:E; simpl in H; try eqsolve.
+          2: destruct (hd_error (rev pre)) as [ prev | ] eqn:E; simpl in H; try eqsolve.
+          all: injection H as <-; apply in_map.
+          all: destruct tc_par; simpl in *; rewrite -> Echn_par.
+          all: right; rewrite <- ! flat_map_app; simpl; rewrite -> ! in_app_iff; simpl.
+          - right. right.
+            destruct suf; simpl in E; try eqsolve. injection E as ->.
+            simpl. apply in_app, or_introl, tc_flatten_self_in.
+          - left.
+            destruct pre eqn:E'. 1: simpl in E; try eqsolve. 
+            rewrite <- E' in *. assert (pre <> nil) as Htmp by eqsolve. clear E'.
+            apply exists_last in Htmp. destruct Htmp as (pre'' & prev' & Htmp).
+            rewrite -> Htmp, -> rev_app_distr in E. simpl in E. injection E as ->.
+            rewrite -> Htmp, <- flat_map_app, -> in_app_iff.
+            simpl. rewrite app_nil_r. apply or_intror, tc_flatten_self_in.
+        }
+(*
+        assert (forall idx,
+          (forall next suf', suf = next :: suf' -> idx = tc_roottid next) \/
+          (forall prev pre', pre = pre' ++ (prev :: nil) -> idx = tc_roottid prev) \/
+          idx = tc_roottid tc_par -> In (Some idx) lo) as Htmp.
+        {
+          intros idx HH. subst lo. simpl.
+*)
+        assert (forall idx, In (Some idx) lo -> 
+          ~ In idx (map tc_roottid (flat_map tc_flatten pre')) /\ 
+          ~ In idx (map tc_roottid (flat_map tc_flatten suf'))) as Hnotin'.
+        {
+          intros idx HH. apply Htmp, in_map_iff in HH.
+          destruct HH as (sub' & <- & HH).
+          assert (In sub' (tc_flatten ch)) as Hsub'.
+          { eapply subtc_trans. apply HH. apply subtc_witness_iff. eauto. }
+          apply in_map with (f:=tc_roottid) in Hsub'.
+          
+          (* TODO this may be reusable, actually? *)
+          assert (In tc_par (tc_flatten tc)) as Hsub''.
+          { 
+            eapply subtc_trans. 1: apply subtc_witness_iff; eauto. 
+            apply subtc_chn. rewrite Etc, Echn. simpl. rewrite -> in_app_iff. simpl. eqsolve.
+          }
+          (*
+          (* ouch. *)
+          apply tid_nodup_Foralltc_id in Hnodup.
+          eapply Foralltc_subtc in Hnodup. 2: subst tc; apply Hsub''.
+          destruct tc_par as [ni0 chn0].
+          (* TODO still repeating the proof in tc_detach_nodes_single? *)
+          simpl in Echn_par. rewrite Echn_par in Hnodup.
+          simpl in Hnodup. rewrite -> NoDup_cons_iff, <- ! flat_map_app, -> ! map_app, -> ! in_app_iff in Hnodup. 
+          simpl in Hnodup. rewrite map_app in Hnodup. destruct Hnodup as (Hnotin_tc & Hnodup).
+          apply NoDup_app in Hnodup. destruct Hnodup as (Hnodup_pre & Hnodup & Hdj1).
+          apply NoDup_app in Hnodup. destruct Hnodup as (Hnodup_ch & Hnodup_suf & Hdj2).
+          *)
+          rewrite Echn in Hnodup.
+          simpl in Hnodup. rewrite -> NoDup_cons_iff, <- ! flat_map_app, -> ! map_app, -> ! in_app_iff in Hnodup. 
+          simpl in Hnodup. rewrite map_app in Hnodup. destruct Hnodup as (Hnotin_tc & Hnodup).
+          apply NoDup_app in Hnodup. destruct Hnodup as (Hnodup_pre & Hnodup & Hdj1).
+          apply NoDup_app in Hnodup. destruct Hnodup as (Hnodup_ch & Hnodup_suf & Hdj2).
+          setoid_rewrite -> in_app_iff in Hdj1.
+          split.
+          - intros Hq. apply Hdj1 in Hq. eqsolve.
+          - now apply Hdj2. 
+        }
+        hnf in Hproj. rewrite <- Foralltc_idempotent in Hproj.
         split; [ | split ]; auto.
-        all: admit.
+        --apply Forall_forall. intros ch0 Hin0.
+          subst lnode'. eapply nodearray_proj_lnode_regalter_preserve. 
+          2: apply Hrega. 1: eapply Foralltc_subtc; [ | apply Hproj ].
+          1: apply subtc_chn; subst chn; simpl; rewrite in_app_iff; auto.
+          intros idx Hinlo HH. 
+          pose proof (map_flat_map_In_conv _ _ _ _ _ Hin0 HH). 
+          now apply Hnotin' in H.
+        --apply Forall_forall. intros ch0 Hin0.
+          subst lnode'. eapply nodearray_proj_lnode_regalter_preserve. 
+          2: apply Hrega. 1: eapply Foralltc_subtc; [ | apply Hproj ].
+          1: apply subtc_chn; subst chn; simpl; rewrite in_app_iff; simpl; auto.
+          intros idx Hinlo HH. 
+          pose proof (map_flat_map_In_conv _ _ _ _ _ Hin0 HH). 
+          now apply Hnotin' in H.
     + eapply IH.
       2: apply Hsub.
       2: apply Echn_par.
