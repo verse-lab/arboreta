@@ -219,6 +219,30 @@ void join(TreeClock_T self, TreeClock_T tc){
     //     vprime_tid = get_tid((get_node(tc, vprime_tid))->node_next);
     // }
 
+    while (self->top >= 0){
+        int uprime_tid = self->S[self->top--];
+        struct Clock* uprime_clocks = get_clock(tc, uprime_tid);
+        struct Node* u_node = get_node(self, uprime_tid);
+        struct Clock* u_clocks = get_clock(self, uprime_tid);
+        int u_clock = 0;
+
+        if (!node_is_null(u_node)){
+            u_clock = u_clocks->clock_clk;
+            detach_from_neighbors(self, uprime_tid, u_node);
+        }
+
+        u_clocks->clock_clk = uprime_clocks->clock_clk;
+        u_clocks->clock_aclk = uprime_clocks->clock_aclk;
+        
+        // int y = get_tid((get_node(tc, uprime_tid))->node_par);
+        struct Node* uprime_node = get_node(tc, uprime_tid);
+        int y = get_tid(uprime_node->node_par);
+
+        push_child(self, y, uprime_tid, u_node); 
+
+        get_updated_nodes_join_chn(self, tc, uprime_tid, u_clock);
+    }
+
     // while (self->top >= 0){
     //     int uprime_tid = self->S[self->top--];
     //     struct Clock* uprime_clocks = get_clock(tc, uprime_tid);
