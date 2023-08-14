@@ -14,4 +14,5 @@ clocks/degenerated_treeclock.v
 extraction/extract_driver.v
 vst/treeclock_clight.v
 vst/util_vst.v
+vst/array_support.v
 vst/verif_treeclock.v

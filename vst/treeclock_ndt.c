@@ -113,6 +113,46 @@ void detach_from_neighbors(TreeClock_T self, int t, struct Node* nd){
 //     return ((tree_this->tree) + tid);
 // }
 
+void push_child(TreeClock_T self, int par, int t, struct Node* nd){
+    struct Node* par_node = get_node(self, par);
+    int head_child = get_tid(par_node->node_headch);
+    if (head_child != NODE_NULL){
+        struct Node *ndtmp = get_node(self, head_child);
+        ndtmp->node_prev = set_tid(t);
+    }
+    // TODO this is not in the original paper, but add it here anyway
+    nd->node_prev = NODE_NULL;
+    
+    nd->node_next = set_tid(head_child);
+    nd->node_par = set_tid(par);
+    // noop: this.clocks[zprime_tid] = z_clocks;
+    // noop: this.tree[zprime_tid] = z_node;
+    par_node->node_headch = set_tid(t);
+}
+
+void get_updated_nodes_join_chn(TreeClock_T self, TreeClock_T tc, int par, int par_clock){
+    // int vprime_tid = get_tid((get_node(tc, par))->node_headch);
+    // FIXME: Clight cannot handle this well?
+    struct Node* nd_par = get_node(tc, par);
+    int vprime_tid = get_tid(nd_par->node_headch);
+    while (vprime_tid != NODE_NULL){
+        struct Clock* vprime_clocks = get_clock(tc, vprime_tid);
+        // int v_clock = (get_clock(self, vprime_tid))->clock_clk;
+        struct Clock* v_clocks = get_clock(self, vprime_tid);
+        int v_clock = v_clocks->clock_clk;
+        if (v_clock < vprime_clocks->clock_clk){
+            self->S[++self->top] = vprime_tid;
+        } else {
+            if (vprime_clocks->clock_aclk <= par_clock){
+                break;
+            }
+        }
+        // vprime_tid = get_tid((get_node(tc, vprime_tid))->node_next);
+        struct Node* nd = get_node(tc, vprime_tid);
+        vprime_tid = get_tid(nd->node_next);
+    }
+}
+
 void join(TreeClock_T self, TreeClock_T tc){
     int root_tid_this = self->root_tid;
 
@@ -151,18 +191,20 @@ void join(TreeClock_T self, TreeClock_T tc){
     // // copy the clock of this.clocks[this.rootTid] to zprime_clocks's aclk and return
     z_clocks->clock_aclk = (get_clock(self, root_tid_this))->clock_clk;
 
-    struct Node* this_root_node = get_node(self, root_tid_this);
-    int root_head_child = get_tid(this_root_node->node_headch);
-    if (root_head_child != NODE_NULL){
-        struct Node *ndtmp = get_node(self, root_head_child);
-        ndtmp->node_prev = set_tid(zprime_tid);
-    }
-    z_node->node_next = set_tid(root_head_child);
-    z_node->node_par = set_tid(root_tid_this);
-    // noop: this.clocks[zprime_tid] = z_clocks;
-    // noop: this.tree[zprime_tid] = z_node;
-    this_root_node->node_headch = set_tid(zprime_tid);
+    push_child(self, root_tid_this, zprime_tid, z_node);
+    // struct Node* this_root_node = get_node(self, root_tid_this);
+    // int root_head_child = get_tid(this_root_node->node_headch);
+    // if (root_head_child != NODE_NULL){
+    //     struct Node *ndtmp = get_node(self, root_head_child);
+    //     ndtmp->node_prev = set_tid(zprime_tid);
+    // }
+    // z_node->node_next = set_tid(root_head_child);
+    // z_node->node_par = set_tid(root_tid_this);
+    // // noop: this.clocks[zprime_tid] = z_clocks;
+    // // noop: this.tree[zprime_tid] = z_node;
+    // this_root_node->node_headch = set_tid(zprime_tid);
 
+    get_updated_nodes_join_chn(self, tc, zprime_tid, z_clock);
     // int vprime_tid = get_tid((get_node(tc, zprime_tid))->node_headch);
     // while (vprime_tid != 0){
     //     struct Clock* vprime_clocks = get_clock(tc, vprime_tid);
@@ -195,6 +237,7 @@ void join(TreeClock_T self, TreeClock_T tc){
         
     //     int y = get_tid((get_node(tc, uprime_tid))->node_par);
 
+        // push_child(self, y, uprime_tid, u_node); 
     //     struct Node* y_node = get_node(self, y);
     //     int head_child = get_tid(y_node->node_headch);
     //     // here, little change of the condition

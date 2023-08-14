@@ -75,3 +75,16 @@ Proof.
   - now apply Z.eqb_eq.
   - now apply Z.eqb_neq.
 Qed.
+
+Fact upto_seq n : upto n = map Z.of_nat (seq 0%nat n).
+Proof. 
+  induction n; simpl; auto. f_equal. 
+  rewrite <- seq_shift, -> IHn, -> ! map_map.
+  apply map_ext. intros. now rewrite -> Nat2Z.inj_succ.
+Qed.
+
+Fact seq_upto n : seq 0%nat n = map Z.to_nat (upto n).
+Proof.
+  rewrite -> upto_seq, -> map_map. rewrite <- map_id at 1.
+  apply map_ext. intros. now rewrite Nat2Z.id.
+Qed.
