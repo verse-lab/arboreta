@@ -199,6 +199,10 @@ Proof. unfold has_same_tid. destruct (eqdec (tc_roottid tc) t) as [ <- | ]; simp
 Fact has_same_tid_false t tc : has_same_tid t tc = false <-> t <> tc_roottid tc.
 Proof. unfold has_same_tid. destruct (eqdec (tc_roottid tc) t) as [ <- | ]; simpl; intuition congruence. Qed.
 
+Fact tc_rootinfo_has_same_tid_congr : forall x y, tc_rootinfo x = tc_rootinfo y -> 
+  forall t, has_same_tid t x = has_same_tid t y.
+Proof. intros. unfold has_same_tid. now rewrite tc_rootinfo_tid_inj with (x:=x) (y:=y). Qed.
+
 (* only for some domain-based reasoning; not for finding *)
 
 Fixpoint tc_flatten tc :=
@@ -1830,6 +1834,22 @@ Proof.
     intuition.
 Qed.
 
+Lemma tc_detach_nodes_tcs_congr tcs1 tcs2 
+  (H : forall x, In x (map tc_roottid tcs1) <-> In x (map tc_roottid tcs2)) tc :
+  tc_detach_nodes tcs1 tc = tc_detach_nodes tcs2 tc.
+Proof.
+  induction tc as [ni chn IH] using treeclock_ind_2; intros.
+  simpl.
+  rewrite -> map_ext_Forall with (g:=(tc_detach_nodes tcs2)); auto.
+  destruct (List.split (map (tc_detach_nodes tcs2) chn)) as (new_chn, res) eqn:Esplit.
+  rewrite -> partition_ext_Forall with (g:=(fun tc' => find (has_same_tid (tc_roottid tc')) tcs2)); auto.
+  apply Forall_forall.
+  intros tc' _.
+  match goal with |- ?b1 = ?b2 => enough (is_true b1 <-> is_true b2) as Hq
+    by (destruct b1, b2; simpl in Hq; try reflexivity; exfalso; intuition) end.
+  now rewrite <- ! tc_getnode_in_iff.
+Qed.
+
 Lemma tc_detach_nodes_fst_is_prefix tcs tc :
   prefixtc (fst (tc_detach_nodes tcs tc)) tc.
 Proof.
@@ -1874,6 +1894,180 @@ Proof.
   destruct Hto as (sub & Hin & ->).
   pose proof (tc_detach_nodes_fst_is_prefix tcs sub).
   eauto.
+Qed.
+
+(* FIXME: use this to rewrite *)
+Corollary tc_detach_nodes_fst_rootinfo_same tcs tc : 
+  tc_rootinfo (fst (tc_detach_nodes tcs tc)) = tc_rootinfo tc.
+Proof. erewrite prefixtc_rootinfo_same; [ reflexivity | apply tc_detach_nodes_fst_is_prefix ]. Qed.
+
+Lemma tc_detach_nodes_tcs_app_fst tcs1 tcs2 tc :
+  fst (tc_detach_nodes tcs2 (fst (tc_detach_nodes tcs1 tc))) =
+  fst (tc_detach_nodes (tcs1 ++ tcs2) tc).
+Proof.
+  induction tc as [ni chn IH] using treeclock_ind_2; intros.
+  simpl.
+  destruct (List.split (map (tc_detach_nodes tcs1) chn))
+    as (new_chn1, res1) eqn:Esplit1, 
+    (partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) tcs1) new_chn1)
+    as (res1', new_chn1') eqn:Epar1, 
+    (List.split (map (tc_detach_nodes (tcs1 ++ tcs2)) chn))
+    as (new_chn, res) eqn:Esplit, 
+    (partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) (tcs1 ++ tcs2)) new_chn)
+    as (res', new_chn') eqn:Epar.
+  simpl.
+  destruct (List.split (map (tc_detach_nodes tcs2) new_chn1'))
+    as (new_chn2, res2) eqn:Esplit2, 
+    (partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) tcs2) new_chn2)
+    as (res2', new_chn2') eqn:Epar2.
+  simpl.
+  f_equal.
+  rewrite -> split_map_fst_snd, -> ! map_map in Esplit1, Esplit2, Esplit.
+  rewrite -> partition_filter in Epar1, Epar2, Epar.
+  apply pair_equal_split in Esplit1, Esplit2, Esplit, Epar1, Epar2, Epar.
+  destruct Esplit as (Enew_chn & Eres), Epar as (Eres' & Enew_chn'), 
+    Esplit1 as (Enew_chn1 & Eres1), Epar1 as (Eres1' & Enew_chn1'), 
+    Esplit2 as (Enew_chn2 & Eres2), Epar2 as (Eres2' & Enew_chn2').
+  subst.
+  rewrite <- (map_ext_Forall _ _ IH).
+
+  (* local induction to avoid too much manipulation *)
+  clear ni IH. 
+  induction chn as [ | ch chn IH ]; simpl; auto.
+  unfold tc_roottid in *.
+  pose proof (fun tc => tc_detach_nodes_fst_is_prefix tcs1 tc) as Hpf1.
+  pose proof (fun tc => tc_detach_nodes_fst_is_prefix tcs2 tc) as Hpf2.
+  rewrite ! (prefixtc_rootinfo_same _ _ (Hpf2 _)).
+  rewrite ! (prefixtc_rootinfo_same _ _ (Hpf1 _)).
+  rewrite find_app.
+  destruct (find (has_same_tid (info_tid (tc_rootinfo ch))) tcs1) as [ res1 | ] eqn:E1; simpl.
+  - apply IH.
+  - rewrite ! (prefixtc_rootinfo_same _ _ (Hpf2 _)).
+    rewrite ! (prefixtc_rootinfo_same _ _ (Hpf1 _)).
+    destruct (find (has_same_tid (info_tid (tc_rootinfo ch))) tcs2) as [ res2 | ] eqn:E2; simpl.
+    + apply IH.
+    + f_equal; apply IH.
+Qed.
+
+Lemma tc_detach_nodes_tcs_app_snd tcs1 tcs2 tc :
+  Permutation.Permutation (snd (tc_detach_nodes (tcs1 ++ tcs2) tc))
+  (snd (tc_detach_nodes tcs2 (fst (tc_detach_nodes tcs1 tc))) ++
+    map fst (map (tc_detach_nodes tcs2) (snd (tc_detach_nodes tcs1 tc))) ++
+    flat_map snd (map (tc_detach_nodes tcs2) (snd (tc_detach_nodes tcs1 tc)))).
+Proof.
+  induction tc as [ni chn IH] using treeclock_ind_2; intros.
+  simpl.
+  destruct (List.split (map (tc_detach_nodes tcs1) chn))
+    as (new_chn1, res1) eqn:Esplit1, 
+    (partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) tcs1) new_chn1)
+    as (res1', new_chn1') eqn:Epar1, 
+    (List.split (map (tc_detach_nodes (tcs1 ++ tcs2)) chn))
+    as (new_chn, res) eqn:Esplit, 
+    (partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) (tcs1 ++ tcs2)) new_chn)
+    as (res', new_chn') eqn:Epar.
+  simpl.
+  destruct (List.split (map (tc_detach_nodes tcs2) new_chn1'))
+    as (new_chn2, res2) eqn:Esplit2, 
+    (partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) tcs2) new_chn2)
+    as (res2', new_chn2') eqn:Epar2.
+  simpl.
+  rewrite -> split_map_fst_snd, -> ! map_map in Esplit1, Esplit2, Esplit.
+  rewrite -> partition_filter in Epar1, Epar2, Epar.
+  apply pair_equal_split in Esplit1, Esplit2, Esplit, Epar1, Epar2, Epar.
+  destruct Esplit as (Enew_chn & Eres), Epar as (Eres' & Enew_chn'), 
+    Esplit1 as (Enew_chn1 & Eres1), Epar1 as (Eres1' & Enew_chn1'), 
+    Esplit2 as (Enew_chn2 & Eres2), Epar2 as (Eres2' & Enew_chn2').
+
+  (* now, manipulate *)
+  pose proof IH as Hperm.
+  apply Permutation_Forall_flat_map in Hperm.
+  rewrite -> flat_map_concat_map, -> Eres in Hperm at 1.
+  rewrite -> ! Permutation_flat_map_innerapp_split in Hperm.
+  rewrite -> flat_map_concat_map in Hperm at 1.
+  rewrite <- map_map with (g:=fun x => snd (tc_detach_nodes tcs2 x)) in Hperm at 1.
+  rewrite -> Enew_chn1, <- flat_map_concat_map in Hperm.
+  (* split new_chn1, get res1' and res2 *)
+  match type of Hperm with Permutation.Permutation ?al ?bl => 
+    eapply Permutation.Permutation_trans with (l:=al) (l':=bl) in Hperm end.
+  2: apply Permutation.Permutation_app; [ | reflexivity ].
+  2: apply Permutation.Permutation_flat_map, Permutation_split_combine.
+  rewrite -> Eres1', -> Enew_chn1' in Hperm.
+  rewrite -> flat_map_app, -> 2 flat_map_concat_map, -> Eres2 in Hperm.
+  rewrite <- map_map with (g:=snd), <- flat_map_concat_map in Hperm.
+
+  (* TODO the following should be revised, but maybe not for now? *)
+
+  rewrite -> ! flat_map_concat_map with (l:=chn) in Hperm.
+  rewrite <- ! map_map with (f:=fun x => map (tc_detach_nodes tcs2) (snd (tc_detach_nodes tcs1 x))) in Hperm.
+  rewrite <- ! map_map with (f:=fun x => (snd (tc_detach_nodes tcs1 x))) in Hperm.
+  rewrite -> ! Eres1 in Hperm.
+  rewrite <- ! concat_map in Hperm.
+
+  (* ? *)
+  assert (concat (map (flat_map snd) (map (map (tc_detach_nodes tcs2)) res1)) = 
+    flat_map snd (map (tc_detach_nodes tcs2) (concat res1))) as EE.
+  {
+    clear.
+    induction res1; auto.
+    simpl. rewrite IHres1. now rewrite map_app, flat_map_app.
+  }
+  rewrite EE in Hperm.
+
+  rewrite ! map_app, flat_map_app.
+  match type of Hperm with Permutation.Permutation _ ?al =>
+    transitivity (al ++ (res2' ++ map fst (map (tc_detach_nodes tcs2) res1'))) end.
+  2:{
+    apply Permutation.Permutation_count_occ with (eq_dec:=treeclock_eqdec).
+    intros. rewrite ! count_occ_app with (eq_dec:=treeclock_eqdec).
+    lia.
+  }
+  apply Permutation.Permutation_app; auto.
+
+  subst.
+  clear -chn.
+  rewrite -> ! map_filter_comm, -> ! map_map.
+  erewrite -> map_ext; [ | intros; now rewrite tc_detach_nodes_tcs_app_fst ].
+  f_equal.
+  erewrite -> filter_ext with (l:=filter _ _); [ | intros; now rewrite tc_detach_nodes_tcs_app_fst ].
+  rewrite <- map_app.
+  apply Permutation.Permutation_map.
+  repeat match goal with |- context[filter ?ff ?ll] => 
+    match ff with context[fst] => 
+    erewrite -> filter_ext with (f:=ff) (l:=ll); [ | intros x; unfold tc_roottid; 
+      rewrite (prefixtc_rootinfo_same _ _ (tc_detach_nodes_fst_is_prefix _ _)); fold (tc_roottid x); reflexivity ]
+    end
+  end.
+  induction chn as [ | ch chn IH ]; simpl; auto.
+  rewrite find_app.
+  destruct (find (has_same_tid (tc_roottid ch)) tcs1) as [ res1 | ] eqn:E1, 
+    (find (has_same_tid (tc_roottid ch)) tcs2) as [ res2 | ] eqn:E2; 
+    simpl; try rewrite E1; try rewrite E2; simpl; try rewrite IH.
+  all: apply Permutation.Permutation_count_occ with (eq_dec:=treeclock_eqdec).
+  all: intros; simpl; rewrite ! count_occ_app with (eq_dec:=treeclock_eqdec); simpl.
+  all: destruct (treeclock_eqdec ch x); simpl; try lia.
+Qed.
+
+(* a niche case *)
+Fact tc_detach_nodes_prepend_child ni ch chn tcs 
+  (H : find (has_same_tid (tc_roottid ch)) tcs = None) :
+  let: (pivot_ch, forest_ch) := tc_detach_nodes tcs ch in
+  let: (pivot_main, forest_main) := tc_detach_nodes tcs (Node ni chn) in
+  let: Node ni' chn' := pivot_main in
+  tc_detach_nodes tcs (Node ni (ch :: chn)) = 
+  (Node ni' (pivot_ch :: chn'), forest_ch ++ forest_main).
+Proof.
+  simpl.
+  destruct (tc_detach_nodes tcs ch) as (pivot_ch, forest_ch) eqn:Ech, 
+    (List.split (map (tc_detach_nodes tcs) chn)) as (new_chn, res) eqn:Esplit, 
+    (partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) tcs) new_chn)
+    as (res', new_chn') eqn:Epar.
+  simpl.
+  rewrite -> Epar.
+  unfold tc_roottid in H |- * at 1.
+  replace pivot_ch with (fst (tc_detach_nodes tcs ch)) by now rewrite Ech.
+  rewrite ! (prefixtc_rootinfo_same _ _ (tc_detach_nodes_fst_is_prefix tcs ch)), Ech, H.
+  simpl.
+  now rewrite app_assoc.
 Qed.
 
 (* permutation is much more clear than mutual In here *)
@@ -2738,6 +2932,203 @@ Proof.
     lia.
 Qed.
 
+(* should also be "tcs_congr", but keep the word "forest" anyway *)
+Lemma tc_attach_nodes_forest_congr forest1 forest2 tc
+  (H : Foralltc (fun tc' => List.find (has_same_tid (tc_roottid tc')) forest1 = 
+    List.find (has_same_tid (tc_roottid tc')) forest2) tc) :
+  tc_attach_nodes forest1 tc = tc_attach_nodes forest2 tc.
+Proof.
+  induction tc as [ni chn IH] using treeclock_ind_2; intros.
+  rewrite Foralltc_cons_iff in H.
+  simpl in H |- *.
+  destruct H as (Hroot & H).
+  eapply Forall_impl_impl in H.
+  2: apply IH.
+  erewrite -> map_ext_Forall.
+  2: apply H.
+  now rewrite Hroot.
+Qed.
+
+(* FIXME: why so long? *)
+
+Lemma tc_detach_attach_distr1_fst tc forest nd 
+  (Hnotin : ~ In (tc_roottid nd) (map tc_roottid (tc_flatten tc))) :
+  fst (tc_detach_nodes (nd :: nil) (tc_attach_nodes forest tc)) =
+  tc_attach_nodes (map fst (map (tc_detach_nodes (nd :: nil)) forest)) tc.
+Proof.
+  induction tc as [ni chn IH] using treeclock_ind_2; intros.
+  simpl.
+  remember (match find (has_same_tid (info_tid ni)) forest with Some u => tc_rootchn u | None => nil end) as old_chn eqn:Eold_chn.
+  remember (map (tc_attach_nodes forest) chn) as app_chn eqn:Eapp_chn.
+  rewrite map_app, split_app.
+  destruct (List.split (map (tc_detach_nodes (nd :: nil)) app_chn)) as (new_chn1, res1) eqn:Esplit1, 
+    (List.split (map (tc_detach_nodes (nd :: nil)) old_chn)) as (new_chn2, res2) eqn:Esplit2, 
+    (partition (fun tc' : treeclock => isSome (if has_same_tid (tc_roottid tc') nd then Some nd else None)) (new_chn1 ++ new_chn2))
+    as (res', new_chn') eqn:Epar.
+  (* bad isSome *)
+  rewrite -> partition_ext_Forall with (g:=fun tc' => has_same_tid (tc_roottid tc') nd) in Epar.
+  2: apply Forall_forall; intros x ?; now destruct (has_same_tid (tc_roottid x) nd).
+  simpl.
+  f_equal.
+  rewrite -> split_map_fst_snd, -> ! map_map in Esplit1, Esplit2.
+  rewrite -> partition_filter in Epar.
+  apply pair_equal_split in Esplit1, Esplit2, Epar.
+  destruct Epar as (Eres' & Enew_chn'), Esplit1 as (Enew_chn1 & Eres1), 
+    Esplit2 as (Enew_chn2 & Eres2).
+  simpl in Hnotin.
+  apply Forall_impl_impl with (P:=fun tc => ~ In (tc_roottid nd) (map tc_roottid (tc_flatten tc))) in IH.
+  2:{
+    apply Forall_forall.
+    intros ch Hin_ch Hin.
+    (* TODO streamline? *)
+    apply Hnotin.
+    right.
+    eapply map_flat_map_In_conv; eauto.
+  }
+  rewrite <- (map_ext_Forall _ _ IH).
+  subst.
+  rewrite -> ! map_map, -> filter_app.
+  f_equal.
+  - apply filter_all_true.
+    intros ? (ch & <- & Hin)%in_map_iff.
+    apply negb_true_iff, not_true_is_false.
+    intros HH.
+    rewrite -> has_same_tid_true in HH.
+    apply Hnotin.
+    right.
+    eapply map_flat_map_In_conv; eauto.
+    rewrite <- HH.
+    unfold tc_roottid at 1.
+    rewrite (prefixtc_rootinfo_same _ _ (tc_detach_nodes_fst_is_prefix _ _)).
+    destruct ch; simpl; auto.
+  - (* ? *)
+    clear -forest.
+    induction forest as [ | tc' forest IH ]; simpl; auto.
+    erewrite -> tc_rootinfo_has_same_tid_congr with (x:=(fst (tc_detach_nodes (nd :: nil) tc'))).
+    2: apply tc_detach_nodes_fst_rootinfo_same.
+    destruct (has_same_tid (info_tid ni) tc') eqn:E.
+    + destruct tc' as [ ni' chn' ].
+      simpl.
+      (* TODO ... *)
+      destruct (List.split (map (tc_detach_nodes (nd :: nil)) chn'))
+        as (new_chn, forest') eqn:Esplit, 
+        (partition (fun tc' : treeclock => isSome (if has_same_tid (tc_roottid tc') nd then Some nd else None)) new_chn)
+        as (res', new_chn') eqn:Epar.
+      simpl.
+      (* bad isSome *)
+      rewrite -> partition_ext_Forall with (g:=fun tc' => has_same_tid (tc_roottid tc') nd) in Epar.
+      2: apply Forall_forall; intros x ?; now destruct (has_same_tid (tc_roottid x) nd).
+      rewrite -> split_map_fst_snd, -> ! map_map in Esplit.
+      rewrite -> partition_filter in Epar.
+      apply pair_equal_split in Esplit, Epar.
+      destruct Esplit as (Enew_chn & Eres), Epar as (Eres' & Enew_chn').
+      now subst.
+    + apply IH.
+Qed.
+
+Lemma tc_detach_attach_distr1_snd tc forest nd 
+  (Hnotin : ~ In (tc_roottid nd) (map tc_roottid (tc_flatten tc))) :
+  Permutation.Permutation
+  (snd (tc_detach_nodes (nd :: nil) (tc_attach_nodes forest tc)))
+  (flat_map snd (map (fun tc' => tc_detach_nodes (nd :: nil) 
+    (match find (has_same_tid (tc_roottid tc')) forest with 
+      | Some u => u | None => Node (tc_rootinfo tc') nil end)) (tc_flatten tc))).
+Proof.
+  induction tc as [ni chn IH] using treeclock_ind_2; intros.
+  simpl.
+  remember (match find (has_same_tid (info_tid ni)) forest with Some u => tc_rootchn u | None => nil end) as old_chn eqn:Eold_chn.
+  remember (map (tc_attach_nodes forest) chn) as app_chn eqn:Eapp_chn.
+  rewrite map_app, split_app.
+  destruct (List.split (map (tc_detach_nodes (nd :: nil)) app_chn)) as (new_chn1, res1) eqn:Esplit1, 
+    (List.split (map (tc_detach_nodes (nd :: nil)) old_chn)) as (new_chn2, res2) eqn:Esplit2, 
+    (partition (fun tc' : treeclock => isSome (if has_same_tid (tc_roottid tc') nd then Some nd else None)) (new_chn1 ++ new_chn2))
+    as (res', new_chn') eqn:Epar.
+  (* bad isSome *)
+  rewrite -> partition_ext_Forall with (g:=fun tc' => has_same_tid (tc_roottid tc') nd) in Epar.
+  2: apply Forall_forall; intros x ?; now destruct (has_same_tid (tc_roottid x) nd).
+  simpl.
+  rewrite -> split_map_fst_snd, -> ! map_map in Esplit1, Esplit2.
+  rewrite -> partition_filter in Epar.
+  apply pair_equal_split in Esplit1, Esplit2, Epar.
+  destruct Epar as (Eres' & Enew_chn'), Esplit1 as (Enew_chn1 & Eres1), 
+    Esplit2 as (Enew_chn2 & Eres2).
+  simpl in Hnotin.
+  apply Forall_impl_impl with (P:=fun tc => ~ In (tc_roottid nd) (map tc_roottid (tc_flatten tc))) in IH.
+  2:{
+    apply Forall_forall.
+    intros ch Hin_ch Hin.
+    apply Hnotin.
+    right.
+    eapply map_flat_map_In_conv; eauto.
+  }
+  rewrite -> ! flat_map_concat_map, -> concat_map, -> map_map, <- ! flat_map_concat_map.
+
+  subst.
+  rewrite -> concat_app, -> ! map_map, <- flat_map_concat_map.
+  etransitivity.
+  1: apply Permutation.Permutation_app; [ apply Permutation.Permutation_app; 
+    [ eapply Permutation_Forall_flat_map; apply IH | reflexivity ] | reflexivity ].
+  erewrite -> map_ext_Forall with (l:=chn).
+  2:{
+    apply Forall_forall.
+    intros ch Hin_ch.
+    apply tc_detach_attach_distr1_fst.
+    intros Hin.
+    apply Hnotin.
+    right.
+    eapply map_flat_map_In_conv; eauto.
+  }
+  rewrite -> map_map with (g:=fst), -> filter_app.
+  match goal with |- Permutation.Permutation (_ ++ ?al ++ _) _ => 
+    replace al with (@nil treeclock) end.
+  2:{
+    rewrite -> filter_all_false; auto.
+    intros ? (ch & <- & Hin)%in_map_iff.
+    apply not_true_is_false.
+    intros HH.
+    rewrite -> has_same_tid_true in HH.
+    apply Hnotin.
+    right.
+    eapply map_flat_map_In_conv; eauto.
+    rewrite <- HH.
+    destruct ch; simpl; auto.
+  }
+  simpl.
+
+  (* ? *)
+  assert (forall [A B C D : Type] (l : list A) (f : B -> C) (g : C -> list D) (h : A -> list B), 
+    flat_map g (flat_map (fun x => map f (h x)) l) = 
+    flat_map (fun x => flat_map g (map f (h x))) l) as Htmp.
+  {
+    intros. 
+    induction l as [ | a l IHH ]; simpl; auto.
+    now rewrite flat_map_app, IHH.
+  }
+  rewrite Htmp; clear Htmp.
+  rewrite <- app_assoc.
+  etransitivity; [ | apply Permutation.Permutation_app_comm ].
+  apply Permutation.Permutation_app_head.
+
+  destruct (find (has_same_tid (info_tid ni)) forest) as [ [ ni' chn' ] | ] eqn:E.
+  2: now simpl.
+  clear -chn'.
+  cbn delta [tc_rootchn] beta iota.
+  (* TODO this is a simple equation for the result of tc_detach_nodes only? *)
+  simpl.
+  destruct (List.split (map (tc_detach_nodes (nd :: nil)) chn')) as (new_chn, res) eqn:Esplit,  
+    (partition (fun tc' : treeclock => isSome (if has_same_tid (tc_roottid tc') nd then Some nd else None)) new_chn)
+    as (res', new_chn') eqn:Epar.
+  (* bad isSome *)
+  rewrite -> partition_ext_Forall with (g:=fun tc' => has_same_tid (tc_roottid tc') nd) in Epar.
+  2: apply Forall_forall; intros x ?; now destruct (has_same_tid (tc_roottid x) nd).
+  simpl.
+  rewrite -> split_map_fst_snd, -> ! map_map in Esplit.
+  rewrite -> partition_filter in Epar.
+  apply pair_equal_split in Esplit, Epar.
+  destruct Epar as (Eres' & Enew_chn'), Esplit as (Enew_chn & Eres).
+  now subst.
+Qed.
+
 Section TC_Join.
 
   Variables (tc tc' : treeclock).
@@ -3300,9 +3691,6 @@ Definition tc_join_partial tc subtree_tc' :=
 
 (* TODO tc_join tc tc' = tc_join tc (prefix); this may not be useful enough, though *)
 
-(* TODO detach nodes should be irrelevant with the tree shape! *)
 
-
-  (* tc_detach_nodes (Node (mkInfo u 0%nat 0%nat) (subtree_tc' :: nil)) tc *)
 
 End TreeClock.

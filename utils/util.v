@@ -173,6 +173,16 @@ Proof.
     now destruct (f x).
 Qed.
 
+Lemma partition_ext_Forall [A : Type] (f g : A -> bool) l 
+  (H : Forall (fun x => f x = g x) l) :
+  partition f l = partition g l.
+Proof.
+  induction l as [ | x l IH ]; simpl; auto.
+  rewrite -> Forall_cons_iff in H.
+  destruct H as (H' & H).
+  rewrite H', IH; auto.
+Qed.
+
 Lemma map_filter_comm [A B : Type] (f : A -> B) (g : B -> bool) l :
   filter g (map f l) = map f (filter (fun x => g (f x)) l).
 Proof.
@@ -326,6 +336,14 @@ Proof.
   f_equal; auto.
 Qed.
 
+Fact filter_all_false {A : Type} (f : A -> bool) (l : list A) 
+  (H : forall x, In x l -> f x = false) : filter f l = nil.
+Proof.
+  induction l as [ | y l IH ]; simpl in *; auto.
+  pose proof (H _ (or_introl eq_refl)) as ->.
+  f_equal; auto.
+Qed.
+
 Lemma Permutation_split_combine {A : Type} (f : A -> bool) (l : list A) :
   Permutation.Permutation l (filter f l ++ filter (fun a => negb (f a)) l).
 Proof.
@@ -425,4 +443,34 @@ Proof.
     rewrite -> skipn_app, -> skipn_all2 at 1; try lia.
     replace (S _ - _) with 1 by lia.
     now simpl.
+Qed.
+
+Fact Permutation_in_mutual [A : Type] (l l' : list A) (H : Permutation.Permutation l l') :
+  forall x, In x l <-> In x l'.
+Proof.
+  intros; split.
+  2: symmetry in H.
+  all: now apply Permutation.Permutation_in.
+Qed.
+
+Fact Permutation_Forall_flat_map [A B : Type] (f g : A -> list B) (l : list A)
+  (H : Forall (fun x => Permutation.Permutation (f x) (g x)) l) :
+  Permutation.Permutation (flat_map f l) (flat_map g l).
+Proof.
+  induction l as [ | x l IH ]; simpl; auto.
+  rewrite -> Forall_cons_iff in H.
+  destruct H as (H1 & H2).
+  apply Permutation.Permutation_app; auto.
+Qed.
+
+Fact Permutation_flat_map_innerapp_split [A B : Type] (f g : A -> list B) (l : list A) :
+  Permutation.Permutation (flat_map (fun x => f x ++ g x) l) (flat_map f l ++ flat_map g l).
+Proof.
+  induction l as [ | x l IH ]; simpl; auto.
+  etransitivity.
+  1: apply Permutation.Permutation_app; [ reflexivity | apply IH ].
+  rewrite -> Permutation.Permutation_app_swap_app.
+  etransitivity.
+  2: apply Permutation.Permutation_app; [ apply Permutation.Permutation_app_comm | reflexivity ].
+  now rewrite <- ! app_assoc.
 Qed.
