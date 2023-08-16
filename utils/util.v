@@ -474,3 +474,6 @@ Proof.
   2: apply Permutation.Permutation_app; [ apply Permutation.Permutation_app_comm | reflexivity ].
   now rewrite <- ! app_assoc.
 Qed.
+
+Fact map_id_eq [A : Type] (l : list A) : map (fun x => x) l = l.
+Proof. induction l; simpl; congruence. Qed.

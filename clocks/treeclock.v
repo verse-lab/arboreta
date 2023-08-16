@@ -2070,6 +2070,63 @@ Proof.
   now rewrite app_assoc.
 Qed.
 
+Fact tc_detach_nodes_intact tcs tc
+  (Hdj : forall t, In t (map tc_roottid (flat_map tc_flatten (tc_rootchn tc))) -> 
+    In t (map tc_roottid tcs) -> False) :
+  tc_detach_nodes tcs tc = (tc, nil).
+Proof.
+  induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros.
+  simpl in *.
+  epose proof (Forall_impl_impl _ _ _ IH ?[Goalq]) as Htmp.
+  [Goalq]:{
+    apply Forall_forall.
+    intros ch Hin_ch t Hin.
+    apply Hdj, map_flat_map_In.
+    exists ch.
+    destruct ch; simpl in *; eqsolve.
+  }
+  erewrite -> map_ext_Forall; [ | apply Htmp ].
+  (* TODO repeat the typical proof steps related with tc_detach_nodes *)
+  destruct (List.split (map (fun ch : treeclock => (ch, nil)) chn))
+    as (new_chn, forest) eqn:Esplit, 
+    (partition (fun tc' => find (has_same_tid (tc_roottid tc')) tcs) new_chn)
+    as (forest', new_chn') eqn:Epar.
+  rewrite -> split_map_fst_snd, -> ! map_map in Esplit.
+  rewrite -> partition_filter in Epar.
+  simpl in Esplit.
+  apply pair_equal_split in Esplit, Epar.
+  destruct Esplit as (Enew_chn & Eres), Epar as (Eres' & Enew_chn').
+  rewrite -> map_id_eq in Enew_chn.
+  subst new_chn.
+  replace (concat forest) with (@nil treeclock) in *.
+  2:{ 
+    symmetry; apply concat_nil_Forall.
+    subst forest. 
+    now apply List.Forall_map, Forall_forall.
+  }
+  simpl.
+  match type of Enew_chn' with filter ?f ?l = _ => 
+    assert (forall ch, In ch l -> f ch = true) as HH end.
+  { 
+    intros ch Hin.
+    apply negb_true_iff.
+    (* FIXME: how to use proper SSR to solve this? *)
+    match goal with |- isSome ?a = false => 
+      enough (~ (is_true (isSome a))) by (destruct a; simpl in *; intuition) end.
+    rewrite <- tc_getnode_in_iff.
+    unfold not. (* ? *)
+    apply Hdj, map_flat_map_In.
+    exists ch. 
+    split; auto. 
+    apply in_map, tc_flatten_self_in.
+  }
+  simpl in HH.
+  rewrite -> filter_all_true in Enew_chn'; auto.
+  rewrite -> filter_all_false in Eres'.
+  2: intros; now apply negb_true_iff, HH.
+  congruence.
+Qed.
+
 (* permutation is much more clear than mutual In here *)
 
 Lemma tc_detach_nodes_dom_partition tcs tc :
