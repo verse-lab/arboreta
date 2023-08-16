@@ -151,20 +151,20 @@ Lemma tc_attach_nodes_degen_tid_nodup tc tc'
   (Hroot_clk_le : tc_getclk (tc_roottid tc') tc < tc_rootclk tc')
   (Hdmono: Foralltc (dmono_single tc) tc') :
   NoDup (map tc_roottid (tc_flatten (tc_attach_nodes 
-    (snd (tc_detach_nodes (tc_get_updated_nodes_join_degen tc tc') tc)) 
+    (snd (tc_detach_nodes (tc_flatten (tc_get_updated_nodes_join_degen tc tc')) tc)) 
     (tc_get_updated_nodes_join_degen tc tc')))).
 Proof.
   pose proof (tc_attach_nodes_result 
-    (snd (tc_detach_nodes (tc_get_updated_nodes_join_degen tc tc') tc))
+    (snd (tc_detach_nodes (tc_flatten (tc_get_updated_nodes_join_degen tc tc')) tc))
     (tc_get_updated_nodes_join_degen tc tc')) as Hso.
   remember (tc_get_updated_nodes_join_degen tc tc') as prefix_tc' eqn:Eprefix.
-  destruct (tc_detach_nodes prefix_tc' tc) as (pivot, forest) eqn:Edetach.
+  destruct (tc_detach_nodes (tc_flatten prefix_tc') tc) as (pivot, forest) eqn:Edetach.
   simpl in Hso |- *.
   pose proof (tc_get_updated_nodes_join_degen_is_prefix tc tc') as Hprefix.
   rewrite <- Eprefix in Hprefix.
   pose proof (tid_nodup_prefix_preserve _ _ Hprefix Hnodup') as Hnodup_pf.
-  assert (forest = snd (tc_detach_nodes prefix_tc' tc)) as Eforest by now rewrite -> Edetach.
-  pose proof (tc_detach_nodes_tid_nodup prefix_tc' tc Hnodup) as Hnodup_forest.
+  assert (forest = snd (tc_detach_nodes (tc_flatten prefix_tc') tc)) as Eforest by now rewrite -> Edetach.
+  pose proof (tc_detach_nodes_tid_nodup (tc_flatten prefix_tc') tc Hnodup) as Hnodup_forest.
   rewrite -> Edetach in Hnodup_forest.
   simpl in Hnodup_forest.
 
@@ -196,7 +196,7 @@ Proof.
     rewrite -> has_same_tid_true in E.
     subst forest.
     (* pose proof Hin as Hsnd. *)
-    pose proof (tc_detach_nodes_snd2fst prefix_tc' tc) as Hsnd2fst.
+    pose proof (tc_detach_nodes_snd2fst (tc_flatten prefix_tc') tc) as Hsnd2fst.
     rewrite -> List.Forall_forall in Hsnd2fst.
     apply Hsnd2fst in Hin.
     destruct Hin as (sub & Hin & Hsnd).
@@ -217,18 +217,18 @@ Lemma tc_attach_nodes_degen_dmono tc tc'
     (Hdmono1: Foralltc (dmono_single tc_larger) tc)
     (Hdmono2: Foralltc (dmono_single tc_larger) tc') :
   Foralltc (dmono_single tc_larger) (tc_attach_nodes 
-    (snd (tc_detach_nodes (tc_get_updated_nodes_join_degen tc tc') tc)) 
+    (snd (tc_detach_nodes (tc_flatten (tc_get_updated_nodes_join_degen tc tc')) tc)) 
     (tc_get_updated_nodes_join_degen tc tc')).
 Proof.
   pose proof (tc_attach_nodes_result 
-    (snd (tc_detach_nodes (tc_get_updated_nodes_join_degen tc tc') tc))
+    (snd (tc_detach_nodes (tc_flatten (tc_get_updated_nodes_join_degen tc tc')) tc))
     (tc_get_updated_nodes_join_degen tc tc')) as Hso.
   remember (tc_get_updated_nodes_join_degen tc tc') as prefix_tc' eqn:Eprefix.
-  destruct (tc_detach_nodes prefix_tc' tc) as (pivot, forest) eqn:Edetach.
+  destruct (tc_detach_nodes (tc_flatten prefix_tc') tc) as (pivot, forest) eqn:Edetach.
   simpl in Hso |- *.
   pose proof (tc_get_updated_nodes_join_degen_is_prefix tc tc') as Hprefix.
   rewrite <- Eprefix in Hprefix.
-  assert (forest = snd (tc_detach_nodes prefix_tc' tc)) as Eforest by now rewrite -> Edetach.
+  assert (forest = snd (tc_detach_nodes (tc_flatten prefix_tc') tc)) as Eforest by now rewrite -> Edetach.
 
   revert Hso.
   apply dmono_simple_overlaytc_pre with (Q:=fun t => tc_getclk t tc).
@@ -244,7 +244,7 @@ Proof.
     simpl in E.
     destruct E as (Hin & <-).
     (* unify getclk t tc and clk ... slightly troublesome *)
-    pose proof (tc_detach_nodes_snd_is_subprefix prefix_tc' tc) as Hsnd2pf.
+    pose proof (tc_detach_nodes_snd_is_subprefix (tc_flatten prefix_tc') tc) as Hsnd2pf.
     rewrite <- Eforest, -> List.Forall_forall in Hsnd2pf.
     specialize (Hsnd2pf _ Hin).
     destruct Hsnd2pf as (sub & Hin_sub & E).
@@ -279,7 +279,7 @@ Definition tc_join_degen tc tc' :=
   then tc
   else 
     let: subtree_tc' := tc_get_updated_nodes_join_degen tc tc' in
-    let: (pivot, forest) := tc_detach_nodes subtree_tc' tc in
+    let: (pivot, forest) := tc_detach_nodes (tc_flatten subtree_tc') tc in
     let: Node (mkInfo w clk_w _) chn_w := tc_attach_nodes forest subtree_tc' in
     let: Node info_z chn_z := pivot in 
     Node info_z ((Node (mkInfo w clk_w (info_clk info_z)) chn_w) :: chn_z).
