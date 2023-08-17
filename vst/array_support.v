@@ -1,19 +1,5 @@
 Require Import VST.floyd.proofauto.
 
-Lemma list_ind_2 : forall (A : Type) (P : list A -> Prop),
-  P [] ->
-  (forall (a : A) (l : list A), P l -> P (l ++ (a :: nil))) ->
-  forall l : list A, P l.
-Proof.
-  intros. remember (length l) as n eqn:E. revert l E.
-  induction n as [ | n IH ]; intros.
-  - destruct l; simpl in E; congruence.
-  - assert (l <> nil) as HH by (destruct l; simpl in E; congruence).
-    apply exists_last in HH. destruct HH as (l' & a & ->).
-    rewrite -> last_length in E. injection E as ->.
-    specialize (IH _ eq_refl). now apply H0.
-Qed.
-
 (* allp is not easy to work with ... so turn to fold sepcon *)
 
 (*
@@ -126,7 +112,7 @@ Lemma data_at_array_unfold {cs : compspecs} (sh : Share.t) (t : type) (l : list 
     (offset_val (sizeof t * i) p)) (upto (Z.to_nat dim))).
 Proof.
   entailer!. clear H H0.
-  induction l as [ | v l IH ] using list_ind_2; intros.
+  induction l as [ | v l IH ] using rev_ind; intros.
   - rewrite Zlength_nil in Hdim. lia.
   - destruct l eqn:E.
     + simpl in *. 

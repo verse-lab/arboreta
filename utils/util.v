@@ -477,3 +477,35 @@ Qed.
 
 Fact map_id_eq [A : Type] (l : list A) : map (fun x => x) l = l.
 Proof. induction l; simpl; congruence. Qed.
+
+Lemma list_ind_3 : forall (A : Type) (P : list A -> Prop),
+  P nil ->
+  (forall n, (forall l, length l = n -> P l) -> forall l, length l = S n -> P l) ->
+  forall l : list A, P l.
+Proof.
+  intros. 
+  remember (length l) as n eqn:E. 
+  revert l E.
+  induction n as [ | n IH ]; intros.
+  - destruct l; simpl in E; congruence.
+  - destruct l; try (simpl in E; congruence).
+    eapply H0.
+    2: now rewrite E.
+    auto.
+Qed.
+
+(* another way to prove rev_ind *)
+
+Lemma list_ind_2 : forall (A : Type) (P : list A -> Prop),
+  P nil ->
+  (forall (a : A) (l : list A), P l -> P (l ++ (a :: nil))) ->
+  forall l : list A, P l.
+Proof.
+  intros.
+  induction l using list_ind_3; intros; auto.
+  assert (l <> nil) as HH by (destruct l; simpl in *; congruence).
+  destruct (exists_last HH) as (l' & a & ->).
+  rewrite -> last_length in H2. 
+  injection H2 as <-.
+  auto.
+Qed.
