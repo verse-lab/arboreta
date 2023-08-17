@@ -23,7 +23,32 @@ Fixpoint tc_locate_update (tc : @treeclock nat) (pos : list nat) sub : @treecloc
 (* rather unwanted *)
 Definition tc_remove_ch (tc : @treeclock nat) (idx : nat) : @treeclock nat :=
   let 'Node ni chn := tc in
+  (* TODO may use remove, instead of filter? *)
   Node ni (List.filter (fun tc' => negb (has_same_tid idx tc')) chn).
+
+(* FIXME: temporary. this is still bad *)
+
+Fact tc_remove_ch_when_nodup ni pre sub suf 
+  (Hnodup : NoDup (map tc_roottid (tc_flatten (Node ni (pre ++ sub :: suf))))) :
+  tc_remove_ch (Node ni (pre ++ sub :: suf)) (tc_roottid sub) = Node ni (pre ++ suf).
+Proof.
+  apply NoDup_cons_iff, proj2, tid_nodup_root_chn_split, proj1 in Hnodup.
+  rewrite -> map_app in Hnodup. simpl in Hnodup.
+  apply NoDup_app in Hnodup. destruct Hnodup as (Hnodup_pre & Hnodup & Hdj1).
+  apply NoDup_cons_iff in Hnodup. destruct Hnodup as (Hdj2 & _).
+  simpl in Hdj1.
+  unfold tc_remove_ch. f_equal. rewrite -> filter_app. simpl.
+  unfold has_same_tid at 2. 
+  destruct (eqdec (tc_roottid sub) (tc_roottid sub)) eqn:E; try contradiction.
+  simpl.
+  rewrite -> ! filter_all_true; auto.
+  all: setoid_rewrite negb_true_iff.
+  all: unfold has_same_tid.
+  all: intros ch'' Hin''; destruct (eqdec (tc_roottid ch'') (tc_roottid sub)) as [ EE | ]; 
+    simpl; try eqsolve.
+  - exfalso. apply Hdj2. rewrite <- EE. now apply in_map.
+  - exfalso. apply (Hdj1 _ (in_map tc_roottid _ _ Hin'')). now left.
+Qed.
 
 Fact tc_detach_nodes_single tc
   (Hnodup : NoDup (map tc_roottid (tc_flatten tc))) :

@@ -187,6 +187,9 @@ Proof. intros [(?, ?, ?) ?] [(?, ?, ?) ?]. simpl. congruence. Qed.
 Fact tc_rootinfo_clk_inj : forall x y, tc_rootinfo x = tc_rootinfo y -> tc_rootclk x = tc_rootclk y.
 Proof. intros [(?, ?, ?) ?] [(?, ?, ?) ?]. simpl. congruence. Qed.
 
+Fact tc_rootinfo_aclk_inj : forall x y, tc_rootinfo x = tc_rootinfo y -> tc_rootaclk x = tc_rootaclk y.
+Proof. intros [(?, ?, ?) ?] [(?, ?, ?) ?]. simpl. congruence. Qed.
+
 (* this is_left is for better printing of find (has_same_tid t) *)
 
 Definition has_same_tid t tc := is_left (eqdec (tc_roottid tc) t).

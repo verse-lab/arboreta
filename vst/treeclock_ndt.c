@@ -197,8 +197,10 @@ void join(TreeClock_T self, TreeClock_T tc){
     }
 
     // TODO generalize this as clock assignment?
-    z_clocks->clock_clk = zprime_clocks->clock_clk;
-    z_clocks->clock_aclk = (get_clock(self, root_tid_this))->clock_clk;
+    z_clocks->clock_clk = zprime_clock; /* local optimization */
+    // z_clocks->clock_aclk = (get_clock(self, root_tid_this))->clock_clk;
+    struct Clock* self_root_clocks = get_clock(self, root_tid_this);
+    z_clocks->clock_aclk = self_root_clocks->clock_clk;
 
     push_child(self, root_tid_this, zprime_tid, z_node);
 

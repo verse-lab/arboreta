@@ -509,3 +509,13 @@ Proof.
   injection H2 as <-.
   auto.
 Qed.
+
+Fact Permutation_upto_pick m n (H : m < n) :
+  Permutation.Permutation (seq 0 n) (m :: ((seq 0 m) ++ (seq (S m) (n - (S m))))).
+Proof.
+  replace n with (m + (S (n - (S m)))) at 1 by lia.
+  rewrite -> seq_app.
+  simpl. 
+  symmetry.
+  now apply Permutation.Permutation_middle.
+Qed.
