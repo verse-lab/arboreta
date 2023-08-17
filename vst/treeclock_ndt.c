@@ -156,7 +156,7 @@ void get_updated_nodes_join_chn(TreeClock_T self, TreeClock_T tc, int par, int p
 void join(TreeClock_T self, TreeClock_T tc){
     int root_tid_this = self->root_tid;
 
-    // originally this check is done at !node_is_null(z_node); would this be better?
+    // possibly would be better to early return, but not sure; this is closer to the Java code, anyway
     if (root_tid_this == tc->root_tid){
         return ;
     }
@@ -167,7 +167,7 @@ void join(TreeClock_T self, TreeClock_T tc){
     }
 */
     // struct Clock* zprime_clocks = get_local_root_data(tc);
-    // struct Clock* zprime_clocks = &(tc->clocks[zprime_tid]);
+    // struct Clock* zprime_clocks = &(tc->clocks[zprime_tid]); // this would result in the same compilation result in Clight!
 
     int zprime_tid = tc->root_tid;
     struct Clock* zprime_clocks = get_clock(tc, zprime_tid);
@@ -176,8 +176,9 @@ void join(TreeClock_T self, TreeClock_T tc){
     int zprime_clock = zprime_clocks->clock_clk;
     struct Node* z_node = get_node(self, zprime_tid);
     struct Clock* z_clocks = get_clock(self, zprime_tid);
+
+/*
     int z_clock = 0;
-    // if (!node_is_null(z_node)){
     if (!node_is_null(z_node)){
         z_clock = z_clocks->clock_clk;
         if (zprime_clock <= z_clock){
@@ -186,48 +187,33 @@ void join(TreeClock_T self, TreeClock_T tc){
             detach_from_neighbors(self, zprime_tid, z_node);
         }
     }
+*/
 
+    int z_clock = z_clocks->clock_clk;
+    if (zprime_clock <= z_clock){
+        return;
+    } else if (!node_is_null(z_node)){
+        detach_from_neighbors(self, zprime_tid, z_node);
+    }
+
+    // TODO generalize this as clock assignment?
     z_clocks->clock_clk = zprime_clocks->clock_clk;
-    // // copy the clock of this.clocks[this.rootTid] to zprime_clocks's aclk and return
     z_clocks->clock_aclk = (get_clock(self, root_tid_this))->clock_clk;
 
     push_child(self, root_tid_this, zprime_tid, z_node);
-    // struct Node* this_root_node = get_node(self, root_tid_this);
-    // int root_head_child = get_tid(this_root_node->node_headch);
-    // if (root_head_child != NODE_NULL){
-    //     struct Node *ndtmp = get_node(self, root_head_child);
-    //     ndtmp->node_prev = set_tid(zprime_tid);
-    // }
-    // z_node->node_next = set_tid(root_head_child);
-    // z_node->node_par = set_tid(root_tid_this);
-    // // noop: this.clocks[zprime_tid] = z_clocks;
-    // // noop: this.tree[zprime_tid] = z_node;
-    // this_root_node->node_headch = set_tid(zprime_tid);
 
     get_updated_nodes_join_chn(self, tc, zprime_tid, z_clock);
-    // int vprime_tid = get_tid((get_node(tc, zprime_tid))->node_headch);
-    // while (vprime_tid != 0){
-    //     struct Clock* vprime_clocks = get_clock(tc, vprime_tid);
-    //     int32_t v_clock = get_local_clock(self, vprime_tid);
-    //     if (v_clock < vprime_clocks->clock_clk){
-    //         self->S[++self->top] = vprime_tid;
-    //     } else {
-    //         if (vprime_clocks->clock_aclk <= z_clock){
-    //             break;
-    //         }
-    //     }
-    //     vprime_tid = get_tid((get_node(tc, vprime_tid))->node_next);
-    // }
 
     while (self->top >= 0){
         int uprime_tid = self->S[self->top--];
         struct Clock* uprime_clocks = get_clock(tc, uprime_tid);
         struct Node* u_node = get_node(self, uprime_tid);
         struct Clock* u_clocks = get_clock(self, uprime_tid);
-        int u_clock = 0;
+        /* int u_clock = 0; */
+        int u_clock = u_clocks->clock_clk;;
 
         if (!node_is_null(u_node)){
-            u_clock = u_clocks->clock_clk;
+            /* u_clock = u_clocks->clock_clk; */
             detach_from_neighbors(self, uprime_tid, u_node);
         }
 
@@ -242,52 +228,5 @@ void join(TreeClock_T self, TreeClock_T tc){
 
         get_updated_nodes_join_chn(self, tc, uprime_tid, u_clock);
     }
-
-    // while (self->top >= 0){
-    //     int uprime_tid = self->S[self->top--];
-    //     struct Clock* uprime_clocks = get_clock(tc, uprime_tid);
-    //     struct Node* u_node = get_node(self, uprime_tid);
-    //     struct Clock* u_clocks = get_clock(self, uprime_tid);
-    //     int32_t u_clock = 0;
-
-    //     if (!node_is_null(u_node)){
-    //         u_clock = u_clocks->clock_clk;
-    //         detach_from_neighbors(self, uprime_tid, u_node);
-    //     }
-
-    //     // TODO generalize this as clock assignment?
-    //     u_clocks->clock_clk = uprime_clocks->clock_clk;
-    //     u_clocks->clock_aclk = uprime_clocks->clock_aclk;
-        
-    //     int y = get_tid((get_node(tc, uprime_tid))->node_par);
-
-        // push_child(self, y, uprime_tid, u_node); 
-    //     struct Node* y_node = get_node(self, y);
-    //     int head_child = get_tid(y_node->node_headch);
-    //     // here, little change of the condition
-    //     if (head_child != -1){
-    //         struct Node *ndtmp = get_node(self, head_child);
-    //         ndtmp->node_prev = set_tid(uprime_tid);
-    //     }
-    //     u_node->node_next = set_tid(head_child);
-    //     u_node->node_par = set_tid(y);
-    //     // noop: this.tree[uprime_tid] = u_node;
-    //     y_node->node_headch = set_tid(uprime_tid);
-
-    //     // FIXME: all the same as the while-loop above except for changing z into u
-    //     vprime_tid = get_tid((get_node(tc, uprime_tid))->node_headch);
-    //     while (vprime_tid != 0){
-    //         struct Clock* vprime_clocks = get_clock(tc, vprime_tid);
-    //         int32_t v_clock = get_local_clock(self, vprime_tid);
-    //         if (v_clock < vprime_clocks->clock_clk){
-    //             self->S[++self->top] = vprime_tid;
-    //         } else {
-    //             if (vprime_clocks->clock_aclk <= u_clock){
-    //                 break;
-    //             }
-    //         }
-    //         vprime_tid = get_tid((get_node(tc, vprime_tid))->node_next);
-    //     }
-    // }
 }
 

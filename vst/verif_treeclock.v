@@ -3338,20 +3338,47 @@ Proof.
   saturate_lemmas.
 
   start_function.
+  (* prepare *)
   unfold treeclock_rep.
   Intros. Intros lclk lnode lstk.
-  (* TODO cannot customize the name? *)
+  (* TODO cannot customize the name of hypothesis? *)
   Intros. Intros lclk' lnode' lstk'.
   unfold treeclock_payload.
   unfold is_pos_tint in *.
+  match goal with HH : tc_shape_inv tc |- _ => rename HH into Hshape end.
+  match goal with HH : tc_shape_inv tc' |- _ => rename HH into Hshape' end.
+  match goal with HH : is_tc_nodearray_proj_full lnode _ |- _ => rename HH into Hprojn1 end.
+  match goal with HH : is_tc_nodearray_proj_full lnode' _ |- _ => rename HH into Hprojn1' end.
+  match goal with HH : nodearray_emptypart lnode _ |- _ => rename HH into Hprojn2 end.
+  match goal with HH : nodearray_emptypart lnode' _ |- _ => rename HH into Hprojn2' end.
+  match goal with HH : is_tc_clockarray_proj lclk _ |- _ => rename HH into Hprojc1 end.
+  match goal with HH : is_tc_clockarray_proj lclk' _ |- _ => rename HH into Hprojc1' end.
+  match goal with HH : clockarray_emptypart lclk _ |- _ => rename HH into Hprojc2 end.
+  match goal with HH : clockarray_emptypart lclk' _ |- _ => rename HH into Hprojc2' end.
+  match goal with HH : Zlength lstk = _ |- _ => rename HH into Hlen_lstk end.
+  match goal with HH : Zlength lclk = _ |- _ => rename HH into Hlen_lclk end.
+  match goal with HH : Zlength lnode = _ |- _ => rename HH into Hlen_lnode end.
+  match goal with HH : Zlength lstk' = _ |- _ => rename HH into Hlen_lstk' end.
+  match goal with HH : Zlength lclk' = _ |- _ => rename HH into Hlen_lclk' end.
+  match goal with HH : Zlength lnode' = _ |- _ => rename HH into Hlen_lnode' end.
+  match goal with HH : Z.of_nat (tc_roottid tc) < dim |- _ => rename HH into Hlt end.
+  match goal with HH : Z.of_nat (tc_roottid tc') < dim |- _ => rename HH into Hlt' end.
   match goal with HH : context [Foralltc ?a tc] |- _ => 
     match a with context[tc_rootclk] => rename HH into Hcb_tc end end.
   match goal with HH : context [Foralltc ?a tc'] |- _ => 
     match a with context[tc_rootclk] => rename HH into Hcb_tc' end end.
-  match goal with HH : context [is_tc_clockarray_proj _ tc] |- _ =>
-    pose proof (is_tc_clockarray_proj_nth _ _ HH) as Hca_tc end.
-  match goal with HH : context [is_tc_clockarray_proj _ tc'] |- _ =>
-    pose proof (is_tc_clockarray_proj_nth _ _ HH) as Hca_tc' end.
+  epose proof (is_tc_nodearray_proj_tid_bounded _ _ (proj2 Hprojn1) ?[Goalq]) as Htid.
+  [Goalq]: congruence.
+  epose proof (is_tc_nodearray_proj_tid_bounded _ _ (proj2 Hprojn1') ?[Goalq]) as Htid'.
+  [Goalq]: congruence.
+  rewrite -> Hlen_lnode in Htid.
+  rewrite -> Hlen_lnode' in Htid'.
+  (* TODO what does it mean for "ca"? *)
+  pose proof (is_tc_clockarray_proj_nth _ _ Hprojc1) as Hca_tc.
+  pose proof (is_tc_clockarray_proj_nth _ _ Hprojc1') as Hca_tc'.
+  assert (0 < dim) as Hdim by lia.
+  pose proof (tid_nodup _ Hshape) as Hnodup.
+  pose proof (tid_nodup _ Hshape') as Hnodup'.
 
   forward. forward. 
   forward_if.
@@ -3480,13 +3507,126 @@ Proof.
   *)
   forward_call.
   (* retract *)
-  remember (match tc_getnode (tc_roottid tc') tc with None => true | _ => false end) as vret eqn:Evret.
+  pose (vret:=match tc_getnode (tc_roottid tc') tc with None => true | _ => false end).
   replace (node_is_null_as_bool tc (tc_roottid tc')) with vret.
   2:{ subst vret. unfold node_is_null_as_bool. destruct tc as [(u, ?, ?) [ | ]]; simpl; auto.
     simpl in Hrootid. apply Nat.eqb_neq in Hrootid. now rewrite -> Nat.eqb_sym, -> Hrootid.
   }
 
-  (* FIXME: revise this later *)
+  (* before going forward, prepare for the node to be detached and change the representation format *)
+  (* ... that said, although we can do representation change here, but doing it later will be more convenient, 
+      in the sense that (1) we have to read the clock and (2) we can directly use the detach spec *)
+  pose (pureroot_tc':=Node (tc_rootinfo tc') nil).
+  pose (sub:=(match tc_getnode (tc_roottid tc') tc with Some res => res | None => Node (mkInfo (tc_roottid tc') 0%nat 0%nat) nil end)).
+  (*
+  sep_apply (tc_array2rep_and_bag plclk plnode _ _ _ tc Hlen_lclk Hlen_lnode).
+  Intros.
+  *)
+  deadvars.
+  freeze (2 :: 4 :: 5 :: 6 :: 7 :: nil) Fr.
+  (* this only changes zclock *)
+  forward_if
+  (EX z1 z2 z3 : Z,
+  PROP ( )
+  LOCAL (temp _t'1 (Val.of_bool vret); 
+    temp _z_clock (Vint (Int.repr (Z.of_nat (tc_getclk (tc_roottid tc') tc)))); (* changed *)
+    temp _z_clocks (offset_val (sizeof (Tstruct _Clock noattr) * Z.of_nat (tc_roottid tc')) plclk);
+    temp _z_node (offset_val (sizeof (Tstruct _Node noattr) * Z.of_nat (tc_roottid tc')) plnode);
+    temp _zprime_clock (Vint (Int.repr (Z.of_nat (tc_rootclk tc'))));
+    temp _zprime_clocks (offset_val (sizeof (Tstruct _Clock noattr) * Z.of_nat (tc_roottid tc')) plclk');
+    temp _zprime_tid (Vint (Int.repr (Z.of_nat (tc_roottid tc'))));
+    temp _root_tid_this (Vint (Int.repr (Z.of_nat (tc_roottid tc)))); temp _self p; temp _tc p')
+  SEP (FRZL Fr; 
+    data_at Tsh t_struct_treeclock
+      (Vint (Int.repr dim), (Vint (Int.repr (Z.of_nat (tc_roottid tc))), (plclk, (plnode, (plstk, Vint (Int.repr (-1))))))) p;
+    tc_subroot_rep dim plnode plclk sub z1 z2 z3;
+    tc_rep_noroot dim plnode plclk sub; 
+    tc_rep dim plnode plclk (fst (tc_detach_nodes (pureroot_tc' :: nil) tc)); 
+    unused_bag_rep dim plnode plclk (tc_flatten tc)))%assert.
+  {
+    (* (tc_roottid tc') exists in tc *)
+    subst vret.
+    destruct (tc_getnode (tc_roottid tc') tc) as [ res | ] eqn:Eres.
+    2:{ 
+      match goal with HH : context[typed_true] |- _ => rename HH into Htmp end.
+      unfold eval_unop in Htmp. simpl in Htmp. now apply typed_true_tint_Vint in Htmp.
+    }
+    subst sub.
+    (* tracing, but not framing *)
+    pose proof Eres as Htmp. apply subtc_has_parent in Htmp; auto.
+    destruct Htmp as ([ni chn] & (l & Hsub)%subtc_witness_iff & (pre & suf & Echn)%in_split).
+    simpl in Echn.
+    (* traditional reading clock; TODO use clockarray_proj_tc_getinfo? *)
+    array_focus (Z.of_nat (tc_roottid tc')) plclk witheqn Etmp.
+    rewrite -> Etmp.
+    pose proof Eres as Eclock.
+    apply (tc_getnode_res_Foralltc Hca_tc) in Eclock.
+    destruct Eclock as (Eclock & Eid_res). 
+    rewrite -> Eid_res in Eclock.
+    read_clock witheqn Eclock. clear Eclock.
+    array_unfocus witheqn Etmp.
+
+    forward_if.
+    {
+      pose proof Eres as Ecb.
+      apply (tc_getnode_res_Foralltc Hcb_tc) in Ecb.
+      pose proof (Foralltc_self _ _ Hcb_tc') as Hcb_tc'root. simpl in Hcb_tc'root.
+      match goal with HH : Int.signed (Int.repr _) >= _ |- _ => rename HH into Hge end.
+      rewrite -> ! Int.signed_repr, <- Nat2Z.inj_ge in Hge; try lia.
+      replace (tc_rootclk res) with (tc_getclk (tc_roottid tc') tc) in Hge
+        by (unfold tc_getclk; now rewrite Eres).
+      (* early return; TODO repeating above? maybe still need to move root eq check here *)
+      (* tc.join(tc') = tc *)
+      assert (tc_join tc tc' = tc) as Ejoin.
+      { 
+        destruct tc' as [(z', clk_z', ?) ?], tc as [(z, clk_z, ?) ?]. 
+        unfold tc_join. simpl.
+        (* ..? *)
+        unfold tc_getclk in Hge |- *. simpl in Hge, Eres |- *. rewrite -> Eres in Hge |- *.
+        assert (clk_z' <= tc_rootclk res)%nat as Hle by lia.
+        apply Nat.leb_le in Hle. now rewrite -> Hle.
+      }
+      (* made shorter *)
+      forward. thaw Fr. simpl.
+      unfold treeclock_rep at 1. Exists lclk lnode lstk.
+      unfold treeclock_rep at 1. Exists lclk' lnode' lstk'.
+      rewrite -> ! Ejoin.
+      entailer!.
+    }
+
+    (*
+    {
+      forward_call ().
+
+
+
+    unfold tc_rep, tc_root_rep.
+    sep_apply (tc_rep_subtree_frame _ _ _ Hsub).
+    Intros z1' z2' z3'.
+    unfold tc_rep_noroot at 1. fold tc_rep_noroot.
+    simpl in Hin. apply in_split in Hin. destruct Hin as .
+    unfold tc_subroot_rep at 1, clock_rep, node_rep, clock_payload. Intros.
+
+
+    forward. 
+    
+    
+
+    array_focus (Z.of_nat (tc_roottid tc')) plclk witheqn Etmp.
+    rewrite -> Etmp.
+    pose proof Eres as Eclock.
+    apply (tc_getnode_res_Foralltc Hca_tc) in Eclock.
+    destruct Eclock as (Eclock & Eid_res). 
+    rewrite -> Eid_res in Eclock.
+    read_clock witheqn Eclock. clear Eclock.
+    array_unfocus witheqn Etmp.
+
+    
+
+
+  thaw Fr. cbv delta [Z.to_nat Pos.to_nat Pos.iter_op Nat.add] beta iota.
+*)
+
   (*
   forward_if.
   { destruct vret.
