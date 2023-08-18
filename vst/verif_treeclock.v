@@ -1183,6 +1183,8 @@ Lemma tc_rep_and_bag2array plclk plnode dim tc (Hdim : 0 < dim)
   tc_root_rep dim plnode plclk tc * tc_rep_noroot dim plnode plclk tc *
     unused_bag_rep dim plnode plclk (tc_flatten tc) |--
   EX lnode lclk, 
+  !! (Zlength lnode = dim) &&
+  !! (Zlength lclk = dim) &&
   !! (Foralltc (fun sub => Z.of_nat (tc_roottid sub) < dim /\
     Z.of_nat (tc_rootclk sub) <= Int.max_signed /\ 
     Z.of_nat (tc_rootaclk sub) <= Int.max_signed) tc) &&
@@ -1461,7 +1463,8 @@ Definition get_updated_nodes_join_chn_spec :=
     (* plnode is not used here *)
     tc : (@treeclock nat), plclk : val, plnode : val, plstk : val, top : nat, p : val,
     v1 : val, plclk' : val, plnode' : val, v2 : val, v3 : val, p' : val,
-    par' : nat, chn' : list (@treeclock nat), 
+    (* decoupling clk and par' *)
+    clk : nat, par' : nat, chn' : list (@treeclock nat), 
     lclk : list (reptype t_struct_clock), lstk : list val,
     lclk' : list (reptype t_struct_clock), lnode' : list (reptype t_struct_node)
   PRE [ tptr t_struct_treeclock, tptr t_struct_treeclock, tint, tint ]
@@ -1474,7 +1477,7 @@ Definition get_updated_nodes_join_chn_spec :=
       (* at least we need this *)
       node_struct_get_headch (Znth (Z.of_nat par') lnode') = Vint (Int.repr (tcs_head_Z chn'));
       (* these are redundant, but add it here anyway *)
-      0 <= Z.of_nat (tc_getclk par' tc) <= Int.max_signed;
+      0 <= Z.of_nat clk <= Int.max_signed;
       (* Forall (fun sub => Z.of_nat par' < dim) sub; *)
       (* need proj for self (tc) *)
       Zlength lclk = dim;
@@ -1487,8 +1490,8 @@ Definition get_updated_nodes_join_chn_spec :=
       Forall (is_tc_clockarray_proj lclk') chn'; 
       is_tc_nodearray_proj_chnaux par' lnode' default_nodefield chn';
       (* need bound the size of top *)
-      Z.of_nat (top + length (tc_get_updated_nodes_join_aux tc par' chn')) <= dim)
-    PARAMS (p; p'; Vint (Int.repr (Z.of_nat par')); Vint (Int.repr (Z.of_nat (tc_getclk par' tc))))
+      Z.of_nat (top + length (tc_get_updated_nodes_join_aux tc clk chn')) <= dim)
+    PARAMS (p; p'; Vint (Int.repr (Z.of_nat par')); Vint (Int.repr (Z.of_nat clk)))
     SEP (data_at Tsh (tarray t_struct_clock dim) lclk' plclk';
       data_at Tsh (tarray t_struct_node dim) lnode' plnode';
       data_at Tsh t_struct_treeclock
@@ -1511,10 +1514,10 @@ Definition get_updated_nodes_join_chn_spec :=
       data_at Tsh (tarray tint dim) 
         (firstn top lstk ++
          (map (fun x => Vint (Int.repr (Z.of_nat x))) 
-            (map tc_roottid (tc_get_updated_nodes_join_aux tc par' chn'))) ++
-          skipn (top + length (tc_get_updated_nodes_join_aux tc par' chn')) lstk) plstk;
+            (map tc_roottid (tc_get_updated_nodes_join_aux tc clk chn'))) ++
+          skipn (top + length (tc_get_updated_nodes_join_aux tc clk chn')) lstk) plstk;
       data_at Tsh t_struct_treeclock (treeclock_payload dim (Z.of_nat (tc_roottid tc)) 
-        plclk plnode plstk (Z.of_nat (top + length (tc_get_updated_nodes_join_aux tc par' chn')) - 1)) p).
+        plclk plnode plstk (Z.of_nat (top + length (tc_get_updated_nodes_join_aux tc clk chn')) - 1)) p).
 
 (* make two function specs for node_is_null; one is straightforward, another is for use *)
 
@@ -1870,13 +1873,13 @@ Proof.
   forward_loop
   (EX i : nat, EX prev : Z, 
     PROP ((0%nat <= i <= length chn')%nat; 
-      Forall (fun tc' => ((tc_getclk par' tc) < tc_rootaclk tc' \/ (tc_getclk (tc_roottid tc') tc) < tc_rootclk tc')%nat) (firstn i chn');
+      Forall (fun tc' => (clk < tc_rootaclk tc' \/ (tc_getclk (tc_roottid tc') tc) < tc_rootclk tc')%nat) (firstn i chn');
       (* ... *)
       is_tc_nodearray_proj_chnaux par' lnode' prev (skipn i chn'))
     LOCAL (temp _vprime_tid (Vint (Int.repr (tcs_head_Z (skipn i chn')))); (* changed *)
       (* temp _nd_par (offset_val (sizeof (Tstruct _Node noattr) * Z.of_nat par') plnode'); *)
       temp _self p; temp _tc p';
-      temp _par_clock (Vint (Int.repr (Z.of_nat (tc_getclk par' tc)))))
+      temp _par_clock (Vint (Int.repr (Z.of_nat clk))))
     SEP (data_at Tsh (tarray t_struct_node dim) lnode' plnode';
       data_at Tsh (tarray t_struct_clock dim) lclk' plclk';
       data_at Tsh t_struct_treeclock
@@ -1885,13 +1888,13 @@ Proof.
       data_at Tsh (tarray tint dim) 
         (firstn top lstk ++
           (map (fun y : nat => Vint (Int.repr (Z.of_nat y)))
-            (map tc_roottid (tc_get_updated_nodes_join_aux tc par' (firstn i chn')))) ++
-        skipn (top + length (tc_get_updated_nodes_join_aux tc par' (firstn i chn'))) lstk) plstk;
+            (map tc_roottid (tc_get_updated_nodes_join_aux tc clk (firstn i chn')))) ++
+        skipn (top + length (tc_get_updated_nodes_join_aux tc clk (firstn i chn'))) lstk) plstk;
       data_at Tsh t_struct_treeclock
         (Vint (Int.repr dim),
           (Vint (Int.repr (Z.of_nat (tc_roottid tc))),
           (plclk, (plnode, (plstk, Vint (Int.repr 
-            (Z.of_nat (top + length (tc_get_updated_nodes_join_aux tc par' (firstn i chn'))) - 1))))))) p))%assert.  (* this %assert really helps. *)
+            (Z.of_nat (top + length (tc_get_updated_nodes_join_aux tc clk (firstn i chn'))) - 1))))))) p))%assert.  (* this %assert really helps. *)
   1:{ (* first in *)
     Exists 0%nat default_nodefield. entailer!. 1: simpl; constructor.
     simpl. rewrite Nat.add_0_r, firstn_skipn. entailer.
@@ -1922,7 +1925,7 @@ Proof.
       rewrite E' in E. now simpl in E.
     - simpl in _Hyp11, Heq. apply repr_inj_signed in Heq; auto. lia.
   }
-  epose proof (tc_get_updated_nodes_join_aux_app tc par' (firstn i chn') (skipn i chn') ?[Goalq]) as Haux.
+  epose proof (tc_get_updated_nodes_join_aux_app tc clk (firstn i chn') (skipn i chn') ?[Goalq]) as Haux.
   [Goalq]: assumption.
   rewrite firstn_skipn in Haux.
 
@@ -1964,12 +1967,7 @@ Proof.
   eapply clockarray_proj_tc_getinfo in Eclk; eauto. 
   rewrite ! Nat2Z.id in Eclk. rewrite Eclk.
   forward.
-  (* TODO streamline this? *)
-  assert (0 <= (Z.of_nat (tc_getclk v' tc)) <= Int.max_signed) as _Hyp12.
-  {
-    unfold tc_getclk. destruct (tc_getnode v' tc) as [ res | ] eqn:Eres; try lia.
-    eapply tc_getnode_res_Foralltc in Eres. 2: apply Hcb_tc. simpl in Eres. lia.
-  }
+  pose proof (tc_getclk_in_int_range _ Hcb_tc v') as _Hyp12.
   rewrite <- Eclk. 
   array_unfocus witheqn Etmp.
   (* get clock, again *)
@@ -1998,7 +1996,7 @@ Proof.
     destruct (clk_v' <=? tc_getclk v' tc)%nat eqn:Eclk_le.
     1: apply Nat.leb_le in Eclk_le; lia.
     (* need to show that top can safely add 1 *)
-    assert (Z.of_nat (top + length (tc_get_updated_nodes_join_aux tc par' (firstn i chn'))) < dim) as Htop1 
+    assert (Z.of_nat (top + length (tc_get_updated_nodes_join_aux tc clk (firstn i chn'))) < dim) as Htop1 
       by (simpl in Hlentop; lia).
     forward. forward. rewrite add_repr. 
     match goal with |- context[?a - 1 + 1] => replace (a - 1 + 1) with a by lia end.
@@ -2047,13 +2045,13 @@ Proof.
 
     forward_if.
     1:{ (* early stop *)
-      destruct (aclk_v' <=? tc_getclk par' tc)%nat eqn:Eaclk_le.
+      destruct (aclk_v' <=? clk)%nat eqn:Eaclk_le.
       2: apply Nat.leb_gt in Eaclk_le; lia.
       rewrite app_nil_r in Haux.
       forward. entailer!.
       rewrite ! Haux. entailer!.
     }
-    destruct (aclk_v' <=? tc_getclk par' tc)%nat eqn:Eaclk_le.
+    destruct (aclk_v' <=? clk)%nat eqn:Eaclk_le.
     1: apply Nat.leb_le in Eaclk_le; lia.
 
     (* change to next ch *)
@@ -2348,89 +2346,6 @@ Proof.
   repeat constructor; simpl; lia.
 Qed.
 
-(* single tree removal *)
-(*
-Fact tc_chn_focus tc (Hnodup : NoDup (map tc_roottid (tc_flatten tc)))
-  ch (Hin : In ch (tc_rootchn tc)) sub (Hsub : subtc sub ch) :
-  exists pre suf, 
-    (tc_rootchn tc) = pre ++ (ch :: suf) /\
-    .
-Proof.
-  destruct tc as [ni chn]. simpl in *.
-  induction chn as [ | ch' chn IH ].
-  1: now simpl in Hin.
-  simpl in Hnodup_chn. rewrite NoDup_cons_iff in Hnodup_chn.
-  destruct Hnodup_chn as (Hnotin & Hnodup_chn).
-  simpl in Hin. destruct Hin as [ -> | Hin ].
-  - exists nil, chn. simpl. split; auto.
-    symmetry in Eid. rewrite <- Eid in Hnotin.
-    rewrite <- has_same_tid_true in Eid. rewrite -> Eid. simpl. 
-    (* TODO this is ... *)
-    clear -Hnotin.
-    induction chn as [ | ch' chn IH ]; simpl in *; auto.
-    apply Decidable.not_or in Hnotin.
-    destruct Hnotin as (Hneq & Hnotin).
-    specialize (IH Hnotin).
-    assert (has_same_tid idx ch' = false) as -> by (apply has_same_tid_false; eqsolve).
-    simpl. eqsolve.
-  - specialize (IH Hnodup_chn Hin).
-    destruct IH as (pre & suf & -> & E).
-    exists (ch' :: pre), suf.
-    split; auto.
-    rewrite -> map_app, -> in_app_iff in Hnotin.
-    simpl in Hnotin. 
-    assert (idx <> tc_roottid ch') as Hneq by eqsolve.
-    rewrite <- has_same_tid_false in Hneq. 
-    simpl. rewrite -> Hneq. simpl. eqsolve.
-Qed.
-
-Fact tc_remove_ch_presuf tc idx (Hnodup_chn : NoDup (map tc_roottid (tc_rootchn tc)))
-  ch (Eid : tc_roottid ch = idx) (Hin : In ch (tc_rootchn tc)) :
-  exists pre suf, 
-    (tc_rootchn tc) = pre ++ (ch :: suf) /\
-    (tc_rootchn (tc_remove_ch tc idx)) = pre ++ suf.
-Proof.
-  destruct tc as [ni chn]. simpl in *.
-  induction chn as [ | ch' chn IH ].
-  1: now simpl in Hin.
-  simpl in Hnodup_chn. rewrite NoDup_cons_iff in Hnodup_chn.
-  destruct Hnodup_chn as (Hnotin & Hnodup_chn).
-  simpl in Hin. destruct Hin as [ -> | Hin ].
-  - exists nil, chn. simpl. split; auto.
-    symmetry in Eid. rewrite <- Eid in Hnotin.
-    rewrite <- has_same_tid_true in Eid. rewrite -> Eid. simpl. 
-    (* TODO this is ... *)
-    clear -Hnotin.
-    induction chn as [ | ch' chn IH ]; simpl in *; auto.
-    apply Decidable.not_or in Hnotin.
-    destruct Hnotin as (Hneq & Hnotin).
-    specialize (IH Hnotin).
-    assert (has_same_tid idx ch' = false) as -> by (apply has_same_tid_false; eqsolve).
-    simpl. eqsolve.
-  - specialize (IH Hnodup_chn Hin).
-    destruct IH as (pre & suf & -> & E).
-    exists (ch' :: pre), suf.
-    split; auto.
-    rewrite -> map_app, -> in_app_iff in Hnotin.
-    simpl in Hnotin. 
-    assert (idx <> tc_roottid ch') as Hneq by eqsolve.
-    rewrite <- has_same_tid_false in Hneq. 
-    simpl. rewrite -> Hneq. simpl. eqsolve.
-Qed.
-*)
-
-(*
-Fact tc_getnode_single has_same_tid
-
-Fact tc_detach_single_node_simplify (idx : nat) tc :
-  tc_detach_nodes (Node (mkInfo idx 0%nat 0%nat) nil) tc =
-  let: Node ni chn := tc in
-  let: (new_chn, res) := List.split (map (tc_detach_nodes (Node (mkInfo idx 0%nat 0%nat) nil)) chn) in
-  let: (res', new_chn') := List.partition (fun tc' => tc_getnode (tc_roottid tc') subtree_tc')
-    new_chn in
-  (Node ni new_chn', (List.concat res) ++ res').
-*)
-
 (* FIXME: this is way too long. need revise.
     for example, consider induction on tc or l? *)
 
@@ -2462,90 +2377,6 @@ Fact nodearray_proj_read_correct sub pre tc : forall suf
   Znth (Z.of_nat (tc_roottid sub)) lnode = node_payload 
     (tcs_head_Z suf) (tcs_head_Z (rev pre)) (Z.of_nat (tc_roottid tc)) (tc_headch_Z sub).
 Proof. intros. now apply nodearray_proj_read_correct_pre. Qed.
-
-(*
-    pose proof Enth as Hin_ch. apply nth_error_In in Hin_ch.
-
-    
-
-
-    rewrite -> filter_all_false in Eres'.
-
-
-  pose proof Hin_ch as Hpresuf. apply in_split in
-
-  
-
-  destruct l as [ | x l ].
-  - hnf in Hsub. simpl in Hsub. injection Hsub as <-. simpl in Hin.
-    (* cbn delta [tc_locate_update] beta iota. *)
-    pose proof (tc_remove_ch_presuf (Node (mkInfo u clk aclk) chn)) as Hpresuf.
-    simpl in Hpresuf. 
-    specialize (Hpresuf _ (proj1 (tid_nodup_root_chn_split _ Hnodup)) _ eq_refl Hin).
-    destruct Hpresuf as (pre & suf & Echn & Efil).
-    simpl. rewrite -> Efil, -> ! Echn, -> map_app. simpl.
-    (* tc_roottid res not in pre/suf *)
-    assert (forall ch', In ch' pre \/ In ch' suf -> ~ In (tc_roottid res) (map tc_roottid (tc_flatten ch'))) as Hnotin'.
-    {
-      (* tedious *)
-      intros ch' H Hn.
-      subst chn. rewrite <- flat_map_app, -> map_app in Hnodup.
-      simpl in Hnodup. rewrite -> map_app in Hnodup.
-      apply NoDup_app in Hnodup. destruct Hnodup as (_ & Hnodup & Hdj1).
-      apply NoDup_app in Hnodup. destruct Hnodup as (_ & _ & Hdj2).
-      specialize (Hdj1 (tc_roottid res)). specialize (Hdj2 (tc_roottid res)).
-      rewrite -> map_flat_map_In, -> in_app_iff in Hdj1.
-      rewrite -> map_flat_map_In in Hdj2.
-      pose proof (tc_flatten_self_in res) as Hself.
-      apply in_map with (f:=tc_roottid) in Hself.
-      destruct H as [ H | H ].
-      - apply Hdj1; auto. eauto.
-      - apply Hdj2 in Hself. apply Hself. eauto.
-    }
-    erewrite -> map_ext_Forall with (l:=pre).
-    2:{ 
-      rewrite -> Forall_forall. intros ch H. specialize (Hnotin' _ (or_introl H)). 
-      apply tc_detach_nodes_intact. simpl. intros. eqsolve.
-    }
-    erewrite -> map_ext_Forall with (l:=suf).
-    2:{ 
-      rewrite -> Forall_forall. intros ch H. specialize (Hnotin' _ (or_intror H)). 
-      apply tc_detach_nodes_intact. simpl. intros. eqsolve.
-    }
-
-    admit.
-  - hnf in Hsub. simpl in Hsub.
-    destruct (nth_error chn x) as [ ch | ] eqn:Enth; try eqsolve.
-    pose proof Enth as Hin_ch. apply nth_error_In in Hin_ch.
-
-
-    rewrite -> Forall_forall in IH. specialize (IH _ Hin_ch).
-
-
-    tc_detach_nodes
-      
-
-      
-      
-      rewrite <- Efil in H. apply filter_In in H.
-      rewrite -> negb_true_iff, -> has_same_tid_false in H.
-      rewrite -> in_map_iff. intros ().
-      destruct 
-      
-
-
-
-    rewrite -> Echn, -> map_app, -> in_app_iff in Hnotin'. 
-
-    tc_detach_nodes
-
-
-    simpl. 
-
-    simpl.
-
-  simpl.
-*)
 
 (* rather customized *)
 
@@ -3547,16 +3378,14 @@ Proof.
   forward_if.
   {
     match goal with H : _ |- _ => apply Nat2Z.inj in H; rename H into Erootid end.
-    (* tc.join(tc') = tc *)
-    assert (tc_join tc tc' = tc) as Ejoin.
-    { 
-      destruct tc' as [(z', clk_z', ?) ?], tc as [(z, clk_z, ?) ?]. 
-      unfold tc_join. simpl.
-      simpl in Erootid, H3. subst z.
-      unfold tc_getclk in *.
-      simpl in H3 |- *. destruct (eqdec z' z'); try eqsolve.
-      simpl in H3 |- *. apply Nat.leb_le in H3. now rewrite -> H3.
-    }
+    apply tc_join_roottid_same_trivial in Erootid.
+    2: lia.
+    forward. 
+    unfold treeclock_rep at 1. Exists lclk lnode lstk.
+    unfold treeclock_rep at 1. Exists lclk' lnode' lstk'.
+    rewrite -> ! Erootid.
+    entailer!.
+    (*
     (* do some grouping *)
     (* seems like doing two freeze will be troublesome *)
     freeze (4 :: 5 :: 6 :: 7 :: nil) group'.
@@ -3572,6 +3401,7 @@ Proof.
       unfold treeclock_rep, treeclock_payload.
       Exists lclk' lnode' lstk'.
       entailer!.
+    *)
   }
 
   match goal with H : _ |- _ => rewrite -> Nat2Z.inj_iff in H; rename H into Hrootid end.
@@ -3677,37 +3507,20 @@ Proof.
   }
   *)
 
-  pose proof Hcb_tc' as Hcb_tc'root. 
-  apply Foralltc_self, proj1 in Hcb_tc'root.
-  assert (Z.of_nat (tc_getclk (tc_roottid tc') tc) <= Int.max_signed) as Hcb_tc'root_getclk.
-  {
-    unfold tc_getclk.
-    destruct (tc_getnode (tc_roottid tc') tc) as [ res | ] eqn:E; try lia.
-    eapply tc_getnode_res_Foralltc in E. 2: apply Hcb_tc. lia.
-  }
+  (* range guarantee *)
+  pose proof Hcb_tc' as Hcb_tc'root. apply Foralltc_self, proj1 in Hcb_tc'root.
+  pose proof (tc_getclk_in_int_range _ Hcb_tc (tc_roottid tc')) as Hcb_tc'root_getclk.
 
   forward_if.
   {
-    (* inrange request *)
-    match goal with HH : _ >= _ |- _ => rename HH into Hge end.
-    (* early return; TODO repeating above? maybe still need to move root eq check here *)
-    (* tc.join(tc') = tc *)
-    assert (tc_join tc tc' = tc) as Ejoin.
-    { 
-      destruct tc' as [(z', clk_z', ?) ?], tc as [(z, clk_z, ?) ?]. 
-      unfold tc_join. simpl.
-      simpl in Hge. 
-      match type of Hge with (Z.of_nat ?a >= Z.of_nat ?b) => assert (b <= a)%nat as Hle by lia end.
-      apply Nat.leb_le in Hle. now rewrite -> Hle.
-    }
-    (* made shorter *)
+    match goal with HH : (Z.of_nat ?a >= Z.of_nat ?b) |- _ => assert (b <= a)%nat as Hle by lia end.
+    assert (tc_join tc tc' = tc) as Ejoin by now apply tc_join_trivial.
     forward. 
     unfold treeclock_rep at 1. Exists lclk lnode lstk.
     unfold treeclock_rep at 1. Exists lclk' lnode' lstk'.
     rewrite -> ! Ejoin.
     entailer!.
   }
-
   match goal with HH : (Z.of_nat (tc_getclk (tc_roottid tc') tc) < _) |- _ => rename HH into Hlt_getclk end.
   rewrite <- Nat2Z.inj_lt in Hlt_getclk.
 
@@ -3715,7 +3528,8 @@ Proof.
   (* retract *)
   pose (vret:=match tc_getnode (tc_roottid tc') tc with None => true | _ => false end).
   replace (node_is_null_as_bool tc (tc_roottid tc')) with vret.
-  2:{ subst vret. unfold node_is_null_as_bool. destruct tc as [(u, ?, ?) [ | ]]; simpl; auto.
+  2:{
+    subst vret. unfold node_is_null_as_bool. destruct tc as [(u, ?, ?) [ | ]]; simpl; auto.
     simpl in Hrootid. apply Nat.eqb_neq in Hrootid. now rewrite -> Nat.eqb_sym, -> Hrootid.
   }
 
@@ -3765,13 +3579,9 @@ Proof.
     pose proof Hsub' as Htid_par.
     eapply Foralltc_subtc in Htid_par. 2: apply Htid. simpl in Htid_par.
     (* use single detach *)
-    pose proof (tc_detach_nodes_single _ Hnodup res _ _ Hsub) as Htmp.
-    (* TODO maybe streamline this specialize? *)
-    simpl tc_rootchn in Htmp. rewrite -> in_app_iff in Htmp. simpl In in Htmp.
-    specialize (Htmp (or_intror (or_introl eq_refl))).
+    pose proof (tc_detach_nodes_single _ Hnodup res _ _ Hsub (in_pre_suf res)) as Htmp.
     rewrite -> tc_remove_ch_when_nodup in Htmp.
-    (* TODO streamline this *)
-    2: rewrite -> tid_nodup_Foralltc_id in Hnodup; eapply Foralltc_subtc in Hsub'; [ | apply Hnodup ]; assumption.
+    2: now apply tid_nodup_subtc in Hsub'.
     erewrite -> tc_detach_nodes_tcs_congr with (tcs2:=(pureroot_tc' :: nil)) in Htmp.
     2: intros; subst pureroot_tc'; simpl; rewrite -> Eid; tauto.
 
@@ -3785,11 +3595,10 @@ Proof.
     (* change bag *)
     erewrite -> unused_bag_rep_perm. 
     1: apply derives_refl.
-    unfold tc_roottid. rewrite <- 2 map_map with (g:=info_tid) (f:=tc_rootinfo).
-    apply Permutation_map.
+    apply Permutation_rootinfo2roottid.
     etransitivity. 1: apply tc_detach_nodes_dom_partition.
     rewrite Htmp. simpl. rewrite app_nil_r.
-    rewrite ! map_app. apply Permutation_app_comm.
+    apply Permutation_map, Permutation_app_comm.
   }
   {
     subst vret.
@@ -3821,7 +3630,6 @@ Proof.
   Intros z1 z2 z3.
   match goal with HH : snd (tc_detach_nodes _ _) = _ |- _ => rename HH into Edetach_snd end.
   thaw Fr. rewrite -> ! Nat2Z.id.
-  (* cbv delta [Z.to_nat Pos.to_nat Pos.iter_op Nat.add] beta iota. *)
   deadvars. clear vret.
   unfold tc_subroot_rep, clock_rep, clock_payload. rewrite -> ! Eid. Intros.
   forward. forward. forward. 
@@ -3829,6 +3637,7 @@ Proof.
   (* since the representation format is not array, it is not very easy to read (tc_rootclk tc) ... *)
   unfold tc_rep, tc_root_rep, clock_rep, clock_payload.
   Intros.
+  (* TODO this is bad ... *)
   pose proof (tc_detach_nodes_fst_rootinfo_same (pureroot_tc' :: nil) tc) as Htmp.
   pose proof (tc_rootinfo_tid_inj _ _ Htmp) as Htmp_tid.
   pose proof (tc_rootinfo_clk_inj _ _ Htmp) as Htmp_clk.
@@ -3838,7 +3647,7 @@ Proof.
 
   (* we may possibly use the local spec here, but anyway *)
   pose (sub':=Node (mkInfo (tc_roottid tc') (tc_rootclk tc') (tc_rootclk tc)) (tc_rootchn sub)).
-  (* have to change clk & aclk of sub *)
+  (* have to change clk & aclk of sub before pushing child *)
   freeze (0 :: 1 :: 2 :: 3 :: 4 :: 11 :: nil) Fr.
   forward_call (dim, Vint (Int.repr (Z.of_nat (tc_roottid tc))), plclk, plnode, plstk, Vint (Int.repr (-1)), p, 
     (fst (tc_detach_nodes (pureroot_tc' :: nil) tc)), 
@@ -3855,13 +3664,15 @@ Proof.
     rewrite <- Eid. simpl. entailer!.
   }
 
-  (* turn to the initial partial join, and fold *)
+  (* turn to the initial partial join *)
   thaw Fr. 
   cbv delta [Z.to_nat Pos.to_nat Pos.iter_op Nat.add] beta iota.
   deadvars.
   simpl tc_locate_update.
   subst sub'.
   remember (Node _ (_ :: _)) as tc_join0 eqn:E0.
+  (* then need to reestablish various things about partial join result ... *)
+  (* TODO extract this? but this seems like a niche case, since there is only one node in pureroot_tc' ... *)
   assert (tc_join_partial tc pureroot_tc' = tc_join0) as E0'.
   {
     subst pureroot_tc' tc_join0.
@@ -3875,6 +3686,9 @@ Proof.
     2: reflexivity.
     subst sub. apply find_some in Eres. now rewrite -> (proj2 Eres).
   }
+  assert (tc_rootinfo tc_join0 = tc_rootinfo tc) as Einfo_join0
+    by (rewrite <- E0'; apply tc_join_partial_rootinfo_same).
+  (* TODO extract this? but this seems like a niche case, since there is only one node in pureroot_tc' ... *)
   rewrite -> unused_bag_rep_perm with (tcs2:=tc_flatten tc_join0).
   2:{
     destruct (fst (tc_detach_nodes _ _)) as [(i0, ?, ?) ?], sub as [(i1, ?, ?) ?].
@@ -3885,16 +3699,68 @@ Proof.
     1: apply Permutation_cons; [ reflexivity | symmetry; apply Permutation_middle ].
     now apply list.Permutation_swap.
   }
-  unfold tc_rep.
-  sep_apply tc_rep_and_bag2array.
+  epose proof (tc_get_updated_nodes_join_aux_tc_congr tc_join0 tc 
+    (tc_getclk (tc_roottid tc') tc) (tc_rootchn tc') ?[Goalq]) as Egj.
+  [Goalq]:{
+    admit.
+  }
+  match type of Egj with map ?ff ?al = map ?ff ?bl => assert (length al = length bl) as Elen
+    by (rewrite <- ! map_length with (f:=ff), -> Egj; reflexivity) end.
+  (* TODO streamline this? *)
+  apply f_equal with (f:=map info_tid) in Egj.
+  rewrite -> ! map_map in Egj. 
+  rewrite -> 2 map_ext with (f:=(fun x : treeclock => info_tid (tc_rootinfo x))) (g:=tc_roottid) in Egj; auto.
+
+  (* fold *)
+  unfold tc_rep. sep_apply tc_rep_and_bag2array.
+  (* FIXME: extract this? lift this? *)
   1:{
     admit.
   }
   Intros lnode0 lclk0.
+  clear dependent lnode.
+  clear dependent lclk.
+  forward_call (dim, tc_join0, plclk, plnode, plstk, 0%nat, p, 
+    Vint (Int.repr (Z.of_nat (tc_roottid tc'))), plclk', plnode', plstk', Vint (Int.repr (-1)), p', 
+    tc_getclk (tc_roottid tc') tc, tc_roottid tc', tc_rootchn tc', lclk0, lstk, lclk', lnode').
+  1: rewrite <- (tc_rootinfo_tid_inj _ _ Einfo_join0); entailer!.
+  1:{
+    split.
+    1: admit.
+    split.
+    1: now apply Foralltc_chn_selves.
+    split.
+    1:{ 
+      destruct Hprojn1' as (Hroot' & _). 
+      apply nth_error_Znth_result in Hroot'. 
+      rewrite Hroot'. now simpl.
+    }
+    split.
+    1:{ apply Foralltc_chn_selves. now apply Foralltc_idempotent in Hprojc1'. }
+    split.
+    1: now apply proj2, Foralltc_self in Hprojn1'.
 
-(*
-  
-*)
+    simpl. rewrite -> Elen.
+    (* play with inequality *)
+    (* TODO unify with the approach in the loop? *)
+    transitivity (Z.of_nat (length (tc_rootchn tc'))).
+    1:{
+      pose proof (tc_get_updated_nodes_join_aux_result_submap 
+        tc (tc_getclk (tc_roottid tc') tc) (tc_rootchn tc')) as (chn' & Hsl & E).
+      rewrite E, map_length. 
+      apply list.sublist_length in Hsl.
+      lia.
+    }
+    transitivity (Z.of_nat (tc_size tc')).
+    1: pose proof (tc_size_chn_lt_full tc'); lia.
+    now apply tc_size_bounded_by_dim.
+  }
+  (* go back to tc *)
+  simpl. rewrite -> ! Elen, -> ! Egj. clear Elen Egj.
+
+  (* now prepare for the loop invariant *)
+  deadvars.
+
 
   (*
   forward_if.

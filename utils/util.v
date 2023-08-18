@@ -519,3 +519,6 @@ Proof.
   symmetry.
   now apply Permutation.Permutation_middle.
 Qed.
+
+Fact in_pre_suf [A : Type] [pre suf : list A] (sub : A) : In sub (pre ++ sub :: suf).
+Proof. rewrite -> in_app_iff. simpl In. tauto. Qed.

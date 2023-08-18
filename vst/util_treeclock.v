@@ -8,6 +8,38 @@ From distributedclocks.utils Require Import libtac.
 #[export] Instance nat_EqDec : EqDec nat.
 Proof. constructor. apply Nat.eq_dec. Qed.
 
+Fact tc_getclk_in_int_range tc (H : Foralltc (fun sub : treeclock => 
+  Z.of_nat (tc_rootclk sub) <= Int.max_signed /\ Z.of_nat (tc_rootaclk sub) <= Int.max_signed) tc) :
+  forall t, Z.of_nat (tc_getclk t tc) <= Int.max_signed.
+Proof.
+  intros t. 
+  unfold tc_getclk.
+  destruct (tc_getnode t tc) as [ res | ] eqn:E.
+  - eapply tc_getnode_res_Foralltc in E; [ | apply H ].
+    lia.
+  - pose proof (Int.max_signed_pos); lia.
+Qed.
+
+Fact tc_size_bounded_by_dim tc dim (Hdim : 0 < dim)
+  (H : Foralltc (fun tc' : treeclock => Z.of_nat (tc_roottid tc') < dim) tc) 
+  (Hnodup : NoDup (map tc_roottid (tc_flatten tc))) :
+  Z.of_nat (tc_size tc) <= dim.
+Proof.
+  assert (incl (map tc_roottid (tc_flatten tc)) (seq 0 (Z.to_nat dim))) as Htmp.
+  {
+    hnf.
+    intros t (sub & E & Hin)%in_map_iff.
+    eapply Foralltc_subtc in Hin; [ | apply H ].
+    simpl in Hin.
+    apply in_seq.
+    lia.
+  }
+  eapply NoDup_incl_length in Htmp; try assumption.
+  rewrite -> map_length, -> seq_length in Htmp.
+  unfold tc_size.
+  lia.
+Qed.
+
 (* makes use of upd_Znth *)
 Fixpoint tc_locate_update (tc : @treeclock nat) (pos : list nat) sub : @treeclock nat :=
   match pos with
