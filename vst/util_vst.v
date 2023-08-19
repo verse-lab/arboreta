@@ -3,6 +3,8 @@ From Coq Require Import List Bool Lia ssrbool PeanoNat Sorting RelationClasses.
 From Coq Require ssreflect.
 Import ssreflect.SsrSyntax.
 
+From distributedclocks.utils Require Import util.
+
 Section Short_Integer_Type.
 
 Definition short_max_signed := two_power_nat 15 - 1.
@@ -32,15 +34,6 @@ Proof.
 Qed.
 
 End Short_Integer_Type.
-
-(* a little fact ... TODO why this is not in stdlib? *)
-Fact nth_error_some_inrange {A : Type} (i : nat) (al : list A) a : 
-  nth_error al i = Some a -> (i < length al)%nat.
-Proof.
-  revert i a. induction al as [ | a' al IH ]; intros; simpl in *.
-  - destruct i; now simpl in H.
-  - destruct i; try lia. simpl in H. apply IH in H. lia.
-Qed.
 
 Fact nth_error_some_inrange_Z {A : Type} (i : nat) (al : list A) a : 
   nth_error al i = Some a -> Z.of_nat i < Zlength al.
@@ -72,8 +65,8 @@ Proof.
   pose proof (int_cmp_repr Cne _ _ Hx Hy) as H0.
   simpl in H, H0.
   destruct (Int.eq (Int.repr x) (Int.repr y)) eqn:E; intuition.
-  - now apply Z.eqb_eq.
-  - now apply Z.eqb_neq.
+  (* - now apply Z.eqb_eq.
+  - now apply Z.eqb_neq. *)
 Qed.
 
 Fact upto_seq n : upto n = map Z.of_nat (seq 0%nat n).

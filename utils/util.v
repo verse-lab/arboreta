@@ -522,3 +522,38 @@ Qed.
 
 Fact in_pre_suf [A : Type] [pre suf : list A] (sub : A) : In sub (pre ++ sub :: suf).
 Proof. rewrite -> in_app_iff. simpl In. tauto. Qed.
+
+(* a little fact ... TODO why this is not in stdlib? *)
+Fact nth_error_some_inrange {A : Type} (i : nat) (al : list A) a : 
+  nth_error al i = Some a -> (i < length al)%nat.
+Proof.
+  revert i a. 
+  induction al as [ | a' al IH ]; intros; simpl in *.
+  - destruct i; now simpl in H.
+  - destruct i; try lia. 
+    simpl in H. 
+    apply IH in H. 
+    lia.
+Qed.
+
+Fact firstn_last {A : Type} (l : list A) (i : nat) (H : S i <= length l) :
+  list.last (firstn (S i) l) = nth_error l i.
+Proof.
+  revert i H.
+  induction l as [ | x l IH ]; intros; simpl in *.
+  - now destruct i.
+  - destruct i as [ | i ]; simpl; auto.
+    apply le_S_n in H.
+    rewrite <- IH; auto.
+    destruct l; simpl in *.
+    1: inversion H.
+    reflexivity.
+Qed.
+
+Fact list_rev_destruct [A : Type] (l : list A) : {l = nil} + {exists l' x, l = l' ++ x :: nil}.
+Proof.
+  destruct l eqn:E; [ now left | right ].
+  rewrite <- E.
+  assert (l <> nil) as (l' & x & ->)%exists_last by now subst.
+  eauto.
+Qed.
