@@ -4284,27 +4284,22 @@ Qed.
 
 Inductive tc_traversal_snapshot (tc : treeclock) : list thread -> treeclock -> Prop :=
   | TTSend : tc_traversal_snapshot tc nil tc
-  | TTSitm_exceed : forall stk l sub pf, 
+  | TTSitm : forall stk l sub pf full, 
     tc_locate tc l = Some sub ->
-    tc_locate tc (pos_succ l) = None ->
+    (* full should be false only in the exceeding case, and be true otherwise *)
+    full = isSome (tc_locate tc (pos_succ l)) ->
     stk = (map tc_roottid (snd (tc_traversal_waitlist tc l) ++ (sub :: nil))) ->
-    pf = tc_vertical_splitr false tc (pos_succ l) ->
-    tc_traversal_snapshot tc stk pf
-  | TTSitm_within : forall stk l sub pf, 
-    tc_locate tc l = Some sub ->
-    tc_locate tc (pos_succ l) ->
-    stk = (map tc_roottid (snd (tc_traversal_waitlist tc l) ++ (sub :: nil))) ->
-    pf = tc_vertical_splitr true tc (pos_succ l) ->
+    pf = tc_vertical_splitr full tc (pos_succ l) ->
     tc_traversal_snapshot tc stk pf.
 
 Fact tc_traversal_snapshot_inv_stacknil tc stk pf (E : stk = nil)
   (H : tc_traversal_snapshot tc stk pf) : tc = pf.
 Proof.
   inversion H; subst.
-  1: reflexivity.
-  all: match goal with HH : nil = map _ _ |- _ => 
-    rewrite -> map_app in HH; simpl in HH; symmetry in HH; apply app_eq_nil in HH; eqsolve 
-  end.
+  - reflexivity.
+  - match goal with HH : nil = map _ _ |- _ => 
+      rewrite -> map_app in HH; simpl in HH; symmetry in HH; apply app_eq_nil in HH; eqsolve 
+    end.
 Qed.
 
 Fact tc_traversal_snapshot_inv_stacknotnil tc stk pf (E : stk <> nil)
@@ -4314,9 +4309,9 @@ Fact tc_traversal_snapshot_inv_stacknotnil tc stk pf (E : stk <> nil)
     pf = tc_vertical_splitr (tc_locate tc (pos_succ l)) tc (pos_succ l).
 Proof.
   inversion H; subst.
-  1: contradiction.
-  all: exists l, sub; 
-    match goal with HH : tc_locate _ (pos_succ _) = _ |- _ => rewrite HH | _ => idtac end; 
+  - contradiction.
+  - exists l, sub.
+    match goal with HH : tc_locate _ (pos_succ _) = _ |- _ => rewrite HH | _ => idtac end.
     intuition.
 Qed.
 
@@ -4353,11 +4348,11 @@ Proof.
     rewrite -> Elen, <- nth_error_None in Htmp at 1.
     now rewrite Htmp.
   }
-  apply TTSitm_exceed with (l:=l ++ (n :: nil)) (sub:=lst_ch).
+  apply TTSitm with (l:=l ++ (n :: nil)) (sub:=lst_ch) (full:=false).
   - apply tc_locate_pos_app with (pos2:=n :: nil) in Hsub.
     simpl in Hsub.
     now rewrite Enth in Hsub.
-  - now rewrite -> pos_succ_last.
+  - now rewrite -> pos_succ_last, -> Eex.
   - eapply tc_traversal_waitlist_pos_app with (pos2:=n :: nil) in Hsub.
     rewrite Hsub.
     simpl.
@@ -4398,11 +4393,24 @@ Proof.
     pose proof EE as Hcont_t%tc_vertical_splitr_continue.
     pose proof EE as (Hcont_w1 & Hcont_w2)%tc_traversal_waitlist_continue.
     2: now rewrite Hsub.
-    apply TTSitm_within with (l:=l') (sub:=sub').
+    apply TTSitm with (l:=l') (sub:=sub') (full:=true).
     + tauto.
-    + eapply tc_traversal_waitlist_pos_nochild_top; eauto.
+    + symmetry.
+      eapply tc_traversal_waitlist_pos_nochild_top; eauto.
     + now rewrite -> Hcont_w2.
     + now rewrite Hcont_t.
+Qed.
+
+(* initial condition *)
+
+Lemma tc_traversal_snapshot_init tc : 
+  tc_traversal_snapshot tc (map tc_roottid (tc_rootchn tc)) (Node (tc_rootinfo tc) nil).
+Proof.
+  destruct tc as [ni chn].
+  simpl.
+  destruct (list_ifnil_destruct chn) as [ -> | Hnn ].
+  - now apply TTSend.
+  - now apply (tc_traversal_snapshot_trans_children (Node ni chn) nil _ eq_refl Hnn).
 Qed.
 
 End Preorder_Prefix_Theory.

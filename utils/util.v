@@ -557,3 +557,6 @@ Proof.
   assert (l <> nil) as (l' & x & ->)%exists_last by now subst.
   eauto.
 Qed.
+
+Fact list_ifnil_destruct [A : Type] (l : list A) : {l = nil} + {l <> nil}.
+Proof. destruct l; [ now left | now right ]. Qed.
