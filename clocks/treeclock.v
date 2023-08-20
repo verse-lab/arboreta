@@ -4036,11 +4036,12 @@ Local Tactic Notation "injection_last_pair" "in_" hyp(E) "as_" ident(E1) ident(E
     rewrite -> app_inj_tail_iff in E1, E2 end.
 
 (* slightly tedious, but maybe no much better way ... *)
+(* TODO maybe extract a proof pattern (e.g., for tc_traversal_waitlist) for the following proofs? *)
 
 Lemma tc_traversal_waitlist_continue_trivial tc l y (Hle : y <= length (tc_rootchn tc))
   (H : tc_traversal_waitlist tc l = (map (fun i => i :: nil) (seq 0 y), firstn y (tc_rootchn tc)))
-  res1 l' res2 sub (E : tc_traversal_waitlist tc l = (res1 ++ l' :: nil, res2 ++ sub :: nil)) :
-  tc_locate tc l' = Some sub /\ tc_traversal_waitlist tc l' = (res1, res2).
+  res1 l' res2 sub' (E : tc_traversal_waitlist tc l = (res1 ++ l' :: nil, res2 ++ sub' :: nil)) :
+  tc_locate tc l' = Some sub' /\ tc_traversal_waitlist tc l' = (res1, res2).
 Proof.
   destruct tc as [ni chn]; simpl in *.
   rewrite H in E.
@@ -4049,6 +4050,7 @@ Proof.
   rewrite <- Nat.add_1_r in E at 1. 
   rewrite -> seq_app with (len2:=1), -> map_app in E.
   simpl in E.
+  (* FIXME: revise this destruction *)
   destruct chn eqn:Etmp.
   1: inversion Hle.
   rewrite <- Etmp in *.
@@ -4064,9 +4066,11 @@ Proof.
   split; congruence.
 Qed.
 
+(* this will be used in proving the transition of nochild case *)
+
 Lemma tc_traversal_waitlist_continue tc : forall l (H : tc_locate tc l) 
-  res1 l' res2 sub (E : tc_traversal_waitlist tc l = (res1 ++ l' :: nil, res2 ++ sub :: nil)),
-  tc_locate tc l' = Some sub /\ tc_traversal_waitlist tc l' = (res1, res2).
+  res1 l' res2 sub' (E : tc_traversal_waitlist tc l = (res1 ++ l' :: nil, res2 ++ sub' :: nil)),
+  tc_locate tc l' = Some sub' /\ tc_traversal_waitlist tc l' = (res1, res2).
 Proof.
   induction tc as [ni chn IH] using treeclock_ind_2; intros.
   destruct l as [ | x l ]; simpl in E.
@@ -4086,12 +4090,12 @@ Proof.
       1: apply nth_error_some_inrange in E0; lia.
       all: now rewrite E0, EE, ! app_nil_r.
     + rewrite -> Etmp', -> app_length, -> Nat.add_1_r in Hlen.
-      destruct (list_rev_destruct res2') as [ -> | (res2'' & sub' & Etmp2') ]; try discriminate.
+      destruct (list_rev_destruct res2') as [ -> | (res2'' & sub'' & Etmp2') ]; try discriminate.
       rewrite -> Etmp', -> Etmp2', -> map_app, -> ! app_assoc in E.
       simpl in E.
       apply Forall_forall with (x:=ch) in IH.
       2: now apply nth_error_In in E0.
-      specialize (IH _ H res1'' l'' res2'' sub').
+      specialize (IH _ H res1'' l'' res2'' sub'').
       rewrite -> EE, -> Etmp', -> Etmp2' in IH.
       specialize (IH eq_refl).
       destruct IH as (IH1 & IH2).
@@ -4103,6 +4107,20 @@ Proof.
   - apply tc_traversal_waitlist_continue_trivial with (y:=length chn) (l:=x::l); simpl.
     1: constructor.
     all: now rewrite E0.
+Qed.
+
+Lemma tc_vertical_splitr_lastover l : forall tc (H : tc_locate tc l = None),
+  tc_vertical_splitr false tc l = tc_vertical_splitr false tc (removelast l).
+Proof.
+  induction l as [ | x l IH ]; intros [ni chn]; intros; simpl in H |- *.
+  - reflexivity.
+  - destruct (nth_error chn x) as [ ch | ] eqn:E.
+    + rewrite -> IH; auto.
+      destruct l; simpl; try discriminate.
+      now rewrite E.
+    + destruct l; simpl.
+      1: reflexivity.
+      now rewrite E.
 Qed.
 
 Fact tc_vertical_splitr_leaf_ignorefull l : forall tc ni0 (H : tc_locate tc l = Some (Node ni0 nil)), 
@@ -4117,18 +4135,12 @@ Proof.
     + reflexivity.
 Qed.
 
-Fact tc_vertical_splitr_over_ignorefull l : forall tc (H : tc_locate tc l = None), 
-  tc_vertical_splitr false tc l = tc_vertical_splitr true tc l.
-Proof.
-  induction l as [ | x l IH ]; intros [ni chn]; intros; simpl in H |- *; try discriminate.
-  destruct (nth_error chn x) as [ ch | ] eqn:E0; simpl.
-  - now erewrite -> IH; eauto.
-  - reflexivity.
-Qed.
-
 Lemma tc_vertical_splitr_continue l : forall tc
-  res1 l' res2 sub (E : tc_traversal_waitlist tc l = (res1 ++ l' :: nil, res2 ++ sub :: nil)),
-  tc_vertical_splitr true tc l = tc_vertical_splitr true tc (pos_succ l').
+  res1 l' res2 sub' (E : tc_traversal_waitlist tc l = (res1 ++ l' :: nil, res2 ++ sub' :: nil)),
+  tc_vertical_splitr true tc l = tc_vertical_splitr true tc (pos_succ l') /\
+  (* merged, just for reducing repeating proof preparation; 
+    and this is not quite compatible with tc_traversal_waitlist_continue, so merge to here *)
+  (forall ni, tc_locate tc l = Some (Node ni nil) -> tc_locate tc (pos_succ l')).
 Proof.
   induction l as [ | x l IH ]; intros [ni chn]; intros; simpl in E |- *.
   1: destruct res1; inversion E; discriminate.
@@ -4153,15 +4165,15 @@ Proof.
         destruct EE1 as (? & <-) end.
       simpl in E0 |- *.
       rewrite E0.
-      do 2 f_equal.
-      transitivity ch; [ | now destruct ch ].
-      (* termination *)
-      apply tc_traversal_terminate.
-      now rewrite EE.
+      split.
+      * do 2 f_equal.
+        transitivity ch; [ | now destruct ch ].
+        (* termination *)
+        apply tc_traversal_terminate.
+        now rewrite EE.
+      * now intros.
     + destruct (list_rev_destruct res2') as [ -> | (res2'' & sub'' & ->) ].
       1: rewrite -> app_length, -> Nat.add_1_r in Hlen; discriminate.
-      specialize (IH ch _ _ _ _ EE).
-      rewrite -> IH.
       rewrite -> map_app, -> ! app_assoc in E.
       simpl in E.
       injection_last_pair in_ E as_ EE1 EE2.
@@ -4174,7 +4186,14 @@ Proof.
         now apply Forall_app, proj2, Forall_cons_iff, proj1 in HH.
       * rewrite app_comm_cons, ! pos_succ_last, <- app_comm_cons.
         simpl.
-        now rewrite E0.
+        specialize (IH ch _ _ _ _ EE).
+        rewrite pos_succ_last in IH.
+        destruct IH as (IH1 & IH2).
+        split.
+        --now rewrite -> IH1, E0.
+        --intros ?.
+          rewrite E0.
+          now apply IH2.
   - destruct (list_rev_destruct chn) as [ -> | (chn' & ch & Echn) ].
     1: simpl in E; inversion E; now destruct res1.
     rewrite -> Echn, -> app_length, -> seq_app, -> map_app in E.
@@ -4208,78 +4227,6 @@ Proof.
     + subst chn.
       now apply list.sublist_inserts_l.
     + now constructor.
-Qed.
-
-Lemma tc_vertical_splitr_lastover l : forall tc (H : tc_locate tc l = None),
-  tc_vertical_splitr false tc l = tc_vertical_splitr false tc (removelast l).
-Proof.
-  induction l as [ | x l IH ]; intros [ni chn]; intros; simpl in H |- *.
-  - reflexivity.
-  - destruct (nth_error chn x) as [ ch | ] eqn:E.
-    + rewrite -> IH; auto.
-      destruct l; simpl; try discriminate.
-      now rewrite E.
-    + destruct l; simpl.
-      1: reflexivity.
-      now rewrite E.
-Qed.
-
-Lemma tc_traversal_waitlist_pos_nochild_top l : forall tc ni (H : tc_locate tc l = Some (Node ni nil)) 
-  res1 l' res2 sub (E : tc_traversal_waitlist tc l = (res1 ++ l' :: nil, res2 ++ sub :: nil)),
-  tc_locate tc (pos_succ l').
-Proof.
-  induction l as [ | x l IH ]; intros [ni chn]; intros; simpl in H, E |- *.
-  1: destruct res1; inversion E; discriminate.
-  destruct (nth_error chn x) as [ ch | ] eqn:E0; simpl.
-  - destruct (tc_traversal_waitlist ch l) as (res1', res2') eqn:EE; simpl.
-    pose proof (tc_traversal_waitlist_align ch l) as Hlen.
-    rewrite -> EE in Hlen.
-    simpl in Hlen.
-    (* TODO can this proof pattern be extracted? *)
-    destruct (list_rev_destruct res1') as [ -> | (res1'' & l'' & ->) ].
-    + destruct res2'; try discriminate.
-      simpl in E.
-      rewrite -> ! app_nil_r in E.
-      destruct x as [ | x ].
-      1: simpl in E; inversion E; now destruct res1.
-      (* TODO ...? *)
-      rewrite <- Nat.add_1_r in E at 1. 
-      rewrite -> seq_app with (len2:=1), -> map_app in E.
-      simpl in E.
-      match type of E with (?l1 ++ ?y1, _) = (?l1' ++ ?y1', _) =>
-        assert (l1 ++ y1 = l1' ++ y1') as EE1 by congruence;
-        rewrite -> app_inj_tail_iff in EE1; 
-        destruct EE1 as (? & <-) end.
-      simpl in E0 |- *.
-      now rewrite E0.
-    + destruct (list_rev_destruct res2') as [ -> | (res2'' & sub'' & ->) ].
-      1: rewrite -> app_length, -> Nat.add_1_r in Hlen; discriminate.
-      rewrite -> map_app, -> ! app_assoc in E.
-      simpl in E.
-      injection_last_pair in_ E as_ EE1 EE2.
-      destruct EE1 as (? & <-), EE2 as (? & <-).
-      destruct (list_rev_destruct l'') as [ El'' | (y & l''' & ->) ].
-      * (* impossible *)
-        pose proof (tc_traversal_waitlist_pos_notnil ch l) as HH.
-        rewrite EE in HH.
-        simpl in HH.
-        now apply Forall_app, proj2, Forall_cons_iff, proj1 in HH.
-      * rewrite app_comm_cons, ! pos_succ_last, <- app_comm_cons.
-        simpl.
-        rewrite E0.
-        specialize (IH ch _ H _ _ _ _ EE).
-        now rewrite pos_succ_last in IH.
-  - destruct (list_rev_destruct chn) as [ -> | (chn' & ch & Echn) ].
-    1: simpl in E; inversion E; now destruct res1.
-    rewrite -> Echn, -> app_length, -> seq_app, -> map_app in E.
-    simpl in E.
-    injection_last_pair in_ E as_ EE1 EE2.
-    destruct EE1 as (? & <-), EE2 as (? & <-).
-    replace (pos_succ _) with ((length chn) :: nil).
-    2: unfold pos_succ; subst; simpl; rewrite -> app_length, -> Nat.add_1_r; reflexivity.
-    simpl.
-    pose proof (le_n (length chn)) as Htmp%nth_error_None.
-    now rewrite Htmp.
 Qed.
 
 Inductive tc_traversal_snapshot (tc : treeclock) : list thread -> treeclock -> Prop :=
@@ -4338,7 +4285,6 @@ Proof.
     subst.
     rewrite -> nth_error_app2, -> Nat.sub_diag; simpl; auto.
   }
-  (* TODO why need to repeat this ... *)
   assert (tc_locate tc (l ++ S n :: nil) = None) as Eex.
   {
     apply tc_locate_pos_app with (pos2:=S n :: nil) in Hsub.
@@ -4371,13 +4317,14 @@ Lemma tc_traversal_snapshot_trans_nochild tc l sub
   (Hsub : tc_locate tc l = Some sub) (Echn : tc_rootchn sub = nil) :
   tc_traversal_snapshot tc 
     (map tc_roottid (snd (tc_traversal_waitlist tc l))) 
-    (* here, either true or false does not matter actually, but true will be more convenient *)
-    (tc_vertical_splitr true tc l).
+    (* essentially for true, though *)
+    (tc_vertical_splitr false tc l).
 Proof.
   destruct sub as [ni chn].
   simpl in Echn |- *.
   subst chn.
   (* much manipulation *)
+  rewrite -> tc_vertical_splitr_leaf_ignorefull with (ni0:=ni); try assumption.
   destruct (tc_traversal_waitlist tc l) as (res1, res2) eqn:EE.
   pose proof (tc_traversal_waitlist_align tc l) as Hlen.
   rewrite EE in Hlen.
@@ -4390,15 +4337,15 @@ Proof.
     apply TTSend.
   - destruct (list_rev_destruct res1) as [ -> | (res1' & l' & ->) ].
     1: rewrite -> app_length, -> Nat.add_1_r in Hlen; discriminate.
-    pose proof EE as Hcont_t%tc_vertical_splitr_continue.
+    pose proof EE as (Hcont_t1 & Hcont_t2)%tc_vertical_splitr_continue.
     pose proof EE as (Hcont_w1 & Hcont_w2)%tc_traversal_waitlist_continue.
     2: now rewrite Hsub.
     apply TTSitm with (l:=l') (sub:=sub') (full:=true).
     + tauto.
     + symmetry.
-      eapply tc_traversal_waitlist_pos_nochild_top; eauto.
+      eapply Hcont_t2; eauto.
     + now rewrite -> Hcont_w2.
-    + now rewrite Hcont_t.
+    + now rewrite Hcont_t1.
 Qed.
 
 (* initial condition *)
