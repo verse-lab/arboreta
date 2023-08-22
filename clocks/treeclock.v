@@ -193,6 +193,12 @@ Proof. intros [(?, ?, ?) ?] [(?, ?, ?) ?]. simpl. congruence. Qed.
 Fact tc_rootinfo_clk_inj : forall x y, tc_rootinfo x = tc_rootinfo y -> tc_rootclk x = tc_rootclk y.
 Proof. intros [(?, ?, ?) ?] [(?, ?, ?) ?]. simpl. congruence. Qed.
 
+Fact tc_partialinfo_tid_inj : forall x y, tc_rootinfo_partial x = tc_rootinfo_partial y -> tc_roottid x = tc_roottid y.
+Proof. intros [(?, ?, ?) ?] [(?, ?, ?) ?]. simpl. congruence. Qed.
+
+Fact tc_partialinfo_clk_inj : forall x y, tc_rootinfo_partial x = tc_rootinfo_partial y -> tc_rootclk x = tc_rootclk y.
+Proof. intros [(?, ?, ?) ?] [(?, ?, ?) ?]. simpl. congruence. Qed.
+
 Fact tc_rootinfo_aclk_inj : forall x y, tc_rootinfo x = tc_rootinfo y -> tc_rootaclk x = tc_rootaclk y.
 Proof. intros [(?, ?, ?) ?] [(?, ?, ?) ?]. simpl. congruence. Qed.
 
@@ -269,6 +275,9 @@ Global Arguments subtc _ _/.
 Fact tc_flatten_self_in tc : In tc (tc_flatten tc).
 Proof. destruct tc as [? ?]. simpl. now left. Qed.
 
+Fact tc_flatten_direct_result tc : tc_flatten tc = tc :: (flat_map tc_flatten (tc_rootchn tc)).
+Proof. now destruct tc as [? ?]. Qed.
+
 Fact subtc_chn tc ch : In ch (tc_rootchn tc) -> subtc ch tc.
 Proof. 
   destruct tc as [(u, clk, aclk) chn]. simpl. intros. 
@@ -287,6 +296,9 @@ Proof.
   specialize (IH _ Hin_ch _ _ H H0).
   hnf. right. apply in_flat_map. now exists ch.
 Qed.
+
+Corollary subtc_flatten_incl tc tc' (H : subtc tc tc') : incl (tc_flatten tc) (tc_flatten tc').
+Proof. hnf. intros sub' H'. revert H' H. apply subtc_trans. Qed.
 
 (* proof-relevant witness of subtree *)
 
@@ -844,9 +856,9 @@ Proof.
     + now apply IH.
 Qed.
 
-Corollary tid_nodup_find_self_sub tc (Hnodup : List.NoDup (map tc_roottid (tc_flatten tc))) 
+Corollary tid_nodup_find_self_sub [A : Type] (f : treeclock -> A) tc (Hnodup : List.NoDup (map tc_roottid (tc_flatten tc))) 
   sub (Hin_sub : In sub (tc_flatten tc)) :
-  base.fmap tc_rootinfo (tc_getnode (tc_roottid sub) tc) = Some (tc_rootinfo sub).
+  base.fmap f (tc_getnode (tc_roottid sub) tc) = Some (f sub).
 Proof.
   pose proof (tid_nodup_find_self (tc_flatten tc) Hnodup) as H.
   rewrite -> List.Forall_forall in H.
@@ -3161,7 +3173,7 @@ Proof.
     specialize (Hshape_forest _ Hin).
     destruct Hsnd2pf as (sub & Hin_sub & E).
     pose proof (prefixtc_rootinfo_same _ _ E) as Einfo.
-    pose proof (tid_nodup_find_self_sub _ (tid_nodup _ Hshape) _ Hin_sub) as Hres.
+    pose proof (tid_nodup_find_self_sub tc_rootinfo _ (tid_nodup _ Hshape) _ Hin_sub) as Hres.
     apply option.fmap_Some in Hres.
     destruct Hres as (res & Hres & Einfo').
     unfold tc_roottid in Hres.
@@ -3236,6 +3248,7 @@ Proof.
     simpl in E.
     destruct E as (Hin & <-).
     (* unify getclk t tc and clk ... slightly troublesome *)
+    (* FIXME: revise? *)
     pose proof (tc_detach_nodes_snd_is_subprefix (tc_flatten prefix_tc') tc) as Hsnd2pf.
     pose proof (tc_shape_inv_tc_detach_nodes_snd (tc_flatten prefix_tc') tc Hshape) as Hshape_forest.
     rewrite <- Eforest, -> List.Forall_forall in Hsnd2pf, Hshape_forest.
@@ -3243,7 +3256,7 @@ Proof.
     specialize (Hshape_forest _ Hin).
     destruct Hsnd2pf as (sub & Hin_sub & E).
     pose proof (prefixtc_rootinfo_same _ _ E) as Einfo.
-    pose proof (tid_nodup_find_self_sub _ (tid_nodup _ Hshape) _ Hin_sub) as Hres.
+    pose proof (tid_nodup_find_self_sub tc_rootinfo _ (tid_nodup _ Hshape) _ Hin_sub) as Hres.
     apply option.fmap_Some in Hres.
     destruct Hres as (res & Hres & Einfo').
     unfold tc_roottid in Hres.
