@@ -516,9 +516,18 @@ Qed.
 
 (* but what if one only wants to read the parent field? *)
 (* FIXME: what is the relationship between this and "read_correct"? here proved a simple specific version ... *)
+(* TODO these seem like template properties. can they be automatically derived? 
+    or, at least obtain some common proof patterns ... *)
+
+Definition node_struct_get_headch (np : reptype t_struct_node) :=
+  match np with (_, (_, (_, res))) => res end.
 
 Definition node_struct_get_par (np : reptype t_struct_node) :=
   match np with (_, (_, (res, _))) => res end.
+
+Definition is_tc_nodearray_proj_onlyheadch lnode tc :=
+  node_struct_get_headch (Znth (Z.of_nat (tc_roottid tc)) lnode) = 
+    Vint (Int.repr (tc_headch_Z tc)).
 
 Definition is_tc_nodearray_proj_onlypar_aux par lnode chn :=
   Forall (fun tc0 => node_struct_get_par (Znth (Z.of_nat (tc_roottid tc0)) lnode) = 
@@ -526,6 +535,47 @@ Definition is_tc_nodearray_proj_onlypar_aux par lnode chn :=
 
 Definition is_tc_nodearray_proj_onlypar lnode tc :=
   Foralltc (fun tc' => is_tc_nodearray_proj_onlypar_aux (tc_roottid tc') lnode (tc_rootchn tc')) tc.
+
+Fact is_tc_nodearray_proj_onlyheadch_chn_derived par lnode chn :
+  forall prev (Hproj : is_tc_nodearray_proj_chnaux par lnode prev chn), 
+  Forall (is_tc_nodearray_proj_onlyheadch lnode) chn.
+Proof.
+  induction chn as [ | ch chn IH ]; intros; simpl in Hproj |- *; constructor.
+  - apply proj1, nth_error_Znth_result in Hproj.
+    hnf. unfold node_struct_get_headch.
+    rewrite Hproj.
+    reflexivity.
+  - eapply IH.
+    apply (proj2 Hproj).
+Qed.
+
+Fact is_tc_nodearray_proj_onlyheadch_derived lnode tc
+  (Hproj : is_tc_nodearray_proj lnode tc) 
+  (H : is_tc_nodearray_proj_onlyheadch lnode tc) : 
+  Foralltc (is_tc_nodearray_proj_onlyheadch lnode) tc.
+Proof.
+  induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros.
+  hnf in Hproj |- *.
+  rewrite Foralltc_cons_iff in Hproj |- *.
+  constructor; try assumption.
+  simpl in Hproj.
+  destruct Hproj as (Hq%is_tc_nodearray_proj_onlyheadch_chn_derived & Hproj).
+  eapply Forall_impl_impl in Hproj.
+  2: apply IH.
+  now apply Forall_impl_impl with (P:=is_tc_nodearray_proj_onlyheadch lnode) in Hproj.
+Qed.
+
+Fact is_tc_nodearray_proj_onlyheadch_derived_full lnode tc
+  (Hproj : is_tc_nodearray_proj_full lnode tc) :
+  Foralltc (is_tc_nodearray_proj_onlyheadch lnode) tc.
+Proof.
+  destruct Hproj as (Hroot & Hproj).
+  apply is_tc_nodearray_proj_onlyheadch_derived; try assumption.
+  hnf.
+  apply nth_error_Znth_result in Hroot.
+  rewrite Hroot.
+  reflexivity.
+Qed.
 
 Fact is_tc_nodearray_proj_onlypar_aux_derived par lnode chn :
   forall prev (Hproj : is_tc_nodearray_proj_chnaux par lnode prev chn), 
@@ -1569,9 +1619,6 @@ Definition push_child_spec :=
     SEP (tc_rep dim plnode plclk (tc_locate_update tc l (Node (tc_rootinfo tc_par) (sub :: tc_rootchn tc_par)));
       data_at Tsh t_struct_treeclock
         (Vint (Int.repr dim), (v1, (plclk, (plnode, (v2, v3))))) p).
-
-Definition node_struct_get_headch (np : reptype t_struct_node) :=
-  match np with (_, (_, (_, res))) => res end.
 
 Definition get_updated_nodes_join_chn_spec :=
   DECLARE _get_updated_nodes_join_chn
@@ -3977,6 +4024,7 @@ Proof.
   clear z1 z2 z3.
   assert (lstk_pre <> nil) as Hnotnil.
   1: intros ->; list_solve.
+  match goal with HH : Zlength lstk_pre - 1 >= 0 |- _ => rename HH into Hlen_lstk_pre_ge0 end.
   apply tc_traversal_snapshot_inv_stacknotnil in Htts; try assumption. 
   destruct Htts as (l & sub & Hprefix_sub & Elstk_pre & Epf).
   rewrite -> map_app in Elstk_pre.
@@ -4533,6 +4581,77 @@ Proof.
   clear dependent lclk.
 
   (* trace back to the original tree *)
+  pose proof (tc_get_updated_nodes_join_trace _ _ _ (subtc_witness_subtc _ _ _ Hprefix_sub)) 
+    as (sub' & Hsub' & Esub).
+  pose proof (is_tc_nodearray_proj_onlyheadch_derived_full _ _ Hprojn1') as Hreadheadch.
+  eapply Foralltc_subtc in Hreadheadch.
+  2: apply Hsub'.
+  hnf in Hreadheadch.
+  match goal with |- context[data_at Tsh (tarray tint dim) ?lstkstk plstk] =>
+    forward_call (dim, tc_join_partial tc pfi, plclk, plnode, plstk, (length lstk_pre - 1)%nat, p, 
+      Vint (Int.repr (Z.of_nat (tc_roottid tc'))), plclk', plnode', plstk', Vint (Int.repr (-1)), p', 
+      tc_getclk (tc_roottid sub) tc, tc_roottid sub', tc_rootchn sub', lclk1, lstkstk, lclk', lnode') end.
+  1:{ 
+    entailer!. simpl. 
+    rewrite <- (tc_rootinfo_tid_inj _ _ (prefixtc_rootinfo_same _ _ (tc_get_updated_nodes_join_is_prefix tc sub'))).
+    reflexivity.
+  }
+  1:{
+    unfold treeclock_payload, tc_roottid.
+    rewrite ! tc_join_partial_rootinfo_same.
+    rewrite Zlength_correct in Hlen_lstk_pre_ge0 |- *.
+    (* ... *)
+    replace (Z.of_nat (length lstk_pre) - 1 - 1) with (Z.of_nat (length lstk_pre - 1) - 1) by lia.
+    entailer!.
+  }
+  1:{
+    admit.
+  }
+
+  (* final! *)
+  (* first, deal with length *)
+  pose proof Elstk_pre as Elstk_pre_len.
+  apply f_equal with (f:=@Zlength nat) in Elstk_pre_len.
+  rewrite -> Zlength_app in Elstk_pre_len.
+  rewrite <- Zlength_map with (f:=(fun x : nat => Vint (Int.repr (Z.of_nat x)))) (l:=map _ _) in Elstk_pre_len.
+  replace (Zlength (_ :: nil)) with 1 in Elstk_pre_len by list_solve.
+  match type of Elstk_pre_len with _ = Zlength ?zb + 1 => 
+    assert ((length lstk_pre - 1)%nat = length zb) as Elstk_pre_len' end.
+  {
+    rewrite <- Nat2Z.inj_iff, <- Zlength_correct.
+    rewrite Zlength_correct in Hlen_lstk_pre_ge0.
+    replace (Z.of_nat (_ - 1)%nat) with (Zlength lstk_pre - 1) by (rewrite Zlength_correct; lia).
+    lia.
+  }
+  rewrite list.take_app_alt; try assumption.
+  rewrite list.drop_add_app. 2: rewrite Elstk_pre_len'; reflexivity.
+  (* TODO this proof about congr seemes to be repeating *)
+  epose proof (tc_get_updated_nodes_join_aux_tc_congr (tc_join_partial tc pfi) tc 
+    (tc_getclk (tc_roottid sub) tc) (tc_rootchn sub') ?[Goalqa]) as Egj.
+  [Goalqa]:{
+    (* FIXME: by showing that the children will not be in pfi, and then use partial join get clk? *)
+    admit.
+  }
+  match type of Egj with map ?ff ?al = map ?ff ?bl => assert (length al = length bl) as Elen
+    by (rewrite <- ! map_length with (f:=ff), -> Egj; reflexivity) end.
+  apply f_equal with (f:=map info_tid) in Egj.
+  rewrite -> ! map_map in Egj. 
+  rewrite -> 2 map_ext with (f:=(fun x : treeclock => info_tid (tc_rootinfo x))) (g:=tc_roottid) in Egj; auto.
+
+  rewrite -> app_assoc, <- ! map_app.
+  match goal with |- context[data_at Tsh (tarray tint dim) (map _ ?lpre ++ ?lsuf) plstk] =>
+    Exists lpre lsuf end.
+  Exists pfi lclk1 lnode1.
+  rewrite ! map_length in Elstk_pre_len'.
+  rewrite 1 Elstk_pre_len'.
+  rewrite <- app_length, <- Zlength_correct, -> Zlength_map.
+  entailer!.
+  {
+    split.
+    - rewrite map_app, Egj.
+      admit.
+    - admit.
+  }
 
   (*
   forward_if.
