@@ -385,3 +385,160 @@ Proof.
     rewrite -> upd_Znth_char; auto.
     subst x. apply Zlength_correct.
 Qed.
+
+(* describing how to do single attach, in two phases *)
+
+(* FIXME: really repeating proof! *)
+Fact tc_attach_nodes_single tc forest sub
+  (* can be unified actually *)
+  (Hnotin1 : find (has_same_tid (tc_roottid sub)) forest = None)
+  (Hnotin2 : ~ In (tc_roottid sub) (map tc_roottid (tc_flatten tc)))
+  fr (Hfr : match fr with 
+    | nil => tc_rootchn sub = nil
+    (* really fine-grained *)
+    | a :: fr' => tc_roottid a = tc_roottid sub /\ tc_rootchn a = tc_rootchn sub /\ fr' = nil
+    end) :
+  forall l tc_par (H : tc_locate tc l = Some tc_par),
+  exists tc_par', tc_locate (tc_attach_nodes forest tc) l = Some tc_par' /\
+    tc_par' = tc_attach_nodes forest tc_par /\
+    tc_locate_update (tc_attach_nodes forest tc) l 
+      (Node (tc_rootinfo tc_par') (sub :: tc_rootchn tc_par')) =
+    tc_attach_nodes (fr ++ forest) 
+      (tc_locate_update tc l (Node (tc_rootinfo tc_par) (Node (tc_rootinfo sub) nil :: tc_rootchn tc_par))).
+Proof.
+  induction tc as [ni chn IH] using treeclock_ind_2; intros.
+  simpl in Hnotin2. apply Decidable.not_or in Hnotin2.
+  destruct Hnotin2 as (Hneq & Hnotin2).
+  rewrite -> map_flat_map_In in Hnotin2.
+  destruct l as [ | x l ].
+  - simpl in H.
+    injection H as <-.
+    eexists. split; [ reflexivity | ]. split; [ reflexivity | ].
+    simpl. f_equal.
+    destruct fr as [ | subi fr ].
+    + destruct sub. simpl in Hfr. subst. simpl. do 2 f_equal. simpl in Hnotin1. now rewrite Hnotin1.
+    + destruct Hfr as (E1 & E2 & ->).
+      simpl. unfold has_same_tid. fold (tc_roottid sub).
+      rewrite -> ! E1.
+      destruct (eqdec (tc_roottid sub) (tc_roottid sub)); try contradiction.
+      simpl.
+      f_equal. 1: rewrite E2; now destruct sub.
+      f_equal.
+      * erewrite -> map_ext_Forall. 1: reflexivity.
+        apply Forall_forall. intros ch Hin. apply tc_attach_nodes_forest_cleanhd.
+        rewrite E1.
+        intros ?; apply Hnotin2; eauto.
+      * destruct (eqdec (tc_roottid sub) (info_tid ni)); try congruence.
+        simpl. reflexivity.
+  - simpl in H.
+    destruct (nth_error chn x) as [ ch | ] eqn:Enth; try discriminate.
+    pose proof Enth as Hinrange%nth_error_some_inrange.
+    pose proof Enth as Hin%nth_error_In.
+    rewrite -> Forall_forall in IH.
+    assert (~ In (tc_roottid sub) (map tc_roottid (tc_flatten ch))) as Htmp by (intros ?; apply Hnotin2; eauto).
+    specialize (IH _ Hin Htmp _ _ H).
+    destruct IH as (tc_par' & Ea & Eb & IH).
+    eexists. split.
+    1:{
+      simpl.
+      rewrite -> nth_error_app1. 2: now rewrite map_length.
+      erewrite -> map_nth_error. 2: apply Enth.
+      apply Ea.
+    }
+    split; [ assumption | ].
+    simpl.
+    rewrite -> nth_error_app1. 2: now rewrite map_length.
+    erewrite -> map_nth_error. 2: apply Enth.
+    rewrite -> Enth, -> IH.
+    simpl. f_equal.
+    rewrite <- upd_Znth_map, -> upd_Znth_app1.
+    2: rewrite Zlength_map, Zlength_correct; lia.
+    f_equal.
+    + erewrite -> map_ext_Forall. 1: reflexivity.
+      apply Forall_forall. intros ch' Hin'. 
+      destruct fr. 1: reflexivity.
+      destruct Hfr as (E1 & E2 & ->).
+      apply tc_attach_nodes_forest_cleanhd.
+      rewrite E1.
+      intros ?; apply Hnotin2; eauto.
+    + destruct fr. 1: reflexivity.
+      destruct Hfr as (E1 & E2 & ->).
+      simpl. unfold has_same_tid.
+      rewrite E1.
+      destruct (eqdec (tc_roottid sub) (info_tid ni)); try congruence.
+      simpl. reflexivity.
+Qed.
+
+Fact tc_vertical_splitr_forward l (Hnotnil : l <> nil) : 
+  forall tc sub (H : tc_locate tc l = Some sub),
+  (* TODO is this exists redundant? *)
+  exists tc_par, tc_locate (tc_vertical_splitr (ssrbool.isSome (tc_locate tc (pos_succ l))) tc (pos_succ l)) 
+      (List.repeat 0%nat (length l - 1)%nat) = Some tc_par /\
+    tc_vertical_splitr false tc l =
+    tc_locate_update (tc_vertical_splitr (ssrbool.isSome (tc_locate tc (pos_succ l))) tc (pos_succ l)) 
+      (List.repeat 0%nat (length l - 1)%nat) (Node (tc_rootinfo tc_par) (Node (tc_rootinfo sub) nil :: tc_rootchn tc_par)).
+Proof.
+  destruct l as [ | x0 l ]; try contradiction.
+  clear Hnotnil.
+  revert x0.
+  cbn delta [length Nat.sub] iota beta. rewrite -> ! Nat.sub_0_r.
+  induction l as [ | x l IH ]; intros x0 [ni chn]; intros; simpl in H.
+  all: destruct (nth_error chn x0) as [ ch0 | ] eqn:Ech0; try discriminate.
+  - injection H as ->.
+    eexists. split; [ reflexivity | ].
+    pose proof (pos_succ_last nil x0) as Htmp.
+    simpl in Htmp.
+    rewrite -> ! Htmp.
+    clear Htmp.
+    destruct (nth_error chn (S x0)) as [ ch' | ] eqn:Ech'.
+    + pose proof Ech' as Ech''.
+      simpl in Ech' |- *; rewrite Ech', Ech0; simpl.
+      f_equal. f_equal.
+      (* TODO this should be repeating the proof somewhere *)
+      apply nth_error_split in Ech''.
+      destruct Ech'' as (pre & suf & Echn & Elen).
+      pose proof Echn as Echn'.
+      rewrite <- firstn_skipn with (n:=S x0) (l:=chn) in Echn'.
+      rewrite -> Echn, -> list.take_app_alt in Echn' at 1; auto.
+      apply app_inv_head in Echn'.
+      rewrite Echn'. f_equal. 1: now destruct ch'.
+      now apply firstn_skipn_onemore in Echn'.
+    + pose proof Ech' as Hx0%nth_error_None.
+      simpl in Ech' |- *; rewrite Ech', Ech0; simpl.
+      now rewrite skipn_all2.
+  - destruct (nth_error (tc_rootchn ch0) x) as [ chch | ] eqn:Echch.
+    2: discriminate.
+    specialize (IH x ch0 sub).
+    removehead IH.
+    2: simpl; now rewrite Echch.
+    destruct IH as (tc_par & Etc_par & IH).
+    rewrite -> ! pos_succ_cons.
+    set (ll:=(x :: l)) in *.
+    eexists. split.
+    + simpl. rewrite Ech0. simpl. apply Etc_par.
+    + simpl. rewrite Ech0, Echch. f_equal.
+      rewrite -> upd_Znth0. f_equal.
+      rewrite <- IH. subst ll. simpl. rewrite Echch. reflexivity.
+Qed.
+
+(* TODO will this be useful? *)
+
+Fact tc_locate_update_pos_app pos1 : forall tc pos2 sub res (H : tc_locate tc pos1 = Some res),
+  tc_locate (tc_locate_update tc pos1 sub) (pos1 ++ pos2) = tc_locate sub pos2.
+Proof.
+  induction pos1 as [ | x pos1 IH ]; intros; simpl in *.
+  - injection H as <-.
+    reflexivity.
+  - destruct tc as [ni chn].
+    simpl in *.
+    destruct (nth_error chn x) eqn:E; try discriminate.
+    simpl.
+    (* length trick *)
+    pose proof E as (pre & suf & -> & Elen)%nth_error_split.
+    rewrite -> upd_Znth_char.
+    2: rewrite Zlength_correct; f_equal; assumption.
+    subst x.
+    rewrite -> nth_error_app2; auto.
+    rewrite -> Nat.sub_diag. simpl.
+    eapply IH; eauto.
+Qed.

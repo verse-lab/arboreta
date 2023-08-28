@@ -51,6 +51,10 @@ Section Sublist_Additional_Lemmas.
     all: now apply base.elem_of_list_In.
   Qed.
 
+  Corollary sublist_Forall [A : Type] (P : A -> Prop) (l1 l2 : list A) 
+    (Hsub : list.sublist l1 l2) (H : Forall P l2) : Forall P l1.
+  Proof. eapply incl_Forall. 2: apply H. hnf. intros ?. now apply sublist_In. Qed.
+
   Corollary sublist_cons_remove [A : Type] (x : A) (l1 l2 : list A) 
     (Hsub : list.sublist (x :: l1) l2) : list.sublist l1 l2.
   Proof.
