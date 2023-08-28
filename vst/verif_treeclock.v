@@ -4497,7 +4497,18 @@ Proof.
   rewrite <- Eparpar in Hreadpar.
   fold (tc_roottid sub) in Hreadpar.
   fold (tc_roottid tc_par') in Hreadpar.
-  (* FIXME: range guarantee? see the following admit *)
+  (* range guarantee ... TODO tedious? *)
+  assert (Z.of_nat (tc_roottid tc_par') < dim) as Htc_par'_tid.
+  {
+    eapply subtc_witness_subtc, in_map with (f:=tc_rootinfo), prefixtc_flatten_info_incl in Etc_par_pf.
+    2: apply Hprefix_pf.
+    apply Hprefix_all_info in Etc_par_pf.
+    rewrite in_map_iff in Etc_par_pf.
+    destruct Etc_par_pf as (subtmp & Etmp & Hin).
+    eapply Foralltc_subtc in Hin. 2: apply Htid'.
+    simpl in Hin.
+    unfold tc_roottid. rewrite -> Eparpar, <- Etmp. exact Hin.
+  }
   (* real reading *)
   array_focus (Z.of_nat (tc_roottid sub)) plnode' witheqn Etmp.
   rewrite Etmp.
@@ -4551,7 +4562,7 @@ Proof.
     unfold tc_headch_Z. simpl.
     entailer!.
   }
-  1:{ admit. }
+  1:{ simpl. rewrite Erootinfo_targ. assumption. }
   cbn delta [tc_rootinfo tc_rootchn] beta iota.
   rewrite -> Efinal2.
   thaw Fr.
@@ -4559,6 +4570,7 @@ Proof.
   deadvars.
   rewrite -> unused_bag_rep_perm with (tcs2:=tc_flatten (tc_join_partial tc pfi)).
   2:{
+    (* FIXME: use tc_locate_update, Efinal1 and Efinal2 should be enough *)
     admit.
     (* destruct (fst (tc_detach_nodes _ _)) as [(i0, ?, ?) ?], sub as [(i1, ?, ?) ?].
     subst tc_join0.
@@ -4574,6 +4586,7 @@ Proof.
   1:{
     apply tc_join_partial_tid_nodup; try assumption.
     1: now apply tid_nodup.
+    (* FIXME: using the existing commit should be enough *)
     admit.
   }
   Intros lnode1 lclk1.
@@ -4605,7 +4618,27 @@ Proof.
     entailer!.
   }
   1:{
-    admit.
+    match goal with HH : Foralltc _ (tc_join_partial tc pfi) |- _ => rename HH into Hbundle end.
+    apply Foralltc_and in Hbundle.
+    split.
+    1: unfold tc_roottid; rewrite <- (prefixtc_rootinfo_same _ _ (tc_get_updated_nodes_join_is_prefix tc sub')), <- Esub; assumption.
+    split.
+    1: apply Hbundle.
+    split.
+    1: admit.
+    split.
+    1:{ 
+      subst lstk_pre. rewrite -> Zlength_app, Zlength_map in Hlensum |- *.
+      rewrite Zlength_map, Zlength_cons. rewrite <- Hlensum. clear. list_solve.
+    }
+    split.
+    1: admit.
+    split.
+    1: admit.
+    1:{
+      (* FIXME: need to use not appearing and stack nodup *)
+      admit.
+    }
   }
 
   (* final! *)
@@ -4648,9 +4681,14 @@ Proof.
   entailer!.
   {
     split.
-    - rewrite map_app, Egj.
+    - rewrite map_app, Egj. 
+      eapply eq_ind_r with (y:=map tc_roottid (tc_get_updated_nodes_join_aux _ _ _)).
+      1: rewrite <- map_app; apply tc_traversal_snapshot_trans, Hprefix_sub.
+      destruct sub'.
+      rewrite tc_get_updated_nodes_join_eta.
+      reflexivity.
+    - (* FIXME: this appeared before *)
       admit.
-    - admit.
   }
 
   (*

@@ -4474,6 +4474,17 @@ Proof.
     + now rewrite Hcont_t1.
 Qed.
 
+Corollary tc_traversal_snapshot_trans tc l sub (Hsub : tc_locate tc l = Some sub) :
+  tc_traversal_snapshot tc 
+    (map tc_roottid (snd (tc_traversal_waitlist tc l) ++ tc_rootchn sub)) 
+    (tc_vertical_splitr false tc l).
+Proof.
+  destruct (list_ifnil_destruct (tc_rootchn sub)) as [ H | H ].
+  - rewrite H, app_nil_r.
+    eapply tc_traversal_snapshot_trans_nochild; eauto.
+  - eapply tc_traversal_snapshot_trans_children; eauto.
+Qed.
+
 Fact tc_vertical_splitr_locate l :
   forall tc sub full (H : tc_locate tc l = Some sub),
     tc_locate (tc_vertical_splitr full tc l) (List.repeat 0%nat (length l)) = 
