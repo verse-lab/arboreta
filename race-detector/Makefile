@@ -1,7 +1,7 @@
 CC=gcc
 CFLAGS = -c
 
-OBJECTS = engine.o parser.o vectorClock.o detector.o
+OBJECTS = engine.o parser.o detector.o
 
 all: prog
 

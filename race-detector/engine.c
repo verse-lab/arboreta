@@ -16,6 +16,7 @@ int main(int argc, char* argv[]) {
     Event e = {};
     int is_race = 0;
     long count = 0;
+    init();
 
     while (fgets(buf, sizeof(buf), trace) != NULL)
     {
