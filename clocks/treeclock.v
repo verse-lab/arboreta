@@ -445,6 +445,16 @@ Proof.
   lia.
 Qed.
 
+Fact tcs_size_le_full tcs : length tcs <= length (flat_map tc_flatten tcs).
+Proof.
+  induction tcs as [ | tc tcs IH ]; simpl.
+  - apply le_n.
+  - rewrite app_length.
+    destruct tc.
+    simpl.
+    lia.
+Qed.
+
 Fact tc_size_ch_lt_full ch tc (H : In ch (tc_rootchn tc)) : 
   tc_size ch < tc_size tc.
 Proof.
@@ -4101,6 +4111,35 @@ Proof.
     apply nth_error_some_inrange in E.
     rewrite -> firstn_length_le; lia.
   - now rewrite -> ! map_length, -> seq_length.
+Qed.
+
+Fact tc_traversal_waitlist_length_lt_tc_size tc l : 
+  length (snd (tc_traversal_waitlist tc l)) < tc_size tc.
+Proof.
+  revert tc.
+  induction l as [ | x l IH ]; intros [ni chn]; intros; simpl; try lia.
+  destruct (nth_error chn x) as [ ch | ] eqn:E; simpl.
+  - destruct (tc_traversal_waitlist ch l) as (res1, res2) eqn:EE; simpl.
+    specialize (IH ch).
+    rewrite EE in IH.
+    simpl in IH.
+    rewrite <- firstn_skipn with (n:=x) (l:=chn) at 2.
+    rewrite flat_map_app.
+    rewrite ! app_length.
+    match goal with |- (_ + ?a < S (_ + ?b))%nat => enough (a < S b)%nat end.
+    + pose proof (tcs_size_le_full (firstn x chn)).
+      lia.
+    + apply nth_error_split in E.
+      (* TODO streamline this? *)
+      destruct E as (pre & suf & Echn & Elen).
+      rewrite -> Echn, -> list.drop_app_alt.
+      2: auto.
+      simpl.
+      rewrite app_length.
+      unfold tc_size in IH.
+      lia.
+  - pose proof (tcs_size_le_full chn).
+    lia.
 Qed.
 
 Fact tc_traversal_waitlist_pos_notnil tc l : 

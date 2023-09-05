@@ -3504,6 +3504,7 @@ Proof.
   unfold is_pos_tint in *.
   match goal with HH : tc_shape_inv tc |- _ => rename HH into Hshape end.
   match goal with HH : tc_shape_inv tc' |- _ => rename HH into Hshape' end.
+  match goal with HH : tc_respect tc' tc |- _ => rename HH into Hrespect end.
   match goal with HH : is_tc_nodearray_proj_full lnode _ |- _ => rename HH into Hprojn1 end.
   match goal with HH : is_tc_nodearray_proj_full lnode' _ |- _ => rename HH into Hprojn1' end.
   match goal with HH : nodearray_emptypart lnode _ |- _ => rename HH into Hprojn2 end.
@@ -3960,6 +3961,8 @@ Proof.
          Z.of_nat (tc_roottid sub) < dim /\
          Z.of_nat (tc_rootclk sub) <= Int.max_signed /\
          Z.of_nat (tc_rootaclk sub) <= Int.max_signed) (tc_join_partial tc pf); 
+      (* interesting enough, this is actually required *)
+      ~ In (tc_roottid tc') lstk_pre;
       (* TODO is this free? *)
       ~ In (tc_roottid tc) (map tc_roottid (tc_flatten pf)))
     LOCAL (temp _self p; temp _tc p')
@@ -3977,12 +3980,28 @@ Proof.
   1:{ (* enter the loop *)
     do 2 EExists. Exists pureroot_tc' lclk0 lnode0.
     entailer!.
-    - rewrite -> E0'. split; auto.
-      pose proof (tc_traversal_snapshot_init (tc_get_updated_nodes_join tc tc')) as Hini.
-      rewrite -> (prefixtc_rootinfo_same _ _ (tc_get_updated_nodes_join_is_prefix tc tc')) in Hini.
-      subst pureroot_tc'.
-      destruct tc'.
-      apply Hini.
+    - rewrite -> E0'. 
+      match goal with |- ?A /\ _ /\ _ /\ ?B => enough (A /\ B) by intuition end.
+      split.
+      + pose proof (tc_traversal_snapshot_init (tc_get_updated_nodes_join tc tc')) as Hini.
+        rewrite -> (prefixtc_rootinfo_same _ _ (tc_get_updated_nodes_join_is_prefix tc tc')) in Hini.
+        subst pureroot_tc'.
+        destruct tc'.
+        apply Hini.
+      + (* TODO streamline this? *)
+        pose proof (tc_get_updated_nodes_join_aux_result_submap 
+          tc (tc_getclk (tc_roottid tc') tc) (tc_rootchn tc')) as (chn' & Hsl & E).
+        rewrite E, in_map_iff.
+        intros (? & Eid' & (ch & <- & Hin)%in_map_iff).
+        eapply sublist_In in Hin.
+        2: apply Hsl.
+        rewrite -> (tc_rootinfo_tid_inj _ _ (prefixtc_rootinfo_same _ _ (tc_get_updated_nodes_join_is_prefix _ _))) in Eid'.
+        rewrite -> tc_flatten_direct_result, -> map_cons, -> NoDup_cons_iff in Hnodup'.
+        erewrite -> Permutation_in_mutual in Hnodup'.
+        2: apply Permutation_map, tc_flatten_root_chn_split.
+        rewrite -> map_app, -> in_app_iff in Hnodup'.
+        apply Hnodup', or_introl.
+        rewrite <- Eid'. apply in_map. assumption.
     - rewrite -> Zlength_map, <- Zlength_correct, -> E0'.
       apply derives_refl.
   }
@@ -3995,7 +4014,8 @@ Proof.
   unfold treeclock_payload.
   match goal with HH : Foralltc _ (tc_join_partial _ _) |- _ => 
     rewrite Foralltc_and in HH; destruct HH as (Htid_parjoin & Hcb_parjoin) end.
-  
+  match goal with HH : ~ In _ lstk_pre |- _ => rename HH into Hnotin_tc' end.
+
   forward. forward_if.
   2:{ (* end *)
     match goal with HH : Zlength lstk_pre - 1 < 0 |- _ => rename HH into Hl0; rewrite Zlength_correct in Hl0 end.
@@ -4029,6 +4049,11 @@ Proof.
   destruct Htts as (l & sub & Hprefix_sub & Elstk_pre & Epf).
   rewrite -> map_app in Elstk_pre.
   simpl in Elstk_pre.
+  assert (tc_roottid sub <> tc_roottid tc') as Hrootid_sub'.
+  {
+    subst lstk_pre.
+    rewrite in_app_iff in Hnotin_tc'. simpl in Hnotin_tc'. tauto.
+  }
   (* TODO streamline the following preparation? *)
   (* prepare partial join and pf *)
   epose proof (tc_get_updated_nodes_join_shape tc' Hshape' tc ?[Goalq1] ?[Goalq2]) as (Hpfshape & _).
@@ -4058,6 +4083,27 @@ Proof.
     replace a with (Node (tc_rootinfo tc) (Node (mkInfo (tc_roottid tc') (tc_rootclk tc') (tc_rootclk tc)) chn_a :: chn_pivot))
     in Eparjoin_unfold end.
   2: unfold tc_roottid, tc_rootclk; destruct (tc_rootinfo tc'); simpl; reflexivity.
+  (* prepare the next prefix *)
+  assert (l <> nil) as Hnotnil_l.
+  {
+    destruct l; auto.
+    simpl in Hprefix_sub. injection Hprefix_sub as <-.
+    rewrite -> (tc_rootinfo_tid_inj _ _ Erootinfo_prefix) in Hrootid_sub'.
+    contradiction.
+  }
+  remember (tc_vertical_splitr false (tc_get_updated_nodes_join tc tc') l) as pfi eqn:Epfi.
+  epose proof (tc_vertical_splitr_is_prefix _ _ _) as Hprefix_pfi.
+  rewrite <- Epfi in Hprefix_pfi.
+  pose proof (tc_shape_inv_prefix_preserve _ _ Hprefix_pfi Hshape_prefix) as Hshape_pfi.
+  pose proof (tc_vertical_splitr_forward _ Hnotnil_l _ _ Hprefix_sub) as Htmp.
+  rewrite <- ! Epfi, <- Epf in Htmp.
+  destruct Htmp as (tc_par_pf & Etc_par_pf & Epfi_alt).
+  pose proof (tc_locate_update_prepend_dom _ (Node (tc_rootinfo sub) nil :: nil)
+    (tc_rootinfo tc_par_pf) id _ _ Etc_par_pf eq_refl) as Hpfi_dom.
+  cbn delta [app] beta iota in Hpfi_dom.
+  rewrite ! map_id_eq, <- Epfi_alt in Hpfi_dom. (* not simpl *)
+  pose proof Hpfi_dom as Hpfi_tiddom%Permutation_rootinfo2roottid.
+  simpl in Hpfi_tiddom.
   (* prepare bound and lt conditions *)
   assert (In (tc_rootinfo sub) (map tc_rootinfo (tc_flatten tc'))) as (subo & Esub_info & Hsubo)%in_map_iff
     by (eapply Hprefix_all_info, in_map, subtc_witness_iff; eauto).
@@ -4087,18 +4133,20 @@ Proof.
     lia.
   }
   clear dependent subo.
-  (* also need to restore the value of (tc_getclk (tc_roottid sub) tc) *)
-  (* FIXME: maybe do it by proving sub is not in pf? *)
-  (* FIXME: extract this reasoning out? *)
-  assert (~ In (tc_roottid sub) (map tc_roottid (tc_flatten pf))) as Hnotin.
-  { admit. }
-  (* FIXME: extract this out? *)
-  assert (tc_roottid sub <> tc_roottid tc') as Hrootid_sub'.
+  assert (~ In (tc_roottid tc) (map tc_roottid (tc_flatten pfi))) as Hnotin_tc.
   {
-    intros EE.
-    rewrite -> EE, <- (tc_rootinfo_tid_inj _ _ Erootinfo_prefix), <- (tc_rootinfo_tid_inj _ _ Erootinfo_pf) in Hnotin.
-    exfalso. apply Hnotin, in_map, tc_flatten_self_in.
+    erewrite Permutation_in_mutual. 2: apply Hpfi_tiddom.
+    fold (tc_roottid sub).
+    simpl. tauto.
+  } 
+  assert (~ In (tc_roottid sub) (map tc_roottid (tc_flatten pf))) as Hnotin.
+  {
+    eapply tid_nodup, Permutation.Permutation_NoDup in Hshape_pfi.
+    2: apply Hpfi_tiddom.
+    simpl in Hshape_pfi.
+    apply NoDup_cons_iff in Hshape_pfi. tauto.
   }
+  (* also need to restore the value of (tc_getclk (tc_roottid sub) tc) *)
   (* FIXME: consider this "if and only if" reasoning? *)
   assert (base.fmap tc_rootinfo_partial (tc_getnode (tc_roottid sub) tc) = 
     base.fmap tc_rootinfo_partial (tc_getnode (tc_roottid sub) (tc_join_partial tc pf))) as Egetsub.
@@ -4353,16 +4401,14 @@ Proof.
   cbn delta [fst snd] beta iota in Htmp1fst, Htmp1snd.
   rewrite -> Edetach_main in Htmp1fst, Htmp1snd.
   cbn delta [fst snd] beta iota in Htmp1fst, Htmp1snd.
-  remember (tc_vertical_splitr false (tc_get_updated_nodes_join tc tc') l) as pfi eqn:Epfi.
-  epose proof (tc_vertical_splitr_is_prefix _ _ _) as Hprefix_pfi.
-  rewrite <- Epfi in Hprefix_pfi.
-  pose proof (tc_shape_inv_prefix_preserve _ _ Hprefix_pfi Hshape_prefix) as Hshape_pfi.
   pose proof (eq_refl (tc_join_partial tc pfi)) as Eparjoin0_unfold.
   unfold tc_join_partial in Eparjoin0_unfold at 2.
   rewrite -> Epfi in Eparjoin0_unfold at 2.
   epose proof (tc_detach_nodes_tcs_congr (tc_flatten pf ++ (sub :: nil)) (tc_flatten pfi) ?[Goalq]) as Edetach_cong.
   [Goalq]:{
-    admit.
+    apply Permutation_in_mutual.
+    rewrite Hpfi_tiddom, map_app, Permutation_app_comm.
+    simpl. reflexivity.
   }
   rewrite <- Epfi, <- Edetach_cong in Eparjoin0_unfold. 
   destruct (tc_detach_nodes (tc_flatten pf ++ [sub]) tc) as (pivot1, forest1) eqn:Edetach1.
@@ -4425,16 +4471,6 @@ Proof.
   deadvars.
 
   (* relate single attach with current situation *)
-  assert (l <> nil) as Hnotnil_l.
-  {
-    destruct l; auto.
-    simpl in Hprefix_sub. injection Hprefix_sub as <-.
-    rewrite -> (tc_rootinfo_tid_inj _ _ Erootinfo_prefix) in Hrootid_sub'.
-    contradiction.
-  }
-  pose proof (tc_vertical_splitr_forward _ Hnotnil_l _ _ Hprefix_sub) as Htmp.
-  rewrite <- ! Epfi, <- Epf in Htmp.
-  destruct Htmp as (tc_par_pf & Etc_par_pf & Epfi_alt).
   match type of Eattach1 with tc_attach_nodes (?al ++ _) _ = _ =>
     epose proof (tc_attach_nodes_single pf (map fst (map (tc_detach_nodes [sub]) forest)) 
       (Node (tc_rootinfo sub) (tc_rootchn subi)) ?[Goalq1] ?[Goalq2] 
@@ -4570,24 +4606,25 @@ Proof.
   deadvars.
   rewrite -> unused_bag_rep_perm with (tcs2:=tc_flatten (tc_join_partial tc pfi)).
   2:{
-    (* FIXME: use tc_locate_update, Efinal1 and Efinal2 should be enough *)
-    admit.
-    (* destruct (fst (tc_detach_nodes _ _)) as [(i0, ?, ?) ?], sub as [(i1, ?, ?) ?].
-    subst tc_join0.
-    simpl. rewrite -> ! map_app. simpl.
-    replace i1 with (tc_roottid tc') by congruence.
-    etransitivity. 
-    1: apply Permutation_cons; [ reflexivity | symmetry; apply Permutation_middle ].
-    now apply list.Permutation_swap. *)
+    pose proof (tc_locate_update_prepend_dom _ (Node (tc_rootinfo sub) (tc_rootchn subi) :: nil)
+      ni_targ info_tid _ _ Efinal1 eq_refl) as Htmp.
+    simpl in Htmp.
+    rewrite app_nil_r in Htmp.
+    simpl in Htmp.
+    rewrite Efinal2 in Htmp.
+    (* TODO streamline this *)
+    fold (tc_roottid sub) in Htmp. rewrite <- Eid in Htmp.
+    rewrite ! map_map in Htmp.
+    rewrite -> 2 map_ext with (f:=(fun x : treeclock => info_tid (tc_rootinfo x))) (g:=tc_roottid) in Htmp; auto.
+    rewrite Htmp, ! map_app, tc_flatten_direct_result with (tc:=subi).
+    simpl. reflexivity.
   }
 
   (* fold *)
   unfold tc_rep. sep_apply tc_rep_and_bag2array.
   1:{
     apply tc_join_partial_tid_nodup; try assumption.
-    1: now apply tid_nodup.
-    (* FIXME: using the existing commit should be enough *)
-    admit.
+    now apply tid_nodup.
   }
   Intros lnode1 lclk1.
   clear dependent lnode.
@@ -4596,6 +4633,104 @@ Proof.
   (* trace back to the original tree *)
   pose proof (tc_get_updated_nodes_join_trace _ _ _ (subtc_witness_subtc _ _ _ Hprefix_sub)) 
     as (sub' & Hsub' & Esub).
+  pose proof (prefixtc_rootinfo_same _ _ (tc_get_updated_nodes_join_is_prefix tc sub')) as Erooinfo_sub'.
+  rewrite <- Esub in Erooinfo_sub'.
+  (* some tricky things *)
+  pose proof (tc_vertical_splitr_tofull _ _ _ Hprefix_sub) as Epff.
+  epose proof (tc_vertical_splitr_is_prefix _ _ _) as Hprefix_pff.
+  rewrite -> Epff, <- Epfi in Hprefix_pff.
+  pose proof (tc_shape_inv_prefix_preserve _ _ Hprefix_pff Hshape_prefix) as Hshape_pff.
+  pose proof (tc_locate_update_prepend_dom _ (tc_rootchn sub) (tc_rootinfo sub) id _ _ 
+    E_loc_pfi_sub eq_refl) as Htmp.
+  rewrite ! map_id_eq, app_nil_r in Htmp.
+  eapply tid_nodup, Permutation_NoDup in Hshape_pff.
+  2: etransitivity; [ | apply Permutation_rootinfo2roottid, Htmp ]; now destruct sub.
+  clear Htmp.
+  (* TODO this proof about congr seemes to be repeating *)
+  epose proof (tc_get_updated_nodes_join_aux_tc_congr (tc_join_partial tc pfi) tc 
+    (tc_getclk (tc_roottid sub) tc) (tc_rootchn sub') ?[Goalqa]) as Egj.
+  [Goalqa]:{
+    (* TODO tedious! *)
+    apply Forall_forall.
+    intros ch Hin_ch.
+    pose proof (subtc_trans _ _ _ (subtc_chn _ _ Hin_ch) Hsub') as Hsub_ch.
+
+    (* route 1: get lt *)
+    rewrite tc_join_partial_getclk; auto.
+    2: apply tid_nodup; assumption.
+    destruct (tc_getnode (tc_roottid ch) pfi) as [ res | ] eqn:Eres; auto.
+    pose proof Eres as Eres_.
+    apply tc_getnode_has_tid in Eres.
+    destruct Eres as (Eres & Eid_ch).
+    pose proof Eres as Eres_info%(in_map tc_rootinfo).
+    pose proof (prefixtc_flatten_info_incl _ _ Hprefix_pfi) as Hprefix_pfi_info.
+    apply Hprefix_pfi_info, in_map_iff in Eres_info.
+    destruct Eres_info as (res' & Einfo & Hin).
+    pose proof Hin as Hin'. 
+    eapply Foralltc_subtc in Hin'. 2: apply Hpfshape. simpl in Hin'.
+    rewrite -> (tc_rootinfo_tid_inj _ _ Einfo), -> (tc_rootinfo_clk_inj _ _ Einfo) in Hin'.
+
+    (* route 2: unify tc_rootinfo res with tc_rootinfo ch *)
+    pose proof (tid_nodup_find_self_sub tc_rootinfo tc' (tid_nodup _ Hshape')) as Hself.
+    pose proof Hself as Hself1.
+    specialize (Hself1 _ Hsub_ch).
+    apply in_map with (f:=tc_rootinfo), Hprefix_all_info, in_map_iff in Hin.
+    destruct Hin as (res'' & Einfo' & Hin).
+    pose proof Hself as Hself2.
+    specialize (Hself2 _ Hin).
+    rewrite -> (tc_rootinfo_tid_inj _ _ Einfo'), -> (tc_rootinfo_tid_inj _ _ Einfo), -> Eid_ch, -> Hself1 in Hself2.
+    injection Hself2 as Hself2.
+    rewrite Einfo', Einfo in Hself2.
+    rewrite -> Eid_ch, <- (tc_rootinfo_clk_inj _ _ Hself2) in Hin'.
+
+    (* ... *)
+    destruct sub' as [(u, clk, aclk) chn].
+    simpl in Hin_ch.
+    eapply tc_shape_inv_sub, Foralltc_Forall_subtree, Foralltc_subtc in Hshape'.
+    2: apply Hsub'.
+    eapply tc_respect_sub, Foralltc_subtc in Hrespect.
+    2: apply Hsub'.
+    pose proof (tc_get_updated_nodes_join_aux_result_regular tc u clk aclk chn Hshape' Hrespect)
+      as (chn' & Hsublist & Eaux & _ & Hjudge & _).
+    rewrite -> Forall_forall in Hjudge. specialize (Hjudge _ Hin_ch).
+    rewrite <- Hjudge in Hin'.
+
+    (* use the property obtained above *)
+    rewrite tc_get_updated_nodes_join_eta in Esub.
+    cbn delta [info_tid] beta iota in Esub.
+    rewrite Eaux in Esub.
+    subst sub. simpl in Hshape_pff.
+    rewrite -> map_app, <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup in Hshape_pff.
+    repeat setoid_rewrite base.elem_of_list_In in Hshape_pff.
+    destruct Hshape_pff as (_ & Htarg & _).
+    exfalso. eapply Htarg. 2: apply tc_getnode_subtc_iff; rewrite Eres_; auto.
+    eapply Permutation_in.
+    1: symmetry; apply Permutation_map, tc_flatten_root_chn_split.
+    rewrite map_app, in_app_iff. left.
+    rewrite map_map. rewrite -> map_ext with (g:=tc_roottid).
+    2: intros a; unfold tc_roottid; rewrite (prefixtc_rootinfo_same _ _ (tc_get_updated_nodes_join_is_prefix _ _)); reflexivity.
+    apply in_map. assumption.
+  }
+  match type of Egj with map ?ff ?al = map ?ff ?bl => assert (length al = length bl) as Elen
+    by (rewrite <- ! map_length with (f:=ff), -> Egj; reflexivity) end.
+  apply f_equal with (f:=map info_tid) in Egj.
+  rewrite -> ! map_map in Egj. 
+  rewrite -> 2 map_ext with (f:=(fun x : treeclock => info_tid (tc_rootinfo x))) (g:=tc_roottid) in Egj; auto.
+  remember (removelast lstk_pre) as lstk_pre' eqn:Elstk_pre'.
+  rewrite Elstk_pre, removelast_last in Elstk_pre'.
+  assert (tc_traversal_snapshot (tc_get_updated_nodes_join tc tc')
+    (lstk_pre' ++ (map tc_roottid (tc_get_updated_nodes_join_aux (tc_join_partial tc pfi) 
+      (tc_getclk (tc_roottid sub) tc) (tc_rootchn sub'))))
+    (tc_vertical_splitr false (tc_get_updated_nodes_join tc tc') l)) as Htts_goal.
+  {
+    subst lstk_pre' sub.
+    rewrite Egj, (tc_rootinfo_tid_inj _ _ Erooinfo_sub').
+    eapply eq_ind_r with (y:=map tc_roottid (tc_get_updated_nodes_join_aux _ _ _)).
+    1: rewrite <- map_app; apply tc_traversal_snapshot_trans, Hprefix_sub.
+    destruct sub'.
+    rewrite tc_get_updated_nodes_join_eta.
+    reflexivity.
+  }
   pose proof (is_tc_nodearray_proj_onlyheadch_derived_full _ _ Hprojn1') as Hreadheadch.
   eapply Foralltc_subtc in Hreadheadch.
   2: apply Hsub'.
@@ -4606,7 +4741,7 @@ Proof.
       tc_getclk (tc_roottid sub) tc, tc_roottid sub', tc_rootchn sub', lclk1, lstkstk, lclk', lnode') end.
   1:{ 
     entailer!. simpl. 
-    rewrite <- (tc_rootinfo_tid_inj _ _ (prefixtc_rootinfo_same _ _ (tc_get_updated_nodes_join_is_prefix tc sub'))).
+    rewrite <- (tc_rootinfo_tid_inj _ _ Erooinfo_sub').
     reflexivity.
   }
   1:{
@@ -4621,23 +4756,48 @@ Proof.
     match goal with HH : Foralltc _ (tc_join_partial tc pfi) |- _ => rename HH into Hbundle end.
     apply Foralltc_and in Hbundle.
     split.
-    1: unfold tc_roottid; rewrite <- (prefixtc_rootinfo_same _ _ (tc_get_updated_nodes_join_is_prefix tc sub')), <- Esub; assumption.
+    1: rewrite <- (tc_rootinfo_tid_inj _ _ Erooinfo_sub'); assumption.
     split.
     1: apply Hbundle.
     split.
-    1: admit.
+    1:{
+      eapply Foralltc_subtc in Hsub'. 2: rewrite -> Foralltc_idempotent; apply Hcb_tc'.
+      apply Foralltc_chn_selves.
+      assumption.
+    } 
     split.
     1:{ 
       subst lstk_pre. rewrite -> Zlength_app, Zlength_map in Hlensum |- *.
       rewrite Zlength_map, Zlength_cons. rewrite <- Hlensum. clear. list_solve.
     }
     split.
-    1: admit.
-    split.
-    1: admit.
     1:{
-      (* FIXME: need to use not appearing and stack nodup *)
-      admit.
+      eapply Foralltc_subtc in Hsub'. 2: rewrite -> Foralltc_idempotent; apply Hprojc1'.
+      apply Foralltc_chn.
+      assumption.
+    }
+    split.
+    1:{
+      eapply Foralltc_subtc in Hsub'. 2: apply Hprojn1'. assumption.
+    } 
+    1:{
+      (* stack property *)
+      replace (length lstk_pre - 1)%nat with (length lstk_pre')%nat by (subst; rewrite app_length; simpl; lia).
+      match goal with |- context[(_ + length ?ll)%nat] => replace (length ll) with (length (map tc_roottid ll)) end.
+      2: now rewrite map_length.
+      subst lstk_pre'.
+      rewrite <- app_length.
+      inversion Htts_goal.
+      1: simpl; lia.
+      match goal with HH : ?ll = _ |- context[length ?ll] => rewrite HH end.
+      rewrite map_length, app_length.
+      match goal with |- context[length (snd (_ ?tcc ?ll))] => 
+        pose proof (tc_traversal_waitlist_length_lt_tc_size tcc ll) as Htmp end.
+      simpl.
+      pose proof (prefixtc_size_le _ _ Hprefix_all).
+      pose proof (tc_size_bounded_by_dim tc' dim Hdim Htid' (tid_nodup _ Hshape')).
+      unfold tc_size in *.
+      lia.
     }
   }
 
@@ -4658,18 +4818,6 @@ Proof.
   }
   rewrite list.take_app_alt; try assumption.
   rewrite list.drop_add_app. 2: rewrite Elstk_pre_len'; reflexivity.
-  (* TODO this proof about congr seemes to be repeating *)
-  epose proof (tc_get_updated_nodes_join_aux_tc_congr (tc_join_partial tc pfi) tc 
-    (tc_getclk (tc_roottid sub) tc) (tc_rootchn sub') ?[Goalqa]) as Egj.
-  [Goalqa]:{
-    (* FIXME: by showing that the children will not be in pfi, and then use partial join get clk? *)
-    admit.
-  }
-  match type of Egj with map ?ff ?al = map ?ff ?bl => assert (length al = length bl) as Elen
-    by (rewrite <- ! map_length with (f:=ff), -> Egj; reflexivity) end.
-  apply f_equal with (f:=map info_tid) in Egj.
-  rewrite -> ! map_map in Egj. 
-  rewrite -> 2 map_ext with (f:=(fun x : treeclock => info_tid (tc_rootinfo x))) (g:=tc_roottid) in Egj; auto.
 
   rewrite -> app_assoc, <- ! map_app.
   match goal with |- context[data_at Tsh (tarray tint dim) (map _ ?lpre ++ ?lsuf) plstk] =>
@@ -4687,8 +4835,21 @@ Proof.
       destruct sub'.
       rewrite tc_get_updated_nodes_join_eta.
       reflexivity.
-    - (* FIXME: this appeared before *)
-      admit.
+    - rewrite map_app, in_app_iff.
+      rewrite in_app_iff in Hnotin_tc'.
+      intros [ Hin | Hin ]. 1: apply Hnotin_tc'; tauto.
+      rewrite Egj, (tc_rootinfo_tid_inj _ _ Erooinfo_sub') in Hin.
+      revert Hin.
+      replace (tc_get_updated_nodes_join_aux _ _ _) with (tc_rootchn (tc_get_updated_nodes_join tc sub'))
+        by (destruct sub'; rewrite tc_get_updated_nodes_join_eta; reflexivity).
+      erewrite -> map_app, -> Permutation_app_tail in Hshape_pff.
+      2: apply Permutation_map, tc_flatten_root_chn_split.
+      rewrite -> map_app, -> Permutation_app_comm, -> tc_flatten_direct_result in Hshape_pff.
+      simpl in Hshape_pff.
+      rewrite -> NoDup_cons_iff, -> ! in_app_iff in Hshape_pff.
+      intros Hin. apply Hshape_pff. right. left.
+      unfold tc_roottid in Hin |- *.
+      rewrite Erootinfo_pfi, Erootinfo_prefix. apply Hin.
   }
 
   (*
@@ -4746,6 +4907,7 @@ Proof.
 
   (* change into another lnode *)
 
-Abort.
+(* require around 45 seconds to check this Qed *)
+Qed.
 
 End Main_Proof.
