@@ -4,10 +4,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-// #define get_tid(x) (x-1)
-// #define set_tid(x) (x+1)
+/*
+    General known issues: 
+    - it is expensive to read tree_this->tree or tree_this->clocks each time
+    - the field `prev` is not used at all (and also seems not maintained well)
+    - cannot handle reading a struct and its field at the same time, e.g.: (get_node(tc, uprime_tid))->node_par
+*/
+
 #define get_tid(x) (x)
 #define set_tid(x) (x)
+// the following expressions are seemingly equivalent with &(tree_this->...[...]) in Clight
 #define get_node(tree_this, tid) ((tree_this->tree) + tid)
 #define get_clock(tree_this, tid) ((tree_this->clocks) + tid)
 
@@ -20,37 +26,15 @@ struct Node {
     int node_headch;
 };
 
-// TODO can also be written as all field == 0
 int node_is_null(struct Node* nd){
     return nd->node_next == NODE_NULL && nd->node_prev == NODE_NULL && 
         nd->node_par == NODE_NULL && nd->node_headch == NODE_NULL;
 }
 
-// typedef struct Node* Node_T;
-/*
-void node_set_null(struct Node* nd){
-    nd->node_next = -1;
-    nd->node_prev = -1;
-    nd->node_par = -1;
-    nd->node_headch = -1;
-}
-*/
-
-/*
-Node_T clone_node(Node_T nd){
-    Node_T nd_new;
-    nd_new = (Node_T) malloc(sizeof *nd_new);
-    memcpy(nd_new, nd, sizeof *nd_new);
-    return nd_new;
-}
-*/
-
 struct Clock {
     int clock_clk;
     int clock_aclk;
 };
-
-// typedef struct Clock* Clock_T;
 
 struct TreeClock{
     int dim;
@@ -85,7 +69,7 @@ void detach_from_neighbors(TreeClock_T self, int t, struct Node* nd){
     int t_prev = get_tid(nd->node_prev);
     int t_parent = get_tid(nd->node_par);
 
-    // FIXME: this is not necessary, but would make things slightly easier?
+    // this is not required, but would possibly make things slightly easier if this function is used somewhere else
     // nd->node_next = NODE_NULL;
     // nd->node_prev = NODE_NULL;
     // nd->node_par = NODE_NULL;
@@ -105,14 +89,6 @@ void detach_from_neighbors(TreeClock_T self, int t, struct Node* nd){
     }
 }
 
-// struct Clock* get_clock(TreeClock_T tree_this, int tid){
-//     return ((tree_this->clocks) + tid);
-// }
-
-// struct Node* get_node(TreeClock_T tree_this, int tid){
-//     return ((tree_this->tree) + tid);
-// }
-
 void push_child(TreeClock_T self, int par, int t, struct Node* nd){
     struct Node* par_node = get_node(self, par);
     int head_child = get_tid(par_node->node_headch);
@@ -120,24 +96,19 @@ void push_child(TreeClock_T self, int par, int t, struct Node* nd){
         struct Node *ndtmp = get_node(self, head_child);
         ndtmp->node_prev = set_tid(t);
     }
-    // TODO this is not in the original paper, but add it here anyway
+    // this is not in the original paper (since prev is not used so it is still okay if prev is not maintained?), but add it here anyway
     nd->node_prev = NODE_NULL;
     
     nd->node_next = set_tid(head_child);
     nd->node_par = set_tid(par);
-    // noop: this.clocks[zprime_tid] = z_clocks;
-    // noop: this.tree[zprime_tid] = z_node;
     par_node->node_headch = set_tid(t);
 }
 
 void get_updated_nodes_join_chn(TreeClock_T self, TreeClock_T tc, int par, int par_clock){
-    // int vprime_tid = get_tid((get_node(tc, par))->node_headch);
-    // FIXME: Clight cannot handle this well?
     struct Node* nd_par = get_node(tc, par);
     int vprime_tid = get_tid(nd_par->node_headch);
     while (vprime_tid != NODE_NULL){
         struct Clock* vprime_clocks = get_clock(tc, vprime_tid);
-        // int v_clock = (get_clock(self, vprime_tid))->clock_clk;
         struct Clock* v_clocks = get_clock(self, vprime_tid);
         int v_clock = v_clocks->clock_clk;
         if (v_clock < vprime_clocks->clock_clk){
@@ -147,7 +118,6 @@ void get_updated_nodes_join_chn(TreeClock_T self, TreeClock_T tc, int par, int p
                 break;
             }
         }
-        // vprime_tid = get_tid((get_node(tc, vprime_tid))->node_next);
         struct Node* nd = get_node(tc, vprime_tid);
         vprime_tid = get_tid(nd->node_next);
     }
@@ -160,14 +130,6 @@ void join(TreeClock_T self, TreeClock_T tc){
     if (root_tid_this == tc->root_tid){
         return ;
     }
-    
-/*
-    if (root_tid_this == zprime_tid || zprime_tid < 0){
-        return ;
-    }
-*/
-    // struct Clock* zprime_clocks = get_local_root_data(tc);
-    // struct Clock* zprime_clocks = &(tc->clocks[zprime_tid]); // this would result in the same compilation result in Clight!
 
     int zprime_tid = tc->root_tid;
     struct Clock* zprime_clocks = get_clock(tc, zprime_tid);
@@ -176,18 +138,6 @@ void join(TreeClock_T self, TreeClock_T tc){
     int zprime_clock = zprime_clocks->clock_clk;
     struct Node* z_node = get_node(self, zprime_tid);
     struct Clock* z_clocks = get_clock(self, zprime_tid);
-
-/*
-    int z_clock = 0;
-    if (!node_is_null(z_node)){
-        z_clock = z_clocks->clock_clk;
-        if (zprime_clock <= z_clock){
-            return;
-        } else {
-            detach_from_neighbors(self, zprime_tid, z_node);
-        }
-    }
-*/
 
     int z_clock = z_clocks->clock_clk;
     if (zprime_clock <= z_clock){
@@ -198,7 +148,6 @@ void join(TreeClock_T self, TreeClock_T tc){
 
     // TODO generalize this as clock assignment?
     z_clocks->clock_clk = zprime_clock; /* local optimization */
-    // z_clocks->clock_aclk = (get_clock(self, root_tid_this))->clock_clk;
     struct Clock* self_root_clocks = get_clock(self, root_tid_this);
     z_clocks->clock_aclk = self_root_clocks->clock_clk;
 
@@ -211,18 +160,15 @@ void join(TreeClock_T self, TreeClock_T tc){
         struct Clock* uprime_clocks = get_clock(tc, uprime_tid);
         struct Node* u_node = get_node(self, uprime_tid);
         struct Clock* u_clocks = get_clock(self, uprime_tid);
-        /* int u_clock = 0; */
         int u_clock = u_clocks->clock_clk;;
 
         if (!node_is_null(u_node)){
-            /* u_clock = u_clocks->clock_clk; */
             detach_from_neighbors(self, uprime_tid, u_node);
         }
 
         u_clocks->clock_clk = uprime_clocks->clock_clk;
         u_clocks->clock_aclk = uprime_clocks->clock_aclk;
         
-        // int y = get_tid((get_node(tc, uprime_tid))->node_par);
         struct Node* uprime_node = get_node(tc, uprime_tid);
         int y = get_tid(uprime_node->node_par);
 
