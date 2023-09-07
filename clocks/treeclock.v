@@ -1,4 +1,4 @@
-From Coq Require Import List Bool Lia ssrbool PeanoNat Sorting RelationClasses.
+From Coq Require Import List Bool Lia ssrbool PeanoNat Sorting RelationClasses Permutation.
 From Coq Require ssreflect.
 From distributedclocks.utils Require Export util libtac.
 Import ssreflect.SsrSyntax.
@@ -107,43 +107,26 @@ Fixpoint treeclock_eqb tc tc' :=
 
 Lemma treeclock_eqP tc : forall tc', treeclock_eqb tc tc' <-> tc = tc'.
 Proof.
-  induction tc as [ni chn IH] using treeclock_ind_2. 
-  intros [ni' chn'].
+  induction tc as [ni chn IH] using treeclock_ind_2; intros [ni' chn'].
   simpl.
-  destruct (nodeinfo_eqdec ni ni') as [ <- | Hnineq ].
-  2: intuition congruence.
-  transitivity (chn = chn').
-  2: intuition congruence.
-  clear ni.
-  destruct (Nat.eq_dec (length chn) (length chn')) as [ El | Hlneq ].
-  2: intuition congruence.
+  destruct (nodeinfo_eqdec ni ni') as [ <- | Hnineq ], (Nat.eq_dec (length chn) (length chn')) as [ El | Hlneq ].
+  all: try eqsolve.
   unfold is_true.
-  rewrite -> forallb_forall.
-  rewrite -> List.Forall_forall in IH.
+  rewrite -> forallb_forall, <- Forall_forall.
   (* a local induction *)
   revert chn' El.
   induction chn as [ | ch chn IH' ]; intros.
-  - destruct chn'.
-    2: discriminate.
-    intuition.
-  - destruct chn' as [ | ch' chn' ].
-    1: discriminate.
+  - destruct chn'; try discriminate.
+    intuition constructor.
+  - destruct chn' as [ | ch' chn' ]; try discriminate.
     simpl in El.
     injection El as El.
-    simpl in IH |- *.
-    pose proof (IH _ (or_introl eq_refl) ch') as Hch.
-    apply IH' in El.
-    2: intros x HH; apply IH; intuition.
-    split; intros H.
-    + f_equal.
-      * specialize (H _ (or_introl eq_refl)).
-        now apply Hch.
-      * apply El.
-        intros ? ?.
-        eapply H; eauto.
-    + injection H as <-.
-      subst chn'.
-      intros (cmp, tc') [ <- | ]; intuition.
+    simpl.
+    rewrite -> Forall_cons_iff in IH |- *.
+    simpl.
+    specialize (IH' (proj2 IH) _ El).
+    rewrite -> (proj1 IH ch'), IH'.
+    intuition congruence.
 Qed.
 
 Definition treeclock_eqdec (tc tc' : treeclock) : {tc = tc'} + {tc <> tc'}.
@@ -202,6 +185,12 @@ Proof. intros [(?, ?, ?) ?] [(?, ?, ?) ?]. simpl. congruence. Qed.
 Fact tc_rootinfo_aclk_inj : forall x y, tc_rootinfo x = tc_rootinfo y -> tc_rootaclk x = tc_rootaclk y.
 Proof. intros [(?, ?, ?) ?] [(?, ?, ?) ?]. simpl. congruence. Qed.
 
+Global Arguments tc_rootinfo_tid_inj [_ _] _.
+Global Arguments tc_rootinfo_clk_inj [_ _] _.
+Global Arguments tc_partialinfo_tid_inj [_ _] _.
+Global Arguments tc_partialinfo_clk_inj [_ _] _.
+Global Arguments tc_rootinfo_aclk_inj [_ _] _.
+
 Fact map_map_rootinfo2partialinfo tcs :
   map tc_rootinfo_partial tcs = map info_partial (map tc_rootinfo tcs).
 Proof.
@@ -212,46 +201,36 @@ Proof.
 Qed.
 
 Fact Permutation_rootinfo2partialinfo tcs1 tcs2 
-  (H : Permutation.Permutation (map tc_rootinfo tcs1) (map tc_rootinfo tcs2)) :
-  Permutation.Permutation (map tc_rootinfo_partial tcs1) (map tc_rootinfo_partial tcs2).
+  (H : Permutation (map tc_rootinfo tcs1) (map tc_rootinfo tcs2)) :
+  Permutation (map tc_rootinfo_partial tcs1) (map tc_rootinfo_partial tcs2).
 Proof.
   rewrite -> ! map_map_rootinfo2partialinfo.
-  now apply Permutation.Permutation_map.
+  now apply Permutation_map.
 Qed.
 
 Fact Permutation_partialinfo2roottid tcs1 tcs2 
-  (H : Permutation.Permutation (map tc_rootinfo_partial tcs1) (map tc_rootinfo_partial tcs2)) :
-  Permutation.Permutation (map tc_roottid tcs1) (map tc_roottid tcs2).
+  (H : Permutation (map tc_rootinfo_partial tcs1) (map tc_rootinfo_partial tcs2)) :
+  Permutation (map tc_roottid tcs1) (map tc_roottid tcs2).
 Proof.
   rewrite -> ! map_ext with (f:=tc_roottid) (g:=fun tc => fst (tc_rootinfo_partial tc)) in |- *.
   2-3: now intros [(?, ?, ?) ?].
   rewrite <- 2 map_map with (f:=tc_rootinfo_partial) (g:=fst).
-  now apply Permutation.Permutation_map.
+  now apply Permutation_map.
 Qed.
 
 Fact Permutation_rootinfo2roottid tcs1 tcs2 
-  (H : Permutation.Permutation (map tc_rootinfo tcs1) (map tc_rootinfo tcs2)) :
-  Permutation.Permutation (map tc_roottid tcs1) (map tc_roottid tcs2).
+  (H : Permutation (map tc_rootinfo tcs1) (map tc_rootinfo tcs2)) :
+  Permutation (map tc_roottid tcs1) (map tc_roottid tcs2).
 Proof. now apply Permutation_partialinfo2roottid, Permutation_rootinfo2partialinfo. Qed.
-(*
-(* FIXME:??? *)
-Fact NoDup_rootinfo_partialinfo tcs : 
-  NoDup (map tc_rootinfo tcs) <-> NoDup (map tc_rootinfo_partial tcs).
-Proof.
-  erewrite -> map_ext with (f:=tc_rootinfo_partial).
-  2: intros; symmetry; now apply tc_rootinfo_partial_info_partial.
-  rewrite <- map_map with (g:=info_partial).
-  split; intros H.
-  - 
 
-
-  - now apply NoDup_map_inv in H.
-*)
 (* this is_left is for better printing of find (has_same_tid t) *)
 
 Definition has_same_tid t tc := is_left (eqdec (tc_roottid tc) t).
 
 Global Arguments has_same_tid _ !_ /.
+
+Fact has_same_tid_refl tc : has_same_tid (tc_roottid tc) tc = true.
+Proof. unfold has_same_tid. destruct (eqdec (tc_roottid tc) (tc_roottid tc)) as [ <- | ]; auto; try contradiction. Qed.
 
 Fact has_same_tid_true t tc : has_same_tid t tc = true <-> t = tc_roottid tc.
 Proof. unfold has_same_tid. destruct (eqdec (tc_roottid tc) t) as [ <- | ]; simpl; intuition congruence. Qed.
@@ -365,24 +344,26 @@ Proof.
   - destruct H as (l & H). now apply subtc_witness_subtc in H.
 Qed.
 
-(* TODO may revise later *)
 Fact par_subtc_trace tc res l tc_par (Hsub : subtc_witness l tc_par tc) (Hin : In res (tc_rootchn tc_par)) :
   exists ch, In ch (tc_rootchn tc) /\ subtc res ch.
 Proof.
   destruct tc as [(u, clk, aclk) chn], l as [ | x l ].
-  - hnf in Hsub. simpl in Hsub. injection Hsub as <-. simpl in Hin.
-    exists res. split; auto. hnf. apply tc_flatten_self_in.
-  - hnf in Hsub. simpl in Hsub.
-    destruct (nth_error chn x) as [ ch | ] eqn:Enth; try eqsolve.
-    pose proof Enth as Hin_ch. apply nth_error_In in Hin_ch.
-    exists ch. split; auto. eapply subtc_trans.
+  all: hnf in Hsub; simpl in Hsub.
+  - injection Hsub as <-. 
+    simpl in Hin |- *.
+    pose proof (tc_flatten_self_in res).
+    eauto.
+  - destruct (nth_error chn x) as [ ch | ] eqn:Enth; try eqsolve.
+    pose proof Enth as Hin_ch%nth_error_In.
+    exists ch. 
+    split; auto. 
+    eapply subtc_trans.
     + apply subtc_chn, Hin.
     + apply subtc_witness_iff. eauto.
 Qed.
 
 Fact tc_flatten_root_chn_split tcs :
-  Permutation.Permutation (flat_map tc_flatten tcs)
-    (tcs ++ (flat_map tc_flatten (flat_map tc_rootchn tcs))).
+  Permutation (flat_map tc_flatten tcs) (tcs ++ (flat_map tc_flatten (flat_map tc_rootchn tcs))).
 Proof.
   induction tcs as [ | [ni chn] tcs IH ].
   1: constructor.
@@ -390,8 +371,8 @@ Proof.
   constructor.
   rewrite -> flat_map_app.
   etransitivity.
-  2: apply Permutation.Permutation_app_swap_app.
-  now apply Permutation.Permutation_app_head.
+  2: apply Permutation_app_swap_app.
+  now apply Permutation_app_head.
 Qed.
 
 Fact tc_height_subtree_lt tc :
@@ -407,10 +388,8 @@ Proof.
   rewrite -> List.Forall_forall in IH.
   simpl in IH.
   unfold lt in IH |- *.
-  assert (tc_height (Node ni_ch chn_ch) <= list_max (map tc_height chn)) as H.
-  {
-    eapply tc_height_le; eauto.
-  }
+  assert (tc_height (Node ni_ch chn_ch) <= list_max (map tc_height chn)) as H
+    by (eapply tc_height_le; eauto).
   destruct Hin as [ <- | Hin ].
   - lia.
   - transitivity (S (list_max (map tc_height chn_ch))).
@@ -439,7 +418,7 @@ Global Arguments tc_size ! _ /.
 Fact tc_size_chn_lt_full tc : length (tc_rootchn tc) < tc_size tc.
 Proof.
   destruct tc; simpl.
-  erewrite -> Permutation.Permutation_length with (l:=(flat_map tc_flatten chn)).
+  erewrite -> Permutation_length with (l:=(flat_map tc_flatten chn)).
   2: apply tc_flatten_root_chn_split.
   rewrite app_length.
   lia.
@@ -462,8 +441,8 @@ Proof.
   pose proof (in_split _ _ H) as (pre & suf & ->).
   rewrite -> flat_map_app.
   simpl.
-  erewrite -> Permutation.Permutation_length.
-  2: apply Permutation.Permutation_app_swap_app.
+  erewrite -> Permutation_length.
+  2: apply Permutation_app_swap_app.
   rewrite ! app_length.
   unfold tc_size. 
   lia.
@@ -505,6 +484,10 @@ Definition tc_getclk t tc :=
   | Some res => tc_rootclk res
   | _ => 0
   end.
+
+Fact tc_getclk_viewchange t tc : tc_getclk t tc = 
+  match base.fmap tc_rootclk (tc_getnode t tc) with Some res => res | None => 0 end.
+Proof. unfold tc_getclk. now destruct (tc_getnode t tc). Qed.
 
 Section Old_Complaints.
 (* things here can be still kept, but no longer useful *)
@@ -600,7 +583,6 @@ Inductive Foralltc (P : treeclock -> Prop) : treeclock -> Prop :=
   Foralltc_intro : forall ni chn, 
     P (Node ni chn) -> Forall (Foralltc P) chn -> Foralltc P (Node ni chn). 
 
-(* TODO maybe make this the prime version later ... *)
 Fact Foralltc_cons_iff P ni chn :
   Foralltc P (Node ni chn) <-> (P (Node ni chn) /\ Forall (Foralltc P) chn).
 Proof.
@@ -699,6 +681,27 @@ Fact prefixtc_inv ni1 ni2 chn1 chn2 (Hprefix: prefixtc (Node ni1 chn1) (Node ni2
   ni1 = ni2 /\ exists chn2_sub, list.sublist chn2_sub chn2 /\ Forall2 prefixtc chn1 chn2_sub.
 Proof. inversion Hprefix; subst. firstorder. Qed.
 
+Lemma prefixtc_ind_2 (P : treeclock -> treeclock -> Prop)
+  (Hind : forall (ni : nodeinfo) (chn1 chn2_sub chn2 : list treeclock), 
+    list.sublist chn2_sub chn2 ->
+    Forall2 prefixtc chn1 chn2_sub -> 
+    Forall2 P chn1 chn2_sub -> P (Node ni chn1) (Node ni chn2)) : 
+  forall (tc1 tc2 : treeclock), prefixtc tc1 tc2 -> P tc1 tc2.
+Proof.
+  intros.
+  revert tc2 H.
+  induction tc1 as [ni chn1 IH] using treeclock_ind_2; intros.
+  destruct tc2 as [ni2 chn2].
+  apply prefixtc_inv in H.
+  destruct H as (<- & (chn2_sub & Hsub & H)).
+  eapply Hind; eauto.
+  clear -H IH.
+  induction H.
+  1: constructor.
+  rewrite Forall_cons_iff in IH.
+  constructor; firstorder.
+Qed.
+
 Fact prefixtc_rootinfo_same tc tc' (Hprefix : prefixtc tc tc') :
   tc_rootinfo tc = tc_rootinfo tc'.
 Proof. 
@@ -727,32 +730,21 @@ Qed.
 Lemma prefixtc_flatten_sublist tc1 tc2 (Hprefix : prefixtc tc1 tc2) :
   list.sublist (map tc_rootinfo (tc_flatten tc1)) (map tc_rootinfo (tc_flatten tc2)).
 Proof.
-  revert tc2 Hprefix.
-  induction tc1 as [ni chn1 IH] using treeclock_ind_2; intros.
-  destruct tc2 as [ni2 chn2].
-  apply prefixtc_inv in Hprefix.
-  destruct Hprefix as (<- & (chn2_sub & Hsub & Hprefix)).
+  induction Hprefix as [ni chn1 chn2_sub chn2 Hsub Hprefix IH] using prefixtc_ind_2.
   simpl.
   apply list.sublist_skip.
-  (* seems only induction works here ... *)
-  revert chn1 IH Hprefix.
-  induction Hsub as [ | ch2 chn2_sub chn2 Hsub IHsub | ch2 chn2_sub chn2 Hsub IHsub ]; intros.
-  - destruct chn1; inversion Hprefix.
-    reflexivity.
-  - destruct chn1 as [ | ch1 chn1 ]. 
-    1: inversion Hprefix.
-    apply list.Forall2_cons in Hprefix.
-    destruct Hprefix as (Hpf & Hprefix).
-    apply Forall_cons_iff in IH.
-    destruct IH as (IHsingle & IH).
+  transitivity (map tc_rootinfo (flat_map tc_flatten chn2_sub)).
+  - clear -IH.
+    induction IH.
+    1: auto.
     simpl.
-    rewrite -> ! map_app.
-    apply list.sublist_app.
-    all: firstorder.
-  - simpl.
-    rewrite -> map_app.
-    apply list.sublist_inserts_l.
-    firstorder.
+    rewrite ! map_app.
+    now apply list.sublist_app.
+  - apply sublist_map.
+    clear -Hsub.
+    induction Hsub; simpl; auto.
+    + now apply list.sublist_app.
+    + now apply list.sublist_inserts_l.
 Qed.
 
 Corollary prefixtc_size_le tc1 tc2 (Hprefix : prefixtc tc1 tc2) :
@@ -768,23 +760,22 @@ Proof.
   assumption.
 Qed.
 
+(* analytic proof; TODO this proof is too long? *)
 Lemma prefixtc_size_eq_tc_eq tc1 tc2 (Hprefix : prefixtc tc1 tc2) 
   (H : length (tc_flatten tc1) = length (tc_flatten tc2)) : tc1 = tc2.
 Proof.
-  revert tc2 Hprefix H.
-  induction tc1 as [ni chn1 IH] using treeclock_ind_2; intros.
-  destruct tc2 as [ni2 chn2].
-  apply prefixtc_inv in Hprefix.
-  destruct Hprefix as (<- & (chn2_sub & Hsub & Hprefix)).
+  induction Hprefix as [ni chn1 chn2_sub chn2 Hsub Hprefix IH] using prefixtc_ind_2.
   simpl in H.
   injection H as H.
   f_equal; clear ni.
+  pose proof Hprefix as Hple.
+  eapply list.Forall2_impl in Hple.
+  2: apply prefixtc_size_le.
   assert (length (flat_map tc_flatten chn1) <= length (flat_map tc_flatten chn2_sub)) as H1.
   {
     rewrite -> ! flat_map_concat_map.
-    eapply length_concat_le, list.Forall2_fmap_2, list.Forall2_impl.
-    1: apply Hprefix.
-    apply prefixtc_size_le.
+    eapply length_concat_le, list.Forall2_fmap_2.
+    assumption.
   }
   pose proof (length_concat_sum (map tc_flatten chn2_sub)) as E'.
   pose proof (length_concat_sum (map tc_flatten chn2)) as E.
@@ -794,13 +785,45 @@ Proof.
   assert (chn2_sub = chn2) as ->.
   {
     apply sublist_map_sum_eq_ with (f:=fun t => length (tc_flatten t)); auto.
-    2: rewrite -> map_map in E, E'; lia.
-    intros [? ?]; simpl; lia.
+    - intros [? ?]; simpl; lia.
+    - rewrite -> map_map in E, E'; lia.
   }
-  (* why is this so troublesome? *)
-Abort.
+  clear -H Hprefix Hple IH thread_eqdec.
+  induction Hprefix as [ | ch1 ch2 chn1 chn2 Hp Hprefix ]; try reflexivity.
+  simpl in H.
+  rewrite -> ! app_length in H.
+  rewrite -> list.Forall2_cons in IH, Hple.
+  destruct Hple as (Hp1 & Hp2).
+  assert (length (flat_map tc_flatten chn1) <= length (flat_map tc_flatten chn2)) as H1.
+  {
+    rewrite -> ! flat_map_concat_map.
+    eapply length_concat_le, list.Forall2_fmap_2.
+    assumption.
+  }
+  destruct (Nat.leb (length (tc_flatten ch2)) (length (tc_flatten ch1))) eqn:E.
+  - apply Nat.leb_le in E.
+    f_equal.
+    + apply IH.
+      lia.
+    + apply IHHprefix; intuition; lia.
+  - apply Nat.leb_gt in E.
+    lia.
+Qed.
 
-Lemma tc_getnode_in_iff t tcs : 
+Global Arguments prefixtc_rootinfo_same [_ _] _.
+Global Arguments prefixtc_flatten_sublist [_ _] _.
+Global Arguments prefixtc_size_le [_ _] _.
+Global Arguments prefixtc_flatten_info_incl [_ _] _.
+Global Arguments prefixtc_size_eq_tc_eq [_ _] _.
+
+Fact tcs_find_has_tid t tcs res
+  (Hres : find (has_same_tid t) tcs = Some res) : In res tcs /\ tc_roottid res = t.
+Proof. 
+  apply find_some in Hres.
+  now rewrite -> has_same_tid_true in Hres.
+Qed.
+
+Fact tcs_find_in_iff t tcs : 
   In t (map tc_roottid tcs) <-> find (has_same_tid t) tcs.
 Proof.
   rewrite -> in_map_iff.
@@ -814,23 +837,14 @@ Proof.
   - destruct (find (has_same_tid t) tcs) as [ res | ] eqn:E.
     2: intros; discriminate.
     intros _.
-    apply find_some in E.
-    destruct E as (Hin & E).
-    rewrite -> has_same_tid_true in E.
+    apply tcs_find_has_tid in E.
+    destruct E.
     eauto.
 Qed.
 
-(* FIXME: this naming is weird ... *)
-Corollary tc_getnode_subtc_iff t tc : 
+Fact tc_getnode_in_iff t tc : 
   In t (map tc_roottid (tc_flatten tc)) <-> tc_getnode t tc.
-Proof. apply tc_getnode_in_iff. Qed.
-
-Fact tc_getnode_has_tid t tc res
-  (Hres : tc_getnode t tc = Some res) : In res (tc_flatten tc) /\ tc_roottid res = t.
-Proof. 
-  apply find_some in Hres.
-  now rewrite -> has_same_tid_true in Hres.
-Qed.
+Proof. apply tcs_find_in_iff. Qed.
 
 Fact tc_getnode_res_Foralltc [t tc res] [P : treeclock -> Prop]
   (Hp : Foralltc P tc) (Hres : tc_getnode t tc = Some res) : 
@@ -843,7 +857,7 @@ Proof.
   firstorder. 
 Qed.
 
-Fact tid_nodup_find_self tcs (Hnodup : List.NoDup (map tc_roottid tcs)) :
+Lemma tid_nodup_find_self tcs (Hnodup : List.NoDup (map tc_roottid tcs)) :
   Forall (fun tc => find (has_same_tid (tc_roottid tc)) tcs = Some tc) tcs.
 Proof.
   induction tcs as [ | tc tcs IH ].
@@ -853,17 +867,15 @@ Proof.
   destruct Hnodup as (Hnotin & Hnodup).
   specialize (IH Hnodup).
   constructor.
-  - unfold has_same_tid.
-    destruct (eqdec (tc_roottid tc) (tc_roottid tc)).
-    2: contradiction.
-    now simpl.
-  - rewrite -> List.Forall_forall in IH |- *.
+  - now rewrite has_same_tid_refl.
+  - eapply Forall_impl.
+    2: apply IH.
+    simpl.
     intros tc' Hin.
-    destruct (has_same_tid (tc_roottid tc') tc) eqn:E.
-    + rewrite -> has_same_tid_true in E.
-      apply in_map with (f:=tc_roottid) in Hin.
-      congruence.
-    + now apply IH.
+    destruct (has_same_tid (tc_roottid tc') tc) eqn:E; try assumption.
+    rewrite -> has_same_tid_true in E.
+    apply tcs_find_has_tid, proj1, in_map with (f:=tc_roottid) in Hin.
+    congruence.
 Qed.
 
 Corollary tid_nodup_find_self_sub [A : Type] (f : treeclock -> A) tc (Hnodup : List.NoDup (map tc_roottid (tc_flatten tc))) 
@@ -878,7 +890,7 @@ Proof.
 Qed.
 
 Corollary tc_getclk_perm_congr_pre tcs1 tcs2 (Hnodup1 : List.NoDup (map tc_roottid tcs1))
-  (Hperm : Permutation.Permutation (map tc_rootinfo_partial tcs1) (map tc_rootinfo_partial tcs2)) :
+  (Hperm : Permutation (map tc_rootinfo_partial tcs1) (map tc_rootinfo_partial tcs2)) :
   forall t, base.fmap tc_rootclk (find (has_same_tid t) tcs1) = base.fmap tc_rootclk (find (has_same_tid t) tcs2).
 Proof.
   (* TODO revise this or not? *)
@@ -888,16 +900,16 @@ Proof.
   rewrite <- map_map in Hnodup1'.
   apply NoDup_map_inv in Hnodup1'.
   pose proof Hnodup1' as Hnodup2'.
-  eapply Permutation.Permutation_NoDup in Hnodup2'.
+  eapply Permutation_NoDup in Hnodup2'.
   2: apply Hperm.
   pose proof Hperm as Hperm'%Permutation_partialinfo2roottid.
   pose proof Hnodup1 as Hnodup2.
-  eapply Permutation.Permutation_NoDup in Hnodup2.
+  eapply Permutation_NoDup in Hnodup2.
   2: apply Hperm'.
 
   intros t.
   pose proof (Permutation_in_mutual _ _ Hperm' t) as Hin.
-  rewrite -> ! tc_getnode_in_iff in Hin.
+  rewrite -> ! tcs_find_in_iff in Hin.
   (* unfold tc_getclk. *)
   destruct (find (has_same_tid t) tcs1) as [ res1 | ] eqn:Eres1.
   - destruct (find (has_same_tid t) tcs2) as [ res2 | ] eqn:Eres2.
@@ -907,7 +919,7 @@ Proof.
     rewrite -> has_same_tid_true in Eres1, Eres2.
     destruct Eres1 as (Hsub1%(in_map tc_rootinfo_partial) & E1), 
       Eres2 as (Hsub2%(in_map tc_rootinfo_partial) & E2).
-    eapply Permutation.Permutation_in in Hsub1.
+    eapply Permutation_in in Hsub1.
     2: apply Hperm.
     rewrite -> map_ext with (g:=(fun x : treeclock => fst (tc_rootinfo_partial x))) (f:=tc_roottid) in Hnodup2.
     2: now intros [(?, ?, ?) ?].
@@ -921,9 +933,7 @@ Proof.
     + reflexivity.
 Qed.
 
-Fact tc_getclk_viewchange t tc : tc_getclk t tc = 
-  match base.fmap tc_rootclk (tc_getnode t tc) with Some res => res | None => 0 end.
-Proof. unfold tc_getclk. now destruct (tc_getnode t tc). Qed.
+Section TC_Key_Procedures.
 
 (* return a tree instead of a stack? *)
 (* compute prefix(tc') that should be updated in tc; assume that 
@@ -953,7 +963,7 @@ Fixpoint tc_get_updated_nodes_join tc tc' : treeclock :=
   Node info_u' (tc_get_updated_nodes_join_aux tc (tc_getclk (info_tid info_u') tc) chn_u')
 .
 
-(* TODO this is awkward. the inner aux must be an external function to work with
+(* this is awkward. the inner aux must be an external function to work with
     since implementing it as a mutual recursion does not pass the arg decrease check *)
 
 Fixpoint tc_get_updated_nodes_join_aux tc clk chn_u' : list treeclock :=
@@ -969,19 +979,11 @@ Fixpoint tc_get_updated_nodes_join_aux tc clk chn_u' : list treeclock :=
     else (tc_get_updated_nodes_join tc tc') :: (tc_get_updated_nodes_join_aux tc clk chn_u'')
   end.
 
-Lemma tc_get_updated_nodes_join_eta tc tc' : 
+Fact tc_get_updated_nodes_join_eta tc tc' : 
   tc_get_updated_nodes_join tc tc' = 
   let: Node info_u' chn_u' := tc' in
   Node info_u' (tc_get_updated_nodes_join_aux tc (tc_getclk (info_tid info_u') tc) chn_u').
 Proof. destruct tc'. reflexivity. Qed.
-
-Tactic Notation "tc_get_updated_nodes_join_unfold" :=
-  cbn delta -[tc_get_updated_nodes_join] iota beta;
-  rewrite -> tc_get_updated_nodes_join_eta.
-
-Tactic Notation "tc_get_updated_nodes_join_unfold" "in_" hyp(H) :=
-  cbn delta -[tc_get_updated_nodes_join] iota beta in H;
-  rewrite -> tc_get_updated_nodes_join_eta in H.
 
 (* given a tree and a list of targets, return a pivot tree and a list of splitted trees *)
 
@@ -997,7 +999,6 @@ Fixpoint tc_detach_nodes tcs tc : treeclock * list treeclock :=
 Fixpoint tc_attach_nodes forest tc' : treeclock :=
   let: Node info_u' chn' := tc' in
   (* try finding a tree in the forest with the same root thread *)
-  (* let: u_pre := List.find (fun tc => eqdec (tc_roottid tc) (info_tid info_u')) forest in *)
   let: u_pre := List.find (has_same_tid (info_tid info_u')) forest in
   let: chn_u := (match u_pre with Some u => tc_rootchn u | None => nil end) in
   (* for u', inherit clk and aclk anyway; prepend all children of u' *)
@@ -1016,26 +1017,20 @@ Definition tc_join tc tc' := Eval unfold tc_join_partial in
   if clk_z' <=? (tc_getclk z' tc)
   then tc
   else tc_join_partial tc (tc_get_updated_nodes_join tc tc').
-    (*
-    let: subtree_tc' := tc_get_updated_nodes_join tc tc' in
-    let: (pivot, forest) := tc_detach_nodes (tc_flatten subtree_tc') tc in
-    let: Node (mkInfo w clk_w _) chn_w := tc_attach_nodes forest subtree_tc' in
-    let: Node info_z chn_z := pivot in 
-    Node info_z ((Node (mkInfo w clk_w (info_clk info_z)) chn_w) :: chn_z).
-    *)
+
+End TC_Key_Procedures.
+
+Section TC_Respect_Theory.
 
 Definition tc_ge (tc_larger tc : treeclock) : Prop := 
-  Foralltc (fun tc'' => let: Node (mkInfo w clk_w _) _ := tc'' in 
-    clk_w <= tc_getclk w tc_larger) tc.
+  Foralltc (fun tc0 => tc_rootclk tc0 <= tc_getclk (tc_roottid tc0) tc_larger) tc.
 
 Definition dmono_single (tc_larger : treeclock) tc : Prop :=
-  let: Node (mkInfo u clk_u _) _ := tc in
-  clk_u <= (tc_getclk u tc_larger) -> tc_ge tc_larger tc.
+  tc_rootclk tc <= (tc_getclk (tc_roottid tc) tc_larger) -> tc_ge tc_larger tc.
 
 Definition imono_single (tc_larger : treeclock) tc: Prop :=
-  let: Node (mkInfo u _ _) chn := tc in
-  Forall (fun tc_v => let: Node (mkInfo v _ aclk_v) _ := tc_v in
-    aclk_v <= (tc_getclk u tc_larger) -> tc_ge tc_larger tc_v) chn. 
+  Forall (fun tc_v =>
+    tc_rootaclk tc_v <= (tc_getclk (tc_roottid tc) tc_larger) -> tc_ge tc_larger tc_v) (tc_rootchn tc). 
 
 Record tc_respect tc (tc' : treeclock) : Prop := {
   dmono : Foralltc (dmono_single tc') tc;
@@ -1047,28 +1042,24 @@ Proof.
   constructor.
   - constructor; auto.
     hnf.
-    destruct ni.
-    intros Hle.
-    unfold tc_ge.
+    intros.
     constructor; simpl; auto.
   - constructor; auto.
     hnf.
-    now destruct ni.
+    constructor.
 Qed.
 
 Fact tc_ge_all_getclk_ge tc tc_larger (H : tc_ge tc_larger tc) 
   t : tc_getclk t tc <= tc_getclk t tc_larger.
 Proof.
   unfold tc_getclk at 1.
-  destruct (tc_getnode t tc) as [ [(t', clk', aclk') chn'] | ] eqn:E.
-  - apply find_some in E.
-    rewrite -> has_same_tid_true in E.
+  destruct (tc_getnode t tc) as [ res | ] eqn:E.
+  - apply tcs_find_has_tid in E.
     simpl in E.
-    destruct E as (Hin' & <-).
-    hnf in H.
-    rewrite -> Foralltc_Forall_subtree, List.Forall_forall in H.
-    specialize (H _ Hin').
-    firstorder.
+    destruct E as (Hin & <-).
+    eapply Foralltc_subtc in Hin.
+    2: apply H.
+    assumption.
   - lia.
 Qed.
 
@@ -1077,16 +1068,15 @@ Fact all_getclk_ge_tc_ge tc tc_larger
   (H : forall t, tc_getclk t tc <= tc_getclk t tc_larger) :
   tc_ge tc_larger tc.
 Proof.
-  unfold tc_ge.
+  hnf.
   pose proof (tid_nodup_find_self _ Hnodup) as Hself.
-  rewrite -> Foralltc_Forall_subtree.
-  rewrite -> List.Forall_forall in Hself |- *.
-  intros [(t, clk, aclk) chn] Hin.
-  specialize (Hself _ Hin).
-  simpl in Hself.
-  replace clk with (tc_getclk t tc).
-  2: unfold tc_getclk, tc_getnode; now rewrite -> Hself.
-  now apply H.
+  eapply Foralltc_impl.
+  2: apply Foralltc_Forall_subtree, Hself.
+  simpl.
+  intros tc0 E.
+  specialize (H (tc_roottid tc0)).
+  unfold tc_getclk, tc_getnode in H |- *.
+  now rewrite E in H.
 Qed.
 
 #[export] Instance tc_ge_trans : Transitive tc_ge.
@@ -1097,35 +1087,23 @@ Proof.
   rewrite -> Foralltc_Forall_subtree, List.Forall_forall in Hge2 |- *.
   intros [(t, clk, aclk) chn] Hin.
   specialize (Hge2 _ Hin).
-  simpl in Hge2.
+  simpl in Hge2 |- *.
   pose proof (tc_ge_all_getclk_ge _ _ Hge1 t).
   lia.
 Qed.
 
-(* a typical corr proof. TODO summarize? *)
-
-Fact tc_ge_prefix_preserve tc : 
-  forall tc' (Hprefix : prefixtc tc' tc)
-    tc_larger (Hge : tc_ge tc_larger tc),
-  tc_ge tc_larger tc'.
+Fact tc_ge_prefix_preserve tc tc' (Hprefix : prefixtc tc' tc)
+  tc_larger (Hge : tc_ge tc_larger tc) : tc_ge tc_larger tc'.
 Proof.
-  induction tc as [(u, clk_u, aclk_u) chn IH] using treeclock_ind_2; intros.
-  destruct tc' as [(u', clk', aclk') chn'].
-  apply prefixtc_inv in Hprefix.
-  destruct Hprefix as (Htmp & (chn_sub & Hsub & Hcorr)).
-  injection Htmp as ->.
-  subst clk' aclk'.
-  unfold tc_ge in Hge |- *.
-  rewrite -> Foralltc_cons_iff in Hge |- *.
-  destruct Hge as (Ele & Hle).
-  split; [ assumption | ].
-  pose proof (sublist_In _ _ Hsub) as Hsub_in.
-  pose proof (Forall2_forall_exists_l _ _ _ Hcorr) as Hcorr_in.
-  rewrite -> List.Forall_forall in IH, Hle |- *.
-  intros ch' Hin'.
-  destruct (Hcorr_in _ Hin') as (ch & Hin_ch & Hprefix).
-  specialize (Hle _ (Hsub_in _ Hin_ch)).
-  eapply IH; eauto.
+  hnf in Hge |- *.
+  rewrite Foralltc_Forall_subtree in Hge |- *.
+  unfold tc_rootclk, tc_roottid in Hge |- *.
+  pose proof (Forall_map tc_rootinfo (fun ni => info_clk ni <= tc_getclk (info_tid ni) tc_larger)) as Htmp.
+  simpl in Htmp.
+  rewrite <- Htmp in Hge |- *.
+  eapply incl_Forall.
+  1: eapply prefixtc_flatten_info_incl; eauto.
+  assumption.
 Qed.
 
 Section Pointwise_Treeclock.
@@ -1148,7 +1126,6 @@ Section Pointwise_Treeclock.
     dmono_single tc_max tc.
   Proof.
     hnf in Hdmono1, Hdmono2 |- *.
-    destruct tc as [(t, clk, aclk) chn].
     intros Hle.
     pose proof tc_ge_from_pointwise_max as Hge.
     rewrite -> Hpmax in Hle.
@@ -1194,18 +1171,6 @@ Section Pointwise_Treeclock.
 
 End Pointwise_Treeclock.
 
-Fact tc_respect_chn ni chn tc' (H : tc_respect (Node ni chn) tc') :
-  Forall (fun ch => tc_respect ch tc') chn.
-Proof.
-  rewrite -> List.Forall_forall.
-  intros ch Hin.
-  constructor.
-  1: apply dmono in H.
-  2: apply imono in H.
-  all: rewrite -> Foralltc_cons_iff, List.Forall_forall in H.
-  all: firstorder.
-Qed.
-
 Fact tc_respect_sub tc tc' (H : tc_respect tc tc') :
   Foralltc (fun sub => tc_respect sub tc') tc.
 Proof.
@@ -1213,79 +1178,64 @@ Proof.
   rewrite <- Foralltc_and, <- Foralltc_idempotent in HH.
   eapply Foralltc_impl.
   2: apply HH.
-  simpl.
   setoid_rewrite -> Foralltc_and.
   intros. 
   now constructor.
 Qed.
 
-Lemma dmono_prefix_preserve tc : 
-  forall tc' (Hprefix : prefixtc tc' tc)
-    tc_larger (Hdmono : Foralltc (dmono_single tc_larger) tc),
+Fact tc_respect_chn tc tc' (H : tc_respect tc tc') :
+  Forall (fun ch => tc_respect ch tc') (tc_rootchn tc).
+Proof. now apply Foralltc_chn_selves, tc_respect_sub. Qed.
+
+Lemma dmono_prefix_preserve tc tc' (Hprefix : prefixtc tc' tc) :
+  forall tc_larger (Hdmono : Foralltc (dmono_single tc_larger) tc),
   Foralltc (dmono_single tc_larger) tc'.
 Proof.
-  induction tc as [(u, clk_u, aclk_u) chn IH] using treeclock_ind_2; intros.
-  destruct tc' as [(u', clk', aclk') chn'].
-  pose proof Hprefix as Hprefix_backup.
-  apply prefixtc_inv in Hprefix.
-  destruct Hprefix as (Htmp & (chn_sub & Hsub & Hcorr)).
-  injection Htmp as ->.
-  subst clk' aclk'.
+  induction Hprefix as [ni chn1 chn2_sub chn2 Hsub Hprefix IH] using prefixtc_ind_2; intros.
   rewrite -> Foralltc_cons_iff in Hdmono |- *.
   destruct Hdmono as (Hdmono & Hdmono_chn).
   split.
   - hnf in Hdmono |- *.
     intros Hle.
     eapply tc_ge_prefix_preserve.
-    1: apply Hprefix_backup.
+    1: econstructor; eauto.
     intuition.
-  - pose proof (sublist_In _ _ Hsub) as Hsub_in.
-    pose proof (Forall2_forall_exists_l _ _ _ Hcorr) as Hcorr_in.
-    rewrite -> List.Forall_forall in IH, Hdmono_chn |- *.
+  - eapply incl_Forall in Hdmono_chn.
+    2: hnf; apply (sublist_In _ _ Hsub).
+    pose proof (Forall2_forall_exists_l _ _ _ IH) as Hcorr_in.
+    rewrite -> List.Forall_forall in Hdmono_chn |- *.
     intros ch' Hin'.
-    destruct (Hcorr_in _ Hin') as (ch & Hin_ch & Hprefix).
-    specialize (Hdmono_chn _ (Hsub_in _ Hin_ch)).
-    eapply IH; eauto.
+    destruct (Hcorr_in _ Hin') as (ch & Hin_ch & Htarg).
+    now apply Htarg, Hdmono_chn.
 Qed.
 
-Lemma imono_prefix_preserve tc : 
-  forall tc' (Hprefix : prefixtc tc' tc)
-    tc_larger (Himono : Foralltc (imono_single tc_larger) tc),
+Lemma imono_prefix_preserve tc tc' (Hprefix : prefixtc tc' tc) :
+  forall tc_larger (Himono : Foralltc (imono_single tc_larger) tc),
   Foralltc (imono_single tc_larger) tc'.
 Proof.
-  induction tc as [(u, clk_u, aclk_u) chn IH] using treeclock_ind_2; intros.
-  destruct tc' as [(u', clk', aclk') chn'].
-  apply prefixtc_inv in Hprefix.
-  destruct Hprefix as (Htmp & (chn_sub & Hsub & Hcorr)).
-  injection Htmp as ->.
-  subst clk' aclk'.
+  induction Hprefix as [ni chn1 chn2_sub chn2 Hsub Hprefix IH] using prefixtc_ind_2; intros.
   rewrite -> Foralltc_cons_iff in Himono |- *.
-  destruct Himono as (Himono & Himono_chn).
-  pose proof (sublist_In _ _ Hsub) as Hsub_in.
-  pose proof (Forall2_forall_exists_l _ _ _ Hcorr) as Hcorr_in.
+  unfold imono_single in Himono |- *.
+  rewrite <- list.Forall_and in Himono |- *.
+  simpl in Himono |- *.
+  pose proof (Forall2_forall_exists_l _ _ _ Hprefix) as Hcorr1.
+  pose proof (Forall2_forall_exists_l _ _ _ IH) as Hcorr2.
+  eapply incl_Forall in Himono.
+  2: hnf; apply (sublist_In _ _ Hsub).
+  rewrite -> List.Forall_forall in Himono |- *.
+  intros ch' Hin'.
+  destruct (Hcorr1 _ Hin') as (ch & Hin_ch & Hp), (Hcorr2 _ Hin') as (ch_ & Hin_ch_ & Hp_).
+  rewrite (tc_rootinfo_aclk_inj (prefixtc_rootinfo_same Hp)).
   split.
-  - hnf in Himono |- *.
-    rewrite -> List.Forall_forall in Himono |- *.
-    intros [(v', clk_v', aclk_v') chn_v'] Hin' Hle.
-    destruct (Hcorr_in _ Hin') as (ch & Hin_ch & Hprefix).
-    specialize (Himono _ (Hsub_in _ Hin_ch)).
-    destruct ch as [(v, clk_v, aclk_v) chn_v].
-    pose proof Hprefix as Hprefix_backup.
-    apply prefixtc_inv in Hprefix.
-    destruct Hprefix as (Htmp & _).
-    injection Htmp as ->.
-    subst clk_v' aclk_v'.
+  - intros Hq. 
     eapply tc_ge_prefix_preserve.
-    1: apply Hprefix_backup.
-    intuition.
-  - rewrite -> List.Forall_forall in IH, Himono_chn |- *.
-    intros ch' Hin'.
-    destruct (Hcorr_in _ Hin') as (ch & Hin_ch & Hprefix).
-    specialize (Himono_chn _ (Hsub_in _ Hin_ch)).
-    eapply IH; eauto.
+    1: apply Hp.
+    revert Hq.
+    eapply Himono; eauto.
+  - eapply Hp_, Himono; eauto.
 Qed.
 
-Lemma tc_respect_prefix_preserve tc tc' (Hprefix : prefixtc tc' tc)
+Corollary tc_respect_prefix_preserve tc tc' (Hprefix : prefixtc tc' tc)
   tc_larger (Hrespect : tc_respect tc tc_larger) :
   tc_respect tc' tc_larger.
 Proof.
@@ -1296,18 +1246,16 @@ Proof.
     eapply imono_prefix_preserve; eauto.
 Qed.
 
-Definition tc_chn_aclk_decsorted tc := 
-  let: Node _ chn := tc in
-  StronglySorted ge (map tc_rootaclk chn). 
+End TC_Respect_Theory.
+
+Section TC_Shape_Invariant_Theory.
+
+Definition tc_chn_aclk_decsorted tc := StronglySorted ge (map tc_rootaclk (tc_rootchn tc)). 
 
 Definition tc_chn_aclk_ub tc: Prop :=
-  let: Node (mkInfo _ clk_u _) chn := tc in
-  Forall (fun tc' => tc_rootaclk tc' <= clk_u) chn. 
-
-(* TODO make this record or class? *)
+  Forall (fun tc' => tc_rootaclk tc' <= tc_rootclk tc) (tc_rootchn tc). 
 
 Record tc_shape_inv tc : Prop := {
-  (* tid_nodup: List.NoDup (map info_tid (tc_flatten tc)); *)
   tid_nodup: List.NoDup (map tc_roottid (tc_flatten tc));
   aclk_upperbound: Foralltc tc_chn_aclk_ub tc;
   aclk_decsorted: Foralltc tc_chn_aclk_decsorted tc
@@ -1337,8 +1285,7 @@ Proof.
   simpl.
   split; [ | intuition ].
   intros H.
-  split.
-  1: assumption.
+  split; [ assumption | ].
   rewrite -> List.Forall_forall in IH |- *.
   intros tc Hin.
   rewrite <- IH.
@@ -1357,16 +1304,7 @@ Lemma tid_nodup_prefix_preserve tc tc' (Hprefix : prefixtc tc tc')
   (Hnodup : List.NoDup (map tc_roottid (tc_flatten tc'))) : 
   List.NoDup (map tc_roottid (tc_flatten tc)).
 Proof.
-  (* use prefix domain *)
-  revert tc' Hprefix Hnodup.
-  induction tc as [(u, clk, aclk) chn_sp IH] using treeclock_ind_2; intros.
-  destruct tc' as [(u', clk', aclk') chn].
-  pose proof (prefixtc_flatten_sublist _ _ Hprefix) as Hdomsub. 
-  apply prefixtc_inv in Hprefix.
-  destruct Hprefix as (Htmp & (chn_sub & Hsub & Hcorr)).
-  injection Htmp as <-.
-  subst clk' aclk'.
-  simpl in Hnodup, Hdomsub |- *.
+  pose proof (prefixtc_flatten_sublist Hprefix) as Hdomsub.
   apply sublist_map with (f:=info_tid) in Hdomsub.
   simpl in Hdomsub.
   rewrite -> ! map_map in Hdomsub.
@@ -1379,11 +1317,11 @@ Lemma tid_nodup_root_chn_split tcs
   List.NoDup (map tc_roottid tcs) /\ List.NoDup (map tc_roottid (flat_map tc_flatten (flat_map tc_rootchn tcs))).
 Proof.
   pose proof (tc_flatten_root_chn_split tcs) as Hperm.
-  apply Permutation.Permutation_map with (f:=tc_roottid) in Hperm.
+  apply Permutation_map with (f:=tc_roottid) in Hperm.
   rewrite -> map_app in Hperm.
-  apply Permutation.Permutation_NoDup in Hperm.
+  apply Permutation_NoDup in Hperm.
   2: assumption.
-  now rewrite <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup in Hperm.
+  now apply NoDup_app_ in Hperm.
 Qed.
 
 Fact tc_shape_inv_conj_iff tc : 
@@ -1413,10 +1351,11 @@ Proof.
     now simpl in *.
 Qed.
 
-Lemma tc_shape_inv_sub tc (Hshape : tc_shape_inv tc) : Forall tc_shape_inv (tc_flatten tc).
+Lemma tc_shape_inv_sub tc (Hshape : tc_shape_inv tc) : Foralltc tc_shape_inv tc.
 Proof.
   apply tc_shape_inv_conj_iff in Hshape.
   rewrite -> ! Foralltc_Forall_subtree in Hshape.
+  rewrite -> Foralltc_Forall_subtree.
   change tc_shape_inv with (fun tc' => tc_shape_inv tc').
   setoid_rewrite -> tc_shape_inv_conj_iff.
   repeat apply Forall_and.
@@ -1424,79 +1363,56 @@ Proof.
   now rewrite <- Foralltc_Forall_subtree, <- tid_nodup_Foralltc_id.
 Qed.
 
-Corollary tc_shape_inv_chn ni chn (Hshape : tc_shape_inv (Node ni chn)) :
-  Forall tc_shape_inv chn.
-Proof.
-  apply tc_shape_inv_sub in Hshape.
-  simpl in Hshape.
-  apply Forall_cons_iff, proj2, Forall_flat_map in Hshape.
-  rewrite -> List.Forall_forall in Hshape |- *.
-  intros [? ?] Hin.
-  specialize (Hshape _ Hin).
-  simpl in Hshape.
-  now apply Forall_cons_iff, proj1 in Hshape.
-Qed.
+Corollary tc_shape_inv_chn tc (Hshape : tc_shape_inv tc) : Forall tc_shape_inv (tc_rootchn tc).
+Proof. now apply Foralltc_chn_selves, tc_shape_inv_sub. Qed.
 
 (* prefix also have shape inv *)
 
 Lemma tc_shape_inv_prefix_preserve tc tc' (Hprefix : prefixtc tc tc') 
   (Hshape : tc_shape_inv tc') : tc_shape_inv tc.
 Proof.
-  revert tc' Hprefix Hshape.
-  induction tc as [(u, clk, aclk) chn_sp IH] using treeclock_ind_2; intros.
-  destruct tc' as [(u', clk', aclk') chn].
-  apply prefixtc_inv in Hprefix.
-  destruct Hprefix as (Htmp & (chn_sub & Hsub & Hcorr)).
-  injection Htmp as <-.
-  subst clk' aclk'.
-  pose proof (sublist_In _ _ Hsub) as Hsub_in.
-  pose proof (Forall2_forall_exists_l _ _ _ Hcorr) as Hcorr_in.
-  pose proof (tc_shape_inv_chn _ _ Hshape) as Hshape_chn.
-  rewrite -> List.Forall_forall in IH, Hshape_chn.
-  assert (forall x, In x chn_sp -> tc_shape_inv x) as Hshape_sp.
-  {
-    intros x Hin.
-    destruct (Hcorr_in _ Hin) as (y & Hin_sub & Hprefix_sub).
-    specialize (Hsub_in _ Hin_sub).
-    firstorder.
-  }
-  pose proof Hcorr as Hrootinfo.
-  eapply list.Forall2_impl in Hrootinfo.
-  2: apply prefixtc_rootinfo_same.
-  pose proof (Forall2_forall_exists_l _ _ _ Hrootinfo) as Hrootinfo_in.
-  constructor.
-  - apply tid_nodup in Hshape.
-    eapply tid_nodup_prefix_preserve; eauto.
-    econstructor; eauto.
-  - constructor.
-    + apply aclk_upperbound, Foralltc_self in Hshape.
-      simpl in Hshape |- *.
-      rewrite -> List.Forall_forall in Hshape |- *.
-      unfold tc_rootaclk in Hshape |- *.
-      firstorder congruence.
-    + rewrite -> List.Forall_forall.
-      firstorder.
-  - constructor.
-    + apply aclk_decsorted, Foralltc_self in Hshape.
-      simpl in Hshape |- *.
-      assert (map tc_rootaclk chn_sp = map tc_rootaclk chn_sub) as ->.
-      {
-        clear -Hrootinfo.
-        induction Hrootinfo.
-        - auto.
-        - simpl. unfold tc_rootaclk in *. congruence.
-      }
-      eapply sublist_map with (f:=tc_rootaclk) in Hsub.
-      eapply sublist_StronglySorted; eauto.
-    + rewrite -> List.Forall_forall.
-      firstorder.
+  rewrite tc_shape_inv_conj_iff in Hshape |- *.
+  split.
+  1: eapply tid_nodup_prefix_preserve; eauto; tauto.
+  apply proj2 in Hshape.
+  rewrite <- Foralltc_and in Hshape |- *.
+  induction Hprefix as [ni chn1 chn2_sub chn2 Hsub Hprefix IH] using prefixtc_ind_2; intros.
+  rewrite -> Foralltc_cons_iff in Hshape |- *.
+  split.
+  - destruct Hshape as ((Hshape1 & Hshape2) & _).
+    unfold tc_chn_aclk_ub, tc_chn_aclk_decsorted in Hshape1, Hshape2 |- *.
+    simpl in Hshape1, Hshape2 |- *.
+    assert (map tc_rootaclk chn1 = map tc_rootaclk chn2_sub) as Hq.
+    {
+      clear -Hprefix thread_eqdec.
+      induction Hprefix; simpl; auto; f_equal; auto.
+      eapply tc_rootinfo_aclk_inj, prefixtc_rootinfo_same; eauto.
+    }
+    eapply sublist_Forall in Hshape1.
+    2: apply Hsub.
+    eapply sublist_StronglySorted in Hshape2.
+    2: apply sublist_map, Hsub.
+    pose proof (Forall_map tc_rootaclk (fun a => a <= info_clk ni)) as Htmp.
+    simpl in Htmp.
+    rewrite <- Htmp in Hshape1 |- *.
+    rewrite Hq.
+    intuition.
+  - pose proof (Forall2_forall_exists_l _ _ _ IH) as Hcorr.
+    simpl in Hcorr.
+    apply proj2 in Hshape.
+    eapply sublist_Forall in Hshape.
+    2: apply Hsub.
+    rewrite Forall_forall in Hshape |- *.
+    intros ch' Hin'.
+    destruct (Hcorr _ Hin') as (ch & Hin & Hp).
+    eapply Hp; eauto.
 Qed.
 
 (* exploit some simple cases, which may be not generalizable but simpler ... *)
 
 Lemma tc_shape_inv_prepend_child ni chn (Hshape : tc_shape_inv (Node ni chn))
   tc_new (Hshape_new : tc_shape_inv tc_new)
-  (* (Hnointersect : forall t, tc_getnode t tc_new -> tc_getnode t (Node ni chn) -> False) *)
+  (* knowing that tid_nodup after prepending will be convenient *)
   (Hnodup : List.NoDup (map tc_roottid (tc_flatten (Node ni (tc_new :: chn)))))
   (Haclk_bounded : tc_rootaclk tc_new <= info_clk ni)
   (Haclk_ge : tc_rootaclk tc_new >= match chn with ch :: _ => tc_rootaclk ch | nil => 0 end) :
@@ -1504,49 +1420,44 @@ Lemma tc_shape_inv_prepend_child ni chn (Hshape : tc_shape_inv (Node ni chn))
 Proof.
   constructor.
   - assumption.
-    (*
-    repeat setoid_rewrite <- tc_getnode_subtc_iff in Hnointersect.
-    eapply Permutation.Permutation_NoDup with 
-      (l:=map tc_roottid ((tc_flatten tc_new) ++ (tc_flatten (Node ni chn)))).
-    + simpl.
-      rewrite -> ! map_app.
-      simpl.
-      symmetry.
-      apply Permutation.Permutation_middle.
-    + rewrite -> map_app.
-      rewrite <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup.
-      setoid_rewrite -> base.elem_of_list_In.
-      now apply tid_nodup in Hshape, Hshape_new.
-    *)
   - constructor.
     + apply aclk_upperbound, Foralltc_self in Hshape.
-      simpl in Hshape |- *.
-      destruct ni as (?, ?, ?).
-      simpl in Haclk_bounded.
-      constructor; auto.
+      hnf in Hshape |- *.
+      now constructor.
     + apply aclk_upperbound in Hshape, Hshape_new.
       apply Foralltc_cons_iff in Hshape.
       now constructor.
   - constructor.
     + apply aclk_decsorted, Foralltc_self in Hshape.
-      simpl in Hshape |- *.
+      hnf in Hshape |- *.
       constructor.
       1: assumption.
       destruct chn as [ | ch chn ].
       * now simpl.
-      * simpl.
-        constructor.
+      * constructor.
         1: assumption.
         simpl in Hshape.
-        apply StronglySorted_inv in Hshape.
+        apply StronglySorted_inv, proj2 in Hshape.
         rewrite -> List.Forall_forall in Hshape |- *.
         intros x Hin.
-        pose proof (proj2 Hshape _ Hin).
+        specialize (Hshape _ Hin).
         lia.
     + apply aclk_decsorted in Hshape, Hshape_new.
       apply Foralltc_cons_iff in Hshape.
       now constructor.
 Qed.
+
+End TC_Shape_Invariant_Theory.
+
+Section TC_Get_Updated_Nodes_Join.
+
+Tactic Notation "tc_get_updated_nodes_join_unfold" :=
+  cbn delta -[tc_get_updated_nodes_join] iota beta;
+  rewrite -> tc_get_updated_nodes_join_eta.
+
+Tactic Notation "tc_get_updated_nodes_join_unfold" "in_" hyp(H) :=
+  cbn delta -[tc_get_updated_nodes_join] iota beta in H;
+  rewrite -> tc_get_updated_nodes_join_eta in H.
 
 (* purely computational *)
 
@@ -1715,6 +1626,33 @@ Proof.
       now subst ch.
 Qed.
 
+(* TODO not sure whether this will be useful ... maybe it is too weak *)
+
+Fact tc_get_updated_nodes_join_trace tc' : forall tc sub_prefix
+  (H : subtc sub_prefix (tc_get_updated_nodes_join tc tc')), 
+  exists sub, subtc sub tc' /\ sub_prefix = tc_get_updated_nodes_join tc sub.
+Proof.
+  induction tc' as [(u', clk', aclk') chn' IH] using treeclock_ind_2; intros.
+  tc_get_updated_nodes_join_unfold in_ H.
+  cbn delta [tc_flatten In info_tid] beta iota in H.
+  destruct H as [ <- | (ch & Hin_ch & H)%in_flat_map ].
+  - eexists. 
+    split; [ apply tc_flatten_self_in | ].
+    reflexivity.
+  - pose proof (tc_get_updated_nodes_join_aux_result_submap tc (tc_getclk u' tc) chn') 
+      as (chn'' & Hsl & E).
+    rewrite -> E in Hin_ch.
+    apply in_map_iff in Hin_ch.
+    destruct Hin_ch as (ch'' & <- & Hin_ch).
+    pose proof (sublist_In _ _ Hsl _ Hin_ch) as Hin_ch'.
+    eapply Forall_forall in IH.
+    2: apply Hin_ch'.
+    destruct (IH _ _ H) as (sub & Hsub & ->).
+    exists sub.
+    split; [ | reflexivity ].
+    now eapply subtc_trans; [ | apply subtc_chn; simpl; apply Hin_ch' ].
+Qed.
+
 Corollary tc_get_updated_nodes_join_is_prefix tc tc' :
   prefixtc (tc_get_updated_nodes_join tc tc') tc'.
 Proof.
@@ -1739,7 +1677,7 @@ Fact imono_single_aclk_impl_clk tc u' clk_u' aclk_u' chn_u'
 Proof.
   intros tc_v' Hin' Hle.
   (* use imono *)
-  simpl in Himono.
+  hnf in Himono.
   rewrite -> List.Forall_forall in Himono.
   specialize (Himono _ Hin').
   destruct tc_v' as [(v', clk_v', aclk_v') chn_v'].
@@ -1826,8 +1764,9 @@ Proof.
   destruct Htmp as (chn_u'' & Hsub & -> & _ & Halllt & Halllt').
   rewrite -> List.Forall_forall in Halllt, Halllt'.
   pose proof (sublist_In _ _ Hsub) as Hsub_in.
-  pose proof (tc_shape_inv_chn _ _ Hshape) as Hshape_ch.
-  pose proof (tc_respect_chn _ _ _ Hrespect) as Hrespect_ch.
+  pose proof (tc_shape_inv_chn _ Hshape) as Hshape_ch.
+  pose proof (tc_respect_chn _ _ Hrespect) as Hrespect_ch.
+  simpl in Hshape_ch, Hrespect_ch.
   rewrite -> List.Forall_forall in Hshape_ch, Hrespect_ch.
   split.
   - constructor.
@@ -1857,7 +1796,7 @@ Proof.
   pose proof (tc_get_updated_nodes_join_shape _ Hshape _ Hrespect Hroot_clk_le) as H.
   apply proj1, Foralltc_Forall_subtree in H.
   intros t Hres.
-  rewrite <- tc_getnode_subtc_iff, -> in_map_iff in Hres.
+  rewrite <- tc_getnode_in_iff, -> in_map_iff in Hres.
   destruct Hres as (sub & <- & Hin).
   pose proof Hin as Einfo.
   apply in_map with (f:=tc_rootinfo) in Einfo.
@@ -1865,8 +1804,8 @@ Proof.
   2: apply tc_get_updated_nodes_join_is_prefix.
   rewrite -> in_map_iff in Einfo.
   destruct Einfo as (sub' & Einfo & Hin').
-  pose proof (tc_rootinfo_tid_inj _ _ Einfo) as Et.
-  pose proof (tc_rootinfo_clk_inj _ _ Einfo) as Eclk.
+  pose proof (tc_rootinfo_tid_inj Einfo) as Et.
+  pose proof (tc_rootinfo_clk_inj Einfo) as Eclk.
   pose proof (tid_nodup_find_self _ (tid_nodup _ Hshape)) as Hself.
   rewrite -> List.Forall_forall in H, Hself.
   specialize (H _ Hin).
@@ -1922,8 +1861,9 @@ Proof.
   assert (tc_rootclk res = tc_getclk t ch) as Eclk_ch.
   1: subst t; unfold tc_getclk, tc_getnode; now rewrite -> Hres_ch.
   rewrite -> Eclk_ch in Hlt.
-  pose proof (tc_shape_inv_chn _ _ Hshape') as Hshape_chn.
-  pose proof (tc_respect_chn _ _ _ Hrespect) as Hrespect_chn.
+  pose proof (tc_shape_inv_chn _ Hshape') as Hshape_chn.
+  pose proof (tc_respect_chn _ _ Hrespect) as Hrespect_chn.
+  simpl in Hshape_chn, Hrespect_chn.
   rewrite -> List.Forall_forall in IH, Hshape_chn, Hrespect_chn.
   (* now decide in or not? *)
   destruct (in_dec treeclock_eqdec ch chn_u'') as [ Hin_ch' | Hnotin ].
@@ -1969,27 +1909,47 @@ Proof.
   - now apply tc_get_updated_nodes_join_sound.
 Qed.
 
-(* turn the properties of forest in snd to those on fst *)
+End TC_Get_Updated_Nodes_Join.
 
-Lemma tc_detach_nodes_snd2fst tcs tc :
-  Forall (fun tc' => exists sub, In sub (tc_flatten tc) /\ 
-    tc' = fst (tc_detach_nodes tcs sub))
-  (snd (tc_detach_nodes tcs tc)).
+Section TC_Detach_Nodes.
+
+Fact tc_detach_nodes_eta ni chn tcs :
+  exists new_chn res res' new_chn', 
+    List.split (map (tc_detach_nodes tcs) chn) = (new_chn, res) /\
+    partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) tcs) new_chn = (res', new_chn') /\
+    map (fun x => fst (tc_detach_nodes tcs x)) chn = new_chn /\
+    map (fun x => snd (tc_detach_nodes tcs x)) chn = res /\
+    filter (fun tc' => find (has_same_tid (tc_roottid tc')) tcs) new_chn = res' /\
+    filter (fun tc' => negb (isSome (find (has_same_tid (tc_roottid tc')) tcs))) new_chn = new_chn' /\
+    tc_detach_nodes tcs (Node ni chn) = (Node ni new_chn', concat res ++ res').
 Proof.
-  induction tc as [ni chn IH] using treeclock_ind_2; intros.
-  rewrite -> List.Forall_forall in IH.
-  setoid_rewrite -> List.Forall_forall in IH.
   simpl.
-  (* TODO much repetition. make these domain-specific tactic? *)
   destruct (List.split (map (tc_detach_nodes tcs) chn))
     as (new_chn, res) eqn:Esplit, 
     (partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) tcs) new_chn)
     as (res', new_chn') eqn:Epar.
+  pose proof Esplit.
   rewrite -> split_map_fst_snd, -> ! map_map in Esplit.
+  pose proof Epar.
   rewrite -> partition_filter in Epar.
   apply pair_equal_split in Esplit, Epar.
   destruct Esplit as (Enew_chn & Eres), Epar as (Eres' & Enew_chn').
+  now exists new_chn, res, res', new_chn'.
+Qed.
+
+(* turn the properties of forest in snd to those on fst *)
+
+Lemma tc_detach_nodes_snd2fst_pre tcs tc :
+  Forall (fun tc' => exists sub, In sub (flat_map tc_flatten (tc_rootchn tc)) /\ 
+    tc' = fst (tc_detach_nodes tcs sub))
+  (snd (tc_detach_nodes tcs tc)).
+Proof.
+  induction tc as [ni chn IH] using treeclock_ind_2; intros.
+  pose proof (tc_detach_nodes_eta ni chn tcs) as (new_chn & res & res' & new_chn' & Esplit & Epar & Enew_chn & Eres & Eres' & Enew_chn' & Edetach).
+  rewrite Edetach.
   simpl.
+  rewrite -> List.Forall_forall in IH.
+  setoid_rewrite -> List.Forall_forall in IH.
   rewrite -> List.Forall_app, ! List.Forall_forall.
   split.
   - subst res.
@@ -1999,7 +1959,10 @@ Proof.
     specialize (IH _ Hin_ch _ Hin).
     destruct IH as (sub & Hin_sub & ->).
     exists sub.
-    split; [ right; eapply in_flat_map_conv in Hin_sub; eauto | reflexivity ].
+    split; [ | reflexivity ].
+    eapply in_flat_map_conv; [ apply Hin_ch | ].
+    rewrite tc_flatten_direct_result.
+    simpl; tauto.
   - subst res' new_chn.
     setoid_rewrite -> filter_In.
     setoid_rewrite -> in_map_iff.
@@ -2007,11 +1970,24 @@ Proof.
     exists ch.
     split. 
     2: reflexivity.
-    right. 
     eapply in_flat_map_conv in Hin_ch; eauto.
     destruct ch as [(?, ?, ?) ?].
     simpl.
     intuition.
+Qed.
+
+Corollary tc_detach_nodes_snd2fst tcs tc :
+  Forall (fun tc' => exists sub, In sub (tc_flatten tc) /\ 
+    tc' = fst (tc_detach_nodes tcs sub))
+  (snd (tc_detach_nodes tcs tc)).
+Proof.
+  eapply Forall_impl.
+  2: apply tc_detach_nodes_snd2fst_pre.
+  simpl.
+  intros ? (sub & Hin & ->).
+  rewrite tc_flatten_direct_result.
+  simpl.
+  eauto.
 Qed.
 
 Lemma tc_detach_nodes_dom_incl tcs tc :
@@ -2021,15 +1997,8 @@ Proof.
   induction tc as [ni chn IH] using treeclock_ind_2; intros.
   rewrite -> List.Forall_forall in IH.
   setoid_rewrite -> List.Forall_forall in IH.
-  simpl.
-  destruct (List.split (map (tc_detach_nodes tcs) chn))
-    as (new_chn, res) eqn:Esplit, 
-    (partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) tcs) new_chn)
-    as (res', new_chn') eqn:Epar.
-  rewrite -> split_map_fst_snd, -> ! map_map in Esplit.
-  rewrite -> partition_filter in Epar.
-  apply pair_equal_split in Esplit, Epar.
-  destruct Esplit as (Enew_chn & Eres), Epar as (Eres' & Enew_chn').
+  pose proof (tc_detach_nodes_eta ni chn tcs) as (new_chn & res & res' & new_chn' & Esplit & Epar & Enew_chn & Eres & Eres' & Enew_chn' & Edetach).
+  rewrite Edetach.
   simpl.
   rewrite -> List.Forall_app, ! List.Forall_forall.
   split.
@@ -2058,22 +2027,15 @@ Proof.
   intros tc' _.
   match goal with |- ?b1 = ?b2 => enough (is_true b1 <-> is_true b2) as Hq
     by (destruct b1, b2; simpl in Hq; try reflexivity; exfalso; intuition) end.
-  now rewrite <- ! tc_getnode_in_iff.
+  now rewrite <- ! tcs_find_in_iff.
 Qed.
 
 Lemma tc_detach_nodes_fst_is_prefix tcs tc :
   prefixtc (fst (tc_detach_nodes tcs tc)) tc.
 Proof.
   induction tc as [ni chn IH] using treeclock_ind_2; intros.
-  simpl.
-  destruct (List.split (map (tc_detach_nodes tcs) chn))
-    as (new_chn, res) eqn:Esplit, 
-    (partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) tcs) new_chn)
-    as (res', new_chn') eqn:Epar.
-  rewrite -> split_map_fst_snd, -> ! map_map in Esplit.
-  rewrite -> partition_filter in Epar.
-  apply pair_equal_split in Esplit, Epar.
-  destruct Esplit as (Enew_chn & Eres), Epar as (Eres' & Enew_chn').
+  pose proof (tc_detach_nodes_eta ni chn tcs) as (new_chn & res & res' & new_chn' & Esplit & Epar & Enew_chn & Eres & Eres' & Enew_chn' & Edetach).
+  rewrite Edetach.
   simpl.
   subst new_chn.
   rewrite -> map_filter_comm in Enew_chn'.
@@ -2107,7 +2069,6 @@ Proof.
   eauto.
 Qed.
 
-(* FIXME: use this to rewrite *)
 Corollary tc_detach_nodes_fst_rootinfo_same tcs tc : 
   tc_rootinfo (fst (tc_detach_nodes tcs tc)) = tc_rootinfo tc.
 Proof. erewrite prefixtc_rootinfo_same; [ reflexivity | apply tc_detach_nodes_fst_is_prefix ]. Qed.
@@ -2117,77 +2078,49 @@ Lemma tc_detach_nodes_tcs_app_fst tcs1 tcs2 tc :
   fst (tc_detach_nodes (tcs1 ++ tcs2) tc).
 Proof.
   induction tc as [ni chn IH] using treeclock_ind_2; intros.
-  simpl.
-  destruct (List.split (map (tc_detach_nodes tcs1) chn))
-    as (new_chn1, res1) eqn:Esplit1, 
-    (partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) tcs1) new_chn1)
-    as (res1', new_chn1') eqn:Epar1, 
-    (List.split (map (tc_detach_nodes (tcs1 ++ tcs2)) chn))
-    as (new_chn, res) eqn:Esplit, 
-    (partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) (tcs1 ++ tcs2)) new_chn)
-    as (res', new_chn') eqn:Epar.
-  simpl.
-  destruct (List.split (map (tc_detach_nodes tcs2) new_chn1'))
-    as (new_chn2, res2) eqn:Esplit2, 
-    (partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) tcs2) new_chn2)
-    as (res2', new_chn2') eqn:Epar2.
+  pose proof (tc_detach_nodes_eta ni chn tcs1) as (new_chn1 & res1 & res1' & new_chn1' & _ & _ & Enew_chn1 & Eres1 & Eres1' & Enew_chn1' & Edetach1).
+  pose proof (tc_detach_nodes_eta ni chn (tcs1 ++ tcs2)) as (new_chn & res & res' & new_chn' & _ & _ & Enew_chn & Eres & Eres' & Enew_chn' & Edetach).
+  rewrite Edetach1, Edetach.
+  cbn delta [fst] beta iota.
+  pose proof (tc_detach_nodes_eta ni new_chn1' tcs2) as (new_chn2 & res2 & res2' & new_chn2' & _ & _ & Enew_chn2 & Eres2 & Eres2' & Enew_chn2' & Edetach2).
+  rewrite Edetach2.
   simpl.
   f_equal.
-  rewrite -> split_map_fst_snd, -> ! map_map in Esplit1, Esplit2, Esplit.
-  rewrite -> partition_filter in Epar1, Epar2, Epar.
-  apply pair_equal_split in Esplit1, Esplit2, Esplit, Epar1, Epar2, Epar.
-  destruct Esplit as (Enew_chn & Eres), Epar as (Eres' & Enew_chn'), 
-    Esplit1 as (Enew_chn1 & Eres1), Epar1 as (Eres1' & Enew_chn1'), 
-    Esplit2 as (Enew_chn2 & Eres2), Epar2 as (Eres2' & Enew_chn2').
   subst.
   rewrite <- (map_ext_Forall _ _ IH).
 
   (* local induction to avoid too much manipulation *)
-  clear ni IH. 
+  clear Edetach1 Edetach2 Edetach ni IH. 
   induction chn as [ | ch chn IH ]; simpl; auto.
   unfold tc_roottid in *.
   pose proof (fun tc => tc_detach_nodes_fst_is_prefix tcs1 tc) as Hpf1.
   pose proof (fun tc => tc_detach_nodes_fst_is_prefix tcs2 tc) as Hpf2.
-  rewrite ! (prefixtc_rootinfo_same _ _ (Hpf2 _)).
-  rewrite ! (prefixtc_rootinfo_same _ _ (Hpf1 _)).
+  rewrite ! (prefixtc_rootinfo_same (Hpf2 _)).
+  rewrite ! (prefixtc_rootinfo_same (Hpf1 _)).
   rewrite find_app.
   destruct (find (has_same_tid (info_tid (tc_rootinfo ch))) tcs1) as [ res1 | ] eqn:E1; simpl.
   - apply IH.
-  - rewrite ! (prefixtc_rootinfo_same _ _ (Hpf2 _)).
-    rewrite ! (prefixtc_rootinfo_same _ _ (Hpf1 _)).
+  - rewrite ! (prefixtc_rootinfo_same (Hpf2 _)).
+    rewrite ! (prefixtc_rootinfo_same (Hpf1 _)).
     destruct (find (has_same_tid (info_tid (tc_rootinfo ch))) tcs2) as [ res2 | ] eqn:E2; simpl.
     + apply IH.
     + f_equal; apply IH.
 Qed.
 
 Lemma tc_detach_nodes_tcs_app_snd tcs1 tcs2 tc :
-  Permutation.Permutation (snd (tc_detach_nodes (tcs1 ++ tcs2) tc))
+  Permutation (snd (tc_detach_nodes (tcs1 ++ tcs2) tc))
   (snd (tc_detach_nodes tcs2 (fst (tc_detach_nodes tcs1 tc))) ++
     map fst (map (tc_detach_nodes tcs2) (snd (tc_detach_nodes tcs1 tc))) ++
     flat_map snd (map (tc_detach_nodes tcs2) (snd (tc_detach_nodes tcs1 tc)))).
 Proof.
   induction tc as [ni chn IH] using treeclock_ind_2; intros.
+  pose proof (tc_detach_nodes_eta ni chn tcs1) as (new_chn1 & res1 & res1' & new_chn1' & _ & _ & Enew_chn1 & Eres1 & Eres1' & Enew_chn1' & Edetach1).
+  pose proof (tc_detach_nodes_eta ni chn (tcs1 ++ tcs2)) as (new_chn & res & res' & new_chn' & _ & _ & Enew_chn & Eres & Eres' & Enew_chn' & Edetach).
+  rewrite Edetach1, Edetach.
+  cbn delta [fst snd] beta iota.
+  pose proof (tc_detach_nodes_eta ni new_chn1' tcs2) as (new_chn2 & res2 & res2' & new_chn2' & _ & _ & Enew_chn2 & Eres2 & Eres2' & Enew_chn2' & Edetach2).
+  rewrite Edetach2.
   simpl.
-  destruct (List.split (map (tc_detach_nodes tcs1) chn))
-    as (new_chn1, res1) eqn:Esplit1, 
-    (partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) tcs1) new_chn1)
-    as (res1', new_chn1') eqn:Epar1, 
-    (List.split (map (tc_detach_nodes (tcs1 ++ tcs2)) chn))
-    as (new_chn, res) eqn:Esplit, 
-    (partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) (tcs1 ++ tcs2)) new_chn)
-    as (res', new_chn') eqn:Epar.
-  simpl.
-  destruct (List.split (map (tc_detach_nodes tcs2) new_chn1'))
-    as (new_chn2, res2) eqn:Esplit2, 
-    (partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) tcs2) new_chn2)
-    as (res2', new_chn2') eqn:Epar2.
-  simpl.
-  rewrite -> split_map_fst_snd, -> ! map_map in Esplit1, Esplit2, Esplit.
-  rewrite -> partition_filter in Epar1, Epar2, Epar.
-  apply pair_equal_split in Esplit1, Esplit2, Esplit, Epar1, Epar2, Epar.
-  destruct Esplit as (Enew_chn & Eres), Epar as (Eres' & Enew_chn'), 
-    Esplit1 as (Enew_chn1 & Eres1), Epar1 as (Eres1' & Enew_chn1'), 
-    Esplit2 as (Enew_chn2 & Eres2), Epar2 as (Eres2' & Enew_chn2').
 
   (* now, manipulate *)
   pose proof IH as Hperm.
@@ -2198,10 +2131,10 @@ Proof.
   rewrite <- map_map with (g:=fun x => snd (tc_detach_nodes tcs2 x)) in Hperm at 1.
   rewrite -> Enew_chn1, <- flat_map_concat_map in Hperm.
   (* split new_chn1, get res1' and res2 *)
-  match type of Hperm with Permutation.Permutation ?al ?bl => 
-    eapply Permutation.Permutation_trans with (l:=al) (l':=bl) in Hperm end.
-  2: apply Permutation.Permutation_app; [ | reflexivity ].
-  2: apply Permutation.Permutation_flat_map, Permutation_split_combine.
+  match type of Hperm with Permutation ?al ?bl => 
+    eapply Permutation_trans with (l:=al) (l':=bl) in Hperm end.
+  2: apply Permutation_app; [ | reflexivity ].
+  2: apply Permutation_flat_map, Permutation_split_combine.
   rewrite -> Eres1', -> Enew_chn1' in Hperm.
   rewrite -> flat_map_app, -> 2 flat_map_concat_map, -> Eres2 in Hperm.
   rewrite <- map_map with (g:=snd), <- flat_map_concat_map in Hperm.
@@ -2225,14 +2158,14 @@ Proof.
   rewrite EE in Hperm.
 
   rewrite ! map_app, flat_map_app.
-  match type of Hperm with Permutation.Permutation _ ?al =>
+  match type of Hperm with Permutation _ ?al =>
     transitivity (al ++ (res2' ++ map fst (map (tc_detach_nodes tcs2) res1'))) end.
   2:{
-    apply Permutation.Permutation_count_occ with (eq_dec:=treeclock_eqdec).
+    apply Permutation_count_occ with (eq_dec:=treeclock_eqdec).
     intros. rewrite ! count_occ_app with (eq_dec:=treeclock_eqdec).
     lia.
   }
-  apply Permutation.Permutation_app; auto.
+  apply Permutation_app; auto.
 
   subst.
   clear -chn.
@@ -2241,11 +2174,11 @@ Proof.
   f_equal.
   erewrite -> filter_ext with (l:=filter _ _); [ | intros; now rewrite tc_detach_nodes_tcs_app_fst ].
   rewrite <- map_app.
-  apply Permutation.Permutation_map.
+  apply Permutation_map.
   repeat match goal with |- context[filter ?ff ?ll] => 
     match ff with context[fst] => 
     erewrite -> filter_ext with (f:=ff) (l:=ll); [ | intros x; unfold tc_roottid; 
-      rewrite (prefixtc_rootinfo_same _ _ (tc_detach_nodes_fst_is_prefix _ _)); fold (tc_roottid x); reflexivity ]
+      rewrite (prefixtc_rootinfo_same (tc_detach_nodes_fst_is_prefix _ _)); fold (tc_roottid x); reflexivity ]
     end
   end.
   induction chn as [ | ch chn IH ]; simpl; auto.
@@ -2253,7 +2186,7 @@ Proof.
   destruct (find (has_same_tid (tc_roottid ch)) tcs1) as [ res1 | ] eqn:E1, 
     (find (has_same_tid (tc_roottid ch)) tcs2) as [ res2 | ] eqn:E2; 
     simpl; try rewrite E1; try rewrite E2; simpl; try rewrite IH.
-  all: apply Permutation.Permutation_count_occ with (eq_dec:=treeclock_eqdec).
+  all: apply Permutation_count_occ with (eq_dec:=treeclock_eqdec).
   all: intros; simpl; rewrite ! count_occ_app with (eq_dec:=treeclock_eqdec); simpl.
   all: destruct (treeclock_eqdec ch x); simpl; try lia.
 Qed.
@@ -2267,101 +2200,38 @@ Fact tc_detach_nodes_prepend_child ni ch chn tcs
   tc_detach_nodes tcs (Node ni (ch :: chn)) = 
   (Node ni' (pivot_ch :: chn'), forest_ch ++ forest_main).
 Proof.
+  destruct (tc_detach_nodes tcs ch) as (pivot_ch, forest_ch) eqn:Ech.
+  pose proof (tc_detach_nodes_eta ni chn tcs) as (new_chn & res & res' & new_chn' & Esplit & Epar & _ & _ & _ & _ & Edetach).
+  rewrite Edetach.
   simpl.
-  destruct (tc_detach_nodes tcs ch) as (pivot_ch, forest_ch) eqn:Ech, 
-    (List.split (map (tc_detach_nodes tcs) chn)) as (new_chn, res) eqn:Esplit, 
-    (partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) tcs) new_chn)
-    as (res', new_chn') eqn:Epar.
+  rewrite Ech, Esplit.
   simpl.
   rewrite -> Epar.
   unfold tc_roottid in H |- * at 1.
   replace pivot_ch with (fst (tc_detach_nodes tcs ch)) by now rewrite Ech.
-  rewrite ! (prefixtc_rootinfo_same _ _ (tc_detach_nodes_fst_is_prefix tcs ch)), Ech, H.
+  rewrite ! (prefixtc_rootinfo_same (tc_detach_nodes_fst_is_prefix tcs ch)), Ech, H.
   simpl.
   now rewrite app_assoc.
-Qed.
-
-Fact tc_detach_nodes_intact tcs tc
-  (Hdj : forall t, In t (map tc_roottid (flat_map tc_flatten (tc_rootchn tc))) -> 
-    In t (map tc_roottid tcs) -> False) :
-  tc_detach_nodes tcs tc = (tc, nil).
-Proof.
-  induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros.
-  simpl in *.
-  epose proof (Forall_impl_impl _ _ _ IH ?[Goalq]) as Htmp.
-  [Goalq]:{
-    apply Forall_forall.
-    intros ch Hin_ch t Hin.
-    apply Hdj, map_flat_map_In.
-    exists ch.
-    destruct ch; simpl in *; eqsolve.
-  }
-  erewrite -> map_ext_Forall; [ | apply Htmp ].
-  (* TODO repeat the typical proof steps related with tc_detach_nodes *)
-  destruct (List.split (map (fun ch : treeclock => (ch, nil)) chn))
-    as (new_chn, forest) eqn:Esplit, 
-    (partition (fun tc' => find (has_same_tid (tc_roottid tc')) tcs) new_chn)
-    as (forest', new_chn') eqn:Epar.
-  rewrite -> split_map_fst_snd, -> ! map_map in Esplit.
-  rewrite -> partition_filter in Epar.
-  simpl in Esplit.
-  apply pair_equal_split in Esplit, Epar.
-  destruct Esplit as (Enew_chn & Eres), Epar as (Eres' & Enew_chn').
-  rewrite -> map_id_eq in Enew_chn.
-  subst new_chn.
-  replace (concat forest) with (@nil treeclock) in *.
-  2:{ 
-    symmetry; apply concat_nil_Forall.
-    subst forest. 
-    now apply List.Forall_map, Forall_forall.
-  }
-  simpl.
-  match type of Enew_chn' with filter ?f ?l = _ => 
-    assert (forall ch, In ch l -> f ch = true) as HH end.
-  { 
-    intros ch Hin.
-    apply negb_true_iff.
-    (* FIXME: how to use proper SSR to solve this? *)
-    match goal with |- isSome ?a = false => 
-      enough (~ (is_true (isSome a))) by (destruct a; simpl in *; intuition) end.
-    rewrite <- tc_getnode_in_iff.
-    unfold not. (* ? *)
-    apply Hdj, map_flat_map_In.
-    exists ch. 
-    split; auto. 
-    apply in_map, tc_flatten_self_in.
-  }
-  simpl in HH.
-  rewrite -> filter_all_true in Enew_chn'; auto.
-  rewrite -> filter_all_false in Eres'.
-  2: intros; now apply negb_true_iff, HH.
-  congruence.
 Qed.
 
 (* permutation is much more clear than mutual In here *)
 
 Lemma tc_detach_nodes_dom_partition tcs tc :
-  Permutation.Permutation (map tc_rootinfo (tc_flatten tc))
+  Permutation (map tc_rootinfo (tc_flatten tc))
     (map tc_rootinfo (tc_flatten (fst (tc_detach_nodes tcs tc)) ++ 
       (flat_map tc_flatten (snd (tc_detach_nodes tcs tc))))).
 Proof.
-  induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros.
-  simpl.
-  destruct (List.split (map (tc_detach_nodes tcs) chn))
-    as (new_chn, forest) eqn:Esplit, 
-    (partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) tcs) new_chn)
-    as (forest', new_chn') eqn:Epar.
-  rewrite -> split_map_fst_snd, -> ! map_map in Esplit.
-  apply pair_equal_split in Esplit.
-  destruct Esplit as (Enew_chn & Eres).
+  induction tc as [ni chn IH] using treeclock_ind_2; intros.
+  pose proof (tc_detach_nodes_eta ni chn tcs) as (new_chn & forest & forest' & new_chn' & _ & Epar & Enew_chn & Eres & _ & _ & Edetach).
+  rewrite Edetach.
   simpl.
   constructor.
   rewrite -> flat_map_app, -> ! map_app.
   (* FIXME: perm solver *)
   etransitivity.
   2:{
-    rewrite -> Permutation.Permutation_app_comm, <- app_assoc, <- map_app, <- flat_map_app.
-    apply Permutation.Permutation_app_head, Permutation.Permutation_map, Permutation.Permutation_flat_map.
+    rewrite -> Permutation_app_comm, <- app_assoc, <- map_app, <- flat_map_app.
+    apply Permutation_app_head, Permutation_map, Permutation_flat_map.
     match type of Epar with partition ?f ?l = (?a, ?b) => 
       replace a with (fst (partition f l)) by (rewrite -> Epar; now simpl);
       replace b with (snd (partition f l)) by (rewrite -> Epar; now simpl)
@@ -2381,32 +2251,70 @@ Proof.
     (* TODO this seems to be quite straightforward, but hard to deal with in Coq! *)
     rewrite -> flat_map_app.
     rewrite -> ! map_app.
-    match goal with |- Permutation.Permutation _ ((?a ++ ?b) ++ (?c ++ ?d)) => 
+    match goal with |- Permutation _ ((?a ++ ?b) ++ (?c ++ ?d)) => 
       transitivity ((c ++ a) ++ (b ++ d)) end.
     2:{
-      match goal with |- Permutation.Permutation _ ((?a ++ ?b) ++ (?c ++ ?d)) => 
+      match goal with |- Permutation _ ((?a ++ ?b) ++ (?c ++ ?d)) => 
         remember a as la; remember b as lb; remember c as lc; remember d as ld end.
       rewrite -> ! app_assoc with (n:=ld).
-      apply Permutation.Permutation_app_tail.
+      apply Permutation_app_tail.
       rewrite <- 2 app_assoc.
-      apply Permutation.Permutation_app_rot.
+      apply Permutation_app_rot.
     }
-    apply Permutation.Permutation_app.
+    apply Permutation_app.
     + now rewrite <- map_app.
     + assumption.
 Qed.
 
+Corollary tc_detach_nodes_intact_pre tcs tc :
+  snd (tc_detach_nodes tcs tc) = nil -> fst (tc_detach_nodes tcs tc) = tc.
+Proof.
+  (* analytic *)
+  destruct (tc_detach_nodes tcs tc) as (pivot, forest) eqn:E.
+  simpl.
+  intros ->.
+  apply prefixtc_size_eq_tc_eq.
+  1: eapply eq_ind_r with (y:=pivot); [ apply tc_detach_nodes_fst_is_prefix | ]; now rewrite E.
+  pose proof (tc_detach_nodes_dom_partition tcs tc) as Hperm.
+  rewrite E, app_nil_r in Hperm.
+  simpl in Hperm.
+  apply Permutation_length in Hperm.
+  now rewrite ! map_length in Hperm.
+Qed.
+
+Corollary tc_detach_nodes_intact tcs tc
+  (Hdj : forall t, In t (map tc_roottid (flat_map tc_flatten (tc_rootchn tc))) -> 
+    In t (map tc_roottid tcs) -> False) :
+  tc_detach_nodes tcs tc = (tc, nil).
+Proof.
+  destruct (tc_detach_nodes tcs tc) as (pivot, forest) eqn:E.
+  destruct forest as [ | tc0 ? ].
+  - f_equal.
+    eapply eq_ind_r with (y:=pivot); [ apply tc_detach_nodes_intact_pre | ].
+    all: rewrite E; reflexivity.
+  - pose proof (tc_detach_nodes_dom_incl tcs tc) as Htmp.
+    pose proof (tc_detach_nodes_snd2fst_pre tcs tc) as Htmp2.
+    rewrite E in Htmp, Htmp2.
+    simpl in Htmp, Htmp2.
+    rewrite -> Forall_cons_iff in Htmp, Htmp2.
+    apply proj1 in Htmp, Htmp2.
+    rewrite <- tcs_find_in_iff in Htmp.
+    destruct Htmp2 as (sub & Hin%(in_map tc_roottid) & ->).
+    rewrite (tc_rootinfo_tid_inj (prefixtc_rootinfo_same (tc_detach_nodes_fst_is_prefix _ _))) in Htmp.
+    firstorder.
+Qed.
+
 Corollary tc_detach_nodes_dom_partition' tcs tc :
-  Permutation.Permutation (map tc_rootinfo (tc_flatten tc))
+  Permutation (map tc_rootinfo (tc_flatten tc))
     (map tc_rootinfo (tc_flatten (fst (tc_detach_nodes tcs tc))) ++ 
       map tc_rootinfo (snd (tc_detach_nodes tcs tc)) ++ 
       map tc_rootinfo (flat_map tc_flatten (flat_map tc_rootchn (snd (tc_detach_nodes tcs tc))))).
 Proof.
   etransitivity; [ apply tc_detach_nodes_dom_partition with (tcs:=tcs) | ].
   rewrite -> map_app.
-  apply Permutation.Permutation_app_head. 
+  apply Permutation_app_head. 
   rewrite <- map_app.
-  now apply Permutation.Permutation_map, tc_flatten_root_chn_split.
+  now apply Permutation_map, tc_flatten_root_chn_split.
 Qed.
 
 Corollary tc_detach_nodes_tid_nodup tcs tc 
@@ -2418,7 +2326,7 @@ Corollary tc_detach_nodes_tid_nodup tcs tc
   NoDup (map tc_roottid (tc_flatten (fst (tc_detach_nodes tcs tc)))).
 Proof.
   pose proof (tc_detach_nodes_dom_partition tcs tc) as Hperm%Permutation_rootinfo2roottid.
-  pose proof (Permutation.Permutation_NoDup Hperm Hnodup) as Htmp.
+  pose proof (Permutation_NoDup Hperm Hnodup) as Htmp.
   rewrite -> map_app, <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup in Htmp.
   repeat setoid_rewrite -> base.elem_of_list_In in Htmp.
   intuition.
@@ -2428,25 +2336,17 @@ Qed.
 
 Lemma tc_detach_nodes_dom_excl tcs tc :
   forall t (Htarg : find (has_same_tid t) tcs)
-  (* res (Hres : tc_getnode t (fst (tc_detach_nodes tcs tc)) = Some res), *)
   res (Hin : In res (tc_flatten (fst (tc_detach_nodes tcs tc)))) (Et : tc_roottid res = t),
   res = (fst (tc_detach_nodes tcs tc)).
 Proof.
-  induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros.
-  rewrite -> List.Forall_forall in IH.
-  simpl in Hin |- *.
-  destruct (List.split (map (tc_detach_nodes tcs) chn))
-    as (new_chn, forest) eqn:Esplit, 
-    (partition (fun tc' : treeclock => find (has_same_tid (tc_roottid tc')) tcs) new_chn)
-    as (forest', new_chn') eqn:Epar.
-  rewrite -> split_map_fst_snd, -> ! map_map in Esplit.
-  rewrite -> partition_filter in Epar.
-  apply pair_equal_split in Esplit, Epar.
-  destruct Esplit as (Enew_chn & Eres), Epar as (Eres' & Enew_chn').
+  induction tc as [ni chn IH] using treeclock_ind_2; intros.
+  pose proof (tc_detach_nodes_eta ni chn tcs) as (new_chn & forest & forest' & new_chn' & _ & _ & Enew_chn & Eres & Eres' & Enew_chn' & Edetach).
+  rewrite Edetach in Hin |- *.
   simpl in Hin |- *.
   destruct Hin as [ | Hin ].
   1: congruence.
   (* now contradiction part *)
+  rewrite -> List.Forall_forall in IH.
   apply in_flat_map in Hin.
   destruct Hin as (new_ch & Hin_ch & Hin).
   subst new_chn' new_chn.
@@ -2457,7 +2357,7 @@ Proof.
   subst t.
   eapply IH in Hin; eauto.
   subst res.
-  now destruct (find (has_same_tid (tc_roottid (fst (tc_detach_nodes tcs ch)))) tcs).
+  now rewrite Htarg in Htidnotin.
 Qed.
 
 (* FIXME: use this alternative version to replace/optimize the original version? *)
@@ -2544,35 +2444,33 @@ Qed.
 
 Corollary tc_detach_nodes_dom_partition'' tcs tc (Hnotin : find (has_same_tid (tc_roottid tc)) tcs = None) 
   (Hnodup : List.NoDup (map tc_roottid (tc_flatten tc))) :
-  Permutation.Permutation
+  Permutation
     (map tc_rootinfo (tc_flatten (fst (tc_detach_nodes tcs tc))) ++
      map tc_rootinfo (flat_map tc_flatten (flat_map tc_rootchn
             (snd (tc_detach_nodes tcs tc)))))
     (map tc_rootinfo (filter (fun sub => 
       negb (find (has_same_tid (tc_roottid sub)) tcs)) (tc_flatten tc))) /\
-  Permutation.Permutation
+  Permutation
     (map tc_rootinfo (snd (tc_detach_nodes tcs tc)))
     (map tc_rootinfo (filter (fun sub => find (has_same_tid (tc_roottid sub)) tcs) (tc_flatten tc))).
 Proof.
   apply base.and_wlog_l.
   - intros Hperm'.
-    eapply Permutation.Permutation_app_inv_l.
+    eapply Permutation_app_inv_l.
     etransitivity.
-    2: rewrite <- map_app; apply Permutation.Permutation_map, Permutation_split_combine.
+    2: rewrite <- map_app; apply Permutation_map, Permutation_split_combine.
     etransitivity.
     2: symmetry; apply tc_detach_nodes_dom_partition' with (tcs:=tcs).
     etransitivity.
-    2: apply Permutation.Permutation_app_swap_app.
-    now apply Permutation.Permutation_app_tail.
+    2: apply Permutation_app_swap_app.
+    now apply Permutation_app_tail.
   - unfold tc_roottid in Hnodup.
     rewrite <- map_map with (f:=tc_rootinfo) in Hnodup.
     apply NoDup_map_inv in Hnodup.
-    apply Permutation.NoDup_Permutation.
-    + eapply Permutation.Permutation_NoDup in Hnodup.
+    apply NoDup_Permutation.
+    + eapply Permutation_NoDup in Hnodup.
       2: apply tc_detach_nodes_dom_partition' with (tcs:=tcs).
-      rewrite <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup in Hnodup.
-      destruct Hnodup as (_ & _ & Hnodup).
-      now rewrite <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup in Hnodup.
+      now rewrite ! NoDup_app_ in Hnodup.
     + (* ... have to use map_filter_comm *)
       pose proof (map_filter_comm tc_rootinfo (fun ni => find (has_same_tid (info_tid ni)) tcs) (tc_flatten tc)) as Htmp.
       simpl in Htmp.
@@ -2597,23 +2495,27 @@ Corollary tc_shape_inv_tc_detach_nodes_snd tcs tc
 Proof.
   pose proof (tc_detach_nodes_snd2fst tcs tc) as Hto.
   pose proof (tc_shape_inv_sub _ Hshape) as Hshape_sub.
-  rewrite -> List.Forall_forall in Hto, Hshape_sub |- *.
+  rewrite -> List.Forall_forall in Hto |- *.
   intros sub' Hin'.
   specialize (Hto sub' Hin').
   destruct Hto as (sub & Hin & ->).
-  specialize (Hshape_sub _ Hin).
+  eapply Foralltc_subtc in Hshape_sub; [ | apply Hin ].
   now apply tc_shape_inv_tc_detach_nodes_fst.
 Qed.
+
+End TC_Detach_Nodes.
+
+Section TC_Attach_Nodes.
 
 (* more abstracted version *)
 
 Lemma forest_recombine_pre tcs l
   (Hnodup : NoDup (map tc_roottid tcs)) (Hnodup' : NoDup l) 
   (Hdomincl : incl (map tc_roottid tcs) l) :
-  Permutation.Permutation (map Some tcs) 
+  Permutation (map Some tcs) 
     (filter isSome (map (fun t => find (has_same_tid t) tcs) l)).
 Proof.
-  apply Permutation.NoDup_Permutation.
+  apply NoDup_Permutation.
   - apply FinFun.Injective_map_NoDup.
     1: congruence.
     now apply NoDup_map_inv with (f:=tc_roottid).
@@ -2657,7 +2559,7 @@ Qed.
 Corollary tc_detach_nodes_forest_recombine_pre tcs tc 
   (Hnodup : NoDup (map tc_roottid (tc_flatten tc)))
   (Hnodup' : NoDup (map tc_roottid tcs)) :
-  Permutation.Permutation
+  Permutation
     (map Some (snd (tc_detach_nodes tcs tc)))
     (filter isSome (map
       (fun t => find (has_same_tid t) (snd (tc_detach_nodes tcs tc))) 
@@ -2672,7 +2574,7 @@ Proof.
     rewrite -> List.Forall_forall in Hdomincl.
     hnf.
     repeat setoid_rewrite -> in_map_iff.
-    setoid_rewrite <- tc_getnode_in_iff in Hdomincl.
+    setoid_rewrite <- tcs_find_in_iff in Hdomincl.
     setoid_rewrite -> in_map_iff in Hdomincl.
     intros ? (sub & <- & Hin).
     firstorder.
@@ -2681,32 +2583,32 @@ Qed.
 (* simulation *)
 
 Lemma forest_chn_recombine tcs l 
-  (Hperm : Permutation.Permutation (map Some tcs) 
+  (Hperm : Permutation (map Some tcs) 
     (filter isSome (map (fun t => find (has_same_tid t) tcs) l))) :
-  Permutation.Permutation (flat_map tc_rootchn tcs)
+  Permutation (flat_map tc_rootchn tcs)
     (flat_map (fun t => match find (has_same_tid t) tcs with
       | Some res => tc_rootchn res
       | None => nil
       end) l).
 Proof.
   pose (f:=fun ot => match ot with Some tc => tc_rootchn tc | None => nil end).
-  apply Permutation.Permutation_flat_map with (g:=f) in Hperm.
-  match type of Hperm with Permutation.Permutation ?a _ => transitivity a end.
+  apply Permutation_flat_map with (g:=f) in Hperm.
+  match type of Hperm with Permutation ?a _ => transitivity a end.
   1:{
     clear -thread_eqdec tcs.
     induction tcs as [ | tc tcs IH ].
     1: reflexivity.
     simpl.
-    now apply Permutation.Permutation_app_head.
+    now apply Permutation_app_head.
   }
-  match type of Hperm with Permutation.Permutation _ ?a => transitivity a end.
+  match type of Hperm with Permutation _ ?a => transitivity a end.
   2:{
     clear -thread_eqdec l.
     induction l as [ | x l IH ].
     1: reflexivity.
     simpl.
     destruct (find (has_same_tid x) tcs) eqn:E; simpl.
-    - now apply Permutation.Permutation_app_head.
+    - now apply Permutation_app_head.
     - assumption.
   }
   assumption.
@@ -2715,7 +2617,7 @@ Qed.
 Corollary tc_detach_nodes_forest_recombine tcs tc 
   (Hnodup : NoDup (map tc_roottid (tc_flatten tc)))
   (Hnodup' : NoDup (map tc_roottid tcs)) :
-  Permutation.Permutation
+  Permutation
     (flat_map tc_rootchn (snd (tc_detach_nodes tcs tc)))
     (flat_map
       (fun t : thread =>
@@ -2784,7 +2686,7 @@ Proof. now destruct tc. Qed.
 
 Lemma simple_overlaytc_dom_info (P : thread -> list treeclock) tc : forall tc'
   (Hoverlay : simple_overlaytc P tc tc'),
-  Permutation.Permutation (map tc_rootinfo (tc_flatten tc'))
+  Permutation (map tc_rootinfo (tc_flatten tc'))
   ((map tc_rootinfo (tc_flatten tc)) ++
     (map tc_rootinfo (flat_map tc_flatten (flat_map P (map tc_roottid (tc_flatten tc)))))).
 Proof.
@@ -2799,11 +2701,11 @@ Proof.
   constructor.
   rewrite -> ! flat_map_app, -> ! map_app.
   etransitivity.
-  1: apply Permutation.Permutation_app_comm.
+  1: apply Permutation_app_comm.
   etransitivity.
-  2: apply Permutation.Permutation_app_comm.
+  2: apply Permutation_app_comm.
   rewrite <- app_assoc.
-  apply Permutation.Permutation_app_head.
+  apply Permutation_app_head.
   clear u clk aclk.
   induction Hcorr as [ | ch new_ch chn new_chn Hso Hcorr IH' ].
   - now simpl.
@@ -2814,24 +2716,24 @@ Proof.
     removehead IH'.
     2: congruence.
     repeat rewrite -> ? map_app, -> ? flat_map_app.
-    match goal with |- Permutation.Permutation _ ((?a ++ ?b) ++ (?c ++ ?d)) => 
+    match goal with |- Permutation _ ((?a ++ ?b) ++ (?c ++ ?d)) => 
       remember a as la; remember b as lb; remember c as lc; remember d as ld;
       transitivity ((lc ++ la) ++ (lb ++ ld)) end.
     2:{
       rewrite -> ! app_assoc with (n:=ld).
-      apply Permutation.Permutation_app_tail.
+      apply Permutation_app_tail.
       rewrite <- 2 app_assoc.
-      apply Permutation.Permutation_app_rot.
+      apply Permutation_app_rot.
     }
     apply HH in Hso.
-    now apply Permutation.Permutation_app.
+    now apply Permutation_app.
 Qed.
 
 Corollary tc_attach_nodes_dom_info subtree_tc' tc 
   (* these two conditions are required the trees of the forest appear at most once in the result *)
   (Hnodup : NoDup (map tc_roottid (tc_flatten tc)))
   (Hnodup' : NoDup (map tc_roottid (tc_flatten subtree_tc'))) :
-  Permutation.Permutation (map tc_rootinfo (tc_flatten (tc_attach_nodes (snd (tc_detach_nodes (tc_flatten subtree_tc') tc)) subtree_tc')))
+  Permutation (map tc_rootinfo (tc_flatten (tc_attach_nodes (snd (tc_detach_nodes (tc_flatten subtree_tc') tc)) subtree_tc')))
   ((map tc_rootinfo (tc_flatten subtree_tc')) ++
     (map tc_rootinfo (flat_map tc_flatten (flat_map tc_rootchn (snd (tc_detach_nodes (tc_flatten subtree_tc') tc)))))).
 Proof.
@@ -2839,7 +2741,7 @@ Proof.
   apply simple_overlaytc_dom_info in Hso.
   etransitivity.
   1: apply Hso.
-  apply Permutation.Permutation_app_head, Permutation.Permutation_map, Permutation.Permutation_flat_map.
+  apply Permutation_app_head, Permutation_map, Permutation_flat_map.
   symmetry.
   now apply tc_detach_nodes_forest_recombine.
 Qed.
@@ -2857,12 +2759,12 @@ Lemma simple_overlaytc_nodup (P : thread -> list treeclock)
     forall t', ~ find (has_same_tid t) (flat_map tc_flatten (P t'))) :
   List.NoDup (map tc_roottid (tc_flatten tc')).
 Proof.
-  eapply Permutation.Permutation_NoDup.
+  eapply Permutation_NoDup.
   1:{
     symmetry.
     unfold tc_roottid.
     rewrite <- map_map.
-    apply Permutation.Permutation_map.
+    apply Permutation_map.
     eapply simple_overlaytc_dom_info.
     apply Hoverlay.
   }
@@ -2876,9 +2778,9 @@ Proof.
     setoid_rewrite -> map_flat_map_In.
     setoid_rewrite -> in_flat_map.
     intros t Hin (ch & (u & Hin' & Hin_ch) & Hin_sub').
-    rewrite -> tc_getnode_subtc_iff in Hin.
+    rewrite -> tc_getnode_in_iff in Hin.
     pose proof (map_flat_map_In_conv _ _ _ _ _ Hin_ch Hin_sub').
-    rewrite -> tc_getnode_in_iff in H.
+    rewrite -> tcs_find_in_iff in H.
     apply (Hdomexcl _ Hin _ H).
   - now rewrite -> map_map.
 Qed.
@@ -2906,7 +2808,8 @@ Proof.
   pose proof (Forall2_forall_exists_r _ _ _ Hcorr) as Hcorr_inr.
   (* prepare *)
   pose proof (Hcomple u) as (aclk' & Hshape_sub).
-  pose proof (tc_shape_inv_chn _ _ Hshape) as Hshape_chn.
+  pose proof (tc_shape_inv_chn _ Hshape) as Hshape_chn.
+  simpl in Hshape_chn.
   rewrite -> tc_shape_inv_conj_iff, -> ! Foralltc_cons_iff in Hshape_sub, Hshape.
   rewrite -> Foralltc_cons_iff in Haclk_lt, Hclk_lt.
   destruct Hshape_sub as (_ & (Ha & Ha') & (Hb & Hb')), 
@@ -2924,6 +2827,7 @@ Proof.
       apply List.Forall_app.
       split.
       * unfold tc_rootaclk.
+        hnf in Ha''.
         change (fun tc' => _) with (fun tc' => (fun ni => info_aclk ni <= clk) (tc_rootinfo tc')) in Ha'' |- *.
         rewrite <- Forall_map in Ha'' |- *.
         now rewrite <- Hinfosame.
@@ -2938,15 +2842,17 @@ Proof.
       eapply IH; eauto.
     + assumption.
   - split; [ | split ].
-    + simpl.
+    + hnf.
       unfold tc_rootaclk.
+      simpl.
       rewrite <- map_map, -> map_app, <- Hinfosame, <- map_app, -> map_map.
       fold tc_rootaclk.
       rewrite -> map_app.
       apply StronglySorted_app.
       * assumption.
       * assumption.
-      * change (fun tc' => _) with (fun tc' => (fun a => a <= clk) (tc_rootaclk tc')) in Ha''.
+      * hnf in Ha, Ha'', Eaclk_lt.
+        change (fun tc' => _) with (fun tc' => (fun a => a <= clk) (tc_rootaclk tc')) in Ha''.
         change (fun tc' => _) with (fun tc' => (fun a => a <= Q u) (tc_rootaclk tc')) in Ha.
         change (fun tc' => _) with (fun tc' => (fun a => Q u <= a) (tc_rootaclk tc')) in Eaclk_lt.
         rewrite <- Forall_map, -> List.Forall_forall in Ha, Ha'', Eaclk_lt.
@@ -2982,7 +2888,8 @@ Proof.
   destruct Hge as (Ege & Hge), Hclk_le as (Eclk_le & Hclk_le), 
     Hdmono_sub as (Hdmono_sub & _).
   rewrite -> List.Forall_forall in Hge, Hclk_le.
-  simpl in Eclk_le, Hdmono_sub.
+  hnf in Hdmono_sub.
+  simpl in Eclk_le, Hdmono_sub, Ege.
   removehead Hdmono_sub.
   2: lia.
   split; auto.
@@ -3114,7 +3021,7 @@ Proof.
   pose proof (tc_attach_nodes_dom_info _ _ Hnodup Hnodup') as Hperm.
   rewrite <- map_app in Hperm.
   apply Permutation_rootinfo2roottid in Hperm.
-  eapply Permutation.Permutation_NoDup. 
+  eapply Permutation_NoDup. 
   1: symmetry; apply Hperm. 
   rewrite -> map_app.
   rewrite <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup.
@@ -3128,7 +3035,7 @@ Proof.
   rewrite -> List.Forall_forall in Htmp.
   specialize (Htmp _ Hpick).
   destruct Htmp as (sub' & Hin_sub' & ->).
-  eapply tc_detach_nodes_dom_excl'; [ apply tc_getnode_in_iff, H | ].
+  eapply tc_detach_nodes_dom_excl'; [ apply tcs_find_in_iff, H | ].
   eapply map_flat_map_In_conv; eauto.
 Qed.
 
@@ -3182,7 +3089,7 @@ Proof.
     specialize (Hsnd2pf _ Hin).
     specialize (Hshape_forest _ Hin).
     destruct Hsnd2pf as (sub & Hin_sub & E).
-    pose proof (prefixtc_rootinfo_same _ _ E) as Einfo.
+    pose proof (prefixtc_rootinfo_same E) as Einfo.
     pose proof (tid_nodup_find_self_sub tc_rootinfo _ (tid_nodup _ Hshape) _ Hin_sub) as Hres.
     apply option.fmap_Some in Hres.
     destruct Hres as (res & Hres & Einfo').
@@ -3265,7 +3172,7 @@ Proof.
     specialize (Hsnd2pf _ Hin).
     specialize (Hshape_forest _ Hin).
     destruct Hsnd2pf as (sub & Hin_sub & E).
-    pose proof (prefixtc_rootinfo_same _ _ E) as Einfo.
+    pose proof (prefixtc_rootinfo_same E) as Einfo.
     pose proof (tid_nodup_find_self_sub tc_rootinfo _ (tid_nodup _ Hshape) _ Hin_sub) as Hres.
     apply option.fmap_Some in Hres.
     destruct Hres as (res & Hres & Einfo').
@@ -3371,7 +3278,7 @@ Proof.
     eapply map_flat_map_In_conv; eauto.
     rewrite <- HH.
     unfold tc_roottid at 1.
-    rewrite (prefixtc_rootinfo_same _ _ (tc_detach_nodes_fst_is_prefix _ _)).
+    rewrite (prefixtc_rootinfo_same (tc_detach_nodes_fst_is_prefix _ _)).
     destruct ch; simpl; auto.
   - (* ? *)
     clear -forest.
@@ -3400,7 +3307,7 @@ Qed.
 
 Lemma tc_detach_attach_distr1_snd tc forest nd 
   (Hnotin : ~ In (tc_roottid nd) (map tc_roottid (tc_flatten tc))) :
-  Permutation.Permutation
+  Permutation
   (snd (tc_detach_nodes (nd :: nil) (tc_attach_nodes forest tc)))
   (flat_map snd (map (fun tc' => tc_detach_nodes (nd :: nil) 
     (match find (has_same_tid (tc_roottid tc')) forest with 
@@ -3438,7 +3345,7 @@ Proof.
   subst.
   rewrite -> concat_app, -> ! map_map, <- flat_map_concat_map.
   etransitivity.
-  1: apply Permutation.Permutation_app; [ apply Permutation.Permutation_app; 
+  1: apply Permutation_app; [ apply Permutation_app; 
     [ eapply Permutation_Forall_flat_map; apply IH | reflexivity ] | reflexivity ].
   erewrite -> map_ext_Forall with (l:=chn).
   2:{
@@ -3451,7 +3358,7 @@ Proof.
     eapply map_flat_map_In_conv; eauto.
   }
   rewrite -> map_map with (g:=fst), -> filter_app.
-  match goal with |- Permutation.Permutation (_ ++ ?al ++ _) _ => 
+  match goal with |- Permutation (_ ++ ?al ++ _) _ => 
     replace al with (@nil treeclock) end.
   2:{
     rewrite -> filter_all_false; auto.
@@ -3478,8 +3385,8 @@ Proof.
   }
   rewrite Htmp; clear Htmp.
   rewrite <- app_assoc.
-  etransitivity; [ | apply Permutation.Permutation_app_comm ].
-  apply Permutation.Permutation_app_head.
+  etransitivity; [ | apply Permutation_app_comm ].
+  apply Permutation_app_head.
 
   destruct (find (has_same_tid (info_tid ni)) forest) as [ [ ni' chn' ] | ] eqn:E.
   2: now simpl.
@@ -3508,7 +3415,7 @@ Corollary tc_detach_attach_distr1_snd' tc forest nd
   (Hdomincl : Forall (fun tc' => In (tc_roottid tc') (map tc_roottid (tc_flatten tc))) forest)
   (Hnodup_forest : NoDup (map tc_roottid forest))
   (Hnodup : NoDup (map tc_roottid (tc_flatten tc))) :
-  Permutation.Permutation
+  Permutation
     (snd (tc_detach_nodes (nd :: nil) (tc_attach_nodes forest tc)))
     (flat_map snd (map (tc_detach_nodes (nd :: nil)) forest)).
 Proof.
@@ -3523,7 +3430,7 @@ Proof.
     now rewrite Htmp.
   }
   etransitivity.
-  1: apply Permutation.Permutation_flat_map, Permutation.Permutation_map, 
+  1: apply Permutation_flat_map, Permutation_map, 
     Permutation_split_combine with (f:=fun tc' => find (has_same_tid (tc_roottid tc')) forest).
   rewrite -> map_app, -> flat_map_app.
   match goal with |- _ (?aa ++ ?bb) _ => replace bb with (@nil treeclock) end.
@@ -3543,14 +3450,14 @@ Proof.
   simpl in Htmp.
   rewrite <- ! Htmp.
   clear Htmp.
-  apply Permutation.Permutation_flat_map, Permutation.Permutation_map.
+  apply Permutation_flat_map, Permutation_map.
   (* ... have to use map_filter_comm *)
   pose proof (map_filter_comm tc_roottid (fun t => (find (has_same_tid t) forest)) (tc_flatten tc)) as Htmp.
   simpl in Htmp.
   rewrite <- ! Htmp.
   clear Htmp.
   (* ... *)
-  apply Permutation.NoDup_Permutation; try assumption.
+  apply NoDup_Permutation; try assumption.
   1: now apply NoDup_filter.
   intros t.
   rewrite filter_In.
@@ -3559,15 +3466,17 @@ Proof.
   - match goal with |- context[find ?a ?b] => destruct (find a b) as [ res | ] eqn:Eres end.
     2: intros (? & ?); discriminate.
     intros (Hin & _).
-    apply tc_getnode_in_iff.
+    apply tcs_find_in_iff.
     now rewrite Eres.
   - intros Hin.
     split.
     + rewrite -> in_map_iff in Hin.
       destruct Hin as (sub & <- & Hin).
       now apply Hdomincl.
-    + now rewrite -> tc_getnode_in_iff in Hin.
+    + now rewrite -> tcs_find_in_iff in Hin.
 Qed.
+
+End TC_Attach_Nodes.
 
 (* purely computational *)
 
@@ -3624,7 +3533,7 @@ Section TC_Join_Partial.
 
   (* a direct result *)
   Lemma tc_join_partial_dom_info :
-    Permutation.Permutation (map tc_rootinfo (tc_flatten (tc_join_partial tc tc')))
+    Permutation (map tc_rootinfo (tc_flatten (tc_join_partial tc tc')))
       (map tc_rootinfo (tc_flatten (fst (tc_detach_nodes (tc_flatten tc') tc))) ++
         map tc_rootinfo (tc_flatten 
           (let: Node (mkInfo t clk _) chn := tc_attach_nodes 
@@ -3649,13 +3558,13 @@ Section TC_Join_Partial.
     simpl.
     rewrite -> map_app.
     etransitivity. (* FIXME: perm solver *)
-    2: apply Permutation.Permutation_middle.
+    2: apply Permutation_middle.
     constructor.
-    now apply Permutation.Permutation_app_comm.
+    now apply Permutation_app_comm.
   Qed.
 
   Corollary tc_join_partial_dom_tid :
-    Permutation.Permutation (map tc_roottid (tc_flatten (tc_join_partial tc tc')))
+    Permutation (map tc_roottid (tc_flatten (tc_join_partial tc tc')))
       (map tc_roottid (tc_flatten (fst (tc_detach_nodes (tc_flatten tc') tc))) ++
         map tc_roottid (tc_flatten (tc_attach_nodes 
           (snd (tc_detach_nodes (tc_flatten tc') tc)) tc'))).
@@ -3665,7 +3574,7 @@ Section TC_Join_Partial.
     apply Permutation_rootinfo2roottid in Hperm.
     etransitivity; [ apply Hperm | ].
     rewrite -> map_app.
-    apply Permutation.Permutation_app_head.
+    apply Permutation_app_head.
     destruct (tc_attach_nodes _ _) as [(?, ?, ?) ?].
     now simpl.
   Qed.
@@ -3677,7 +3586,7 @@ Section TC_Join_Partial.
 
   (* a refined result *)
   Lemma tc_join_partial_dom_partial_info :
-    Permutation.Permutation (map tc_rootinfo_partial (tc_flatten (tc_join_partial tc tc')))
+    Permutation (map tc_rootinfo_partial (tc_flatten (tc_join_partial tc tc')))
       (map tc_rootinfo_partial (tc_flatten (fst (tc_detach_nodes (tc_flatten tc') tc))) ++
         map tc_rootinfo_partial (tc_flatten tc') ++
         map tc_rootinfo_partial (flat_map tc_flatten (flat_map tc_rootchn
@@ -3689,7 +3598,7 @@ Section TC_Join_Partial.
     apply Permutation_rootinfo2partialinfo in Hperm, Hperm'.
     etransitivity; [ apply Hperm | ].
     rewrite -> map_app.
-    apply Permutation.Permutation_app_head.
+    apply Permutation_app_head.
     rewrite -> map_app in Hperm'.
     destruct (tc_attach_nodes (snd (tc_detach_nodes (tc_flatten tc') tc)) tc') as [(?, ?, ?) ?].
     etransitivity; [ apply Hperm' | ].
@@ -3697,7 +3606,7 @@ Section TC_Join_Partial.
   Qed.
 
   Corollary tc_join_partial_dom_tid' :
-    Permutation.Permutation (map tc_roottid (tc_flatten (tc_join_partial tc tc')))
+    Permutation (map tc_roottid (tc_flatten (tc_join_partial tc tc')))
       (map tc_roottid (tc_flatten (fst (tc_detach_nodes (tc_flatten tc') tc))) ++
         map tc_roottid (tc_flatten tc') ++
         map tc_roottid (flat_map tc_flatten (flat_map tc_rootchn
@@ -3708,27 +3617,27 @@ Section TC_Join_Partial.
     apply Permutation_rootinfo2roottid in Hperm.
     rewrite -> map_app in Hperm.
     etransitivity; [ apply tc_join_partial_dom_tid; auto | ].
-    now apply Permutation.Permutation_app_head.
+    now apply Permutation_app_head.
   Qed.
 
   (* Hypothesis (Hnotin : find (has_same_tid (tc_roottid tc)) (tc_flatten tc') = None). *)
   Hypothesis (Hnotin : ~ In (tc_roottid tc) (map tc_roottid (tc_flatten tc'))).
 
   Corollary tc_join_partial_dom_partial_info' :
-    Permutation.Permutation (map tc_rootinfo_partial (tc_flatten (tc_join_partial tc tc')))
+    Permutation (map tc_rootinfo_partial (tc_flatten (tc_join_partial tc tc')))
       (map tc_rootinfo_partial (filter (fun sub => 
               negb (find (has_same_tid (tc_roottid sub)) (tc_flatten tc'))) (tc_flatten tc)) ++
         map tc_rootinfo_partial (tc_flatten tc')).
   Proof.
     etransitivity; [ apply tc_join_partial_dom_partial_info | ].
-    etransitivity; [ apply Permutation.Permutation_app_swap_app | ].
-    etransitivity; [ | apply Permutation.Permutation_app_comm ].
-    apply Permutation.Permutation_app_head.
+    etransitivity; [ apply Permutation_app_swap_app | ].
+    etransitivity; [ | apply Permutation_app_comm ].
+    apply Permutation_app_head.
     rewrite <- map_app.
     apply Permutation_rootinfo2partialinfo.
     rewrite -> map_app.
     apply tc_detach_nodes_dom_partition''; try assumption.
-    rewrite -> tc_getnode_in_iff in Hnotin.
+    rewrite -> tcs_find_in_iff in Hnotin.
     now destruct (find _ _); unfold is_true in Hnotin.
   Qed.
 
@@ -3737,7 +3646,7 @@ Section TC_Join_Partial.
   Proof.
     pose proof tc_join_partial_dom_partial_info' as Hperm.
     rewrite <- map_app in Hperm.
-    eapply Permutation.Permutation_NoDup; [ symmetry; apply Permutation_partialinfo2roottid, Hperm | ].
+    eapply Permutation_NoDup; [ symmetry; apply Permutation_partialinfo2roottid, Hperm | ].
     rewrite -> map_app.
     rewrite <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup.
     repeat setoid_rewrite -> base.elem_of_list_In.
@@ -3747,7 +3656,7 @@ Section TC_Join_Partial.
     rewrite <- ! Htmp.
     clear Htmp.
     split; [ now apply NoDup_filter | split; try assumption ].
-    intros t (Hin & E)%filter_In Hin'%tc_getnode_in_iff.
+    intros t (Hin & E)%filter_In Hin'%tcs_find_in_iff.
     now rewrite -> Hin' in E.
   Qed.
 
@@ -3755,7 +3664,7 @@ Section TC_Join_Partial.
     tc_getclk t (tc_join_partial tc tc') = match tc_getnode t tc' with Some res => tc_rootclk res | None => tc_getclk t tc end.
   Proof.
     pose proof tc_join_partial_dom_partial_info' as Hperm.
-    rewrite -> Permutation.Permutation_app_comm, <- map_app in Hperm.
+    rewrite -> Permutation_app_comm, <- map_app in Hperm.
     pose proof (tc_getclk_perm_congr_pre _ _ tc_join_partial_tid_nodup Hperm t) as Htmp.
     rewrite -> find_app in Htmp.
     fold (tc_getnode t (tc_join_partial tc tc')) in Htmp.
@@ -3818,7 +3727,7 @@ Section TC_Join.
     destruct (tc_attach_nodes forest prefix_tc') as [ni chn_w] eqn:Eattach.
     pose proof (tc_attach_nodes_rootinfo_same forest prefix_tc') as Eni.
     epose proof (tc_detach_nodes_fst_rootinfo_same _ _) as Eni_z.
-    rewrite -> Eattach, -> Eprefix, -> (prefixtc_rootinfo_same _ _ (tc_get_updated_nodes_join_is_prefix _ _)), 
+    rewrite -> Eattach, -> Eprefix, -> (prefixtc_rootinfo_same (tc_get_updated_nodes_join_is_prefix _ _)), 
       -> Etc' in Eni.
     rewrite -> Edetach in Eni_z.
     destruct pivot as [ni_z chn_z] eqn:Epivot.
@@ -3847,7 +3756,7 @@ Section TC_Join.
       apply Nat.nlt_ge in Hroot_clk_le.
       unfold tc_getclk in Htmp3 at 1.
       rewrite -> tc_getnode_self in Htmp3.
-      rewrite -> Htmp3, <- tc_getnode_subtc_iff, <- Etc' in Hroot_clk_le.
+      rewrite -> Htmp3, <- tc_getnode_in_iff, <- Etc' in Hroot_clk_le.
       specialize (Htmp Htmp2 Hroot_clk_le).
       unfold tc_join_partial in Htmp.
       now rewrite <- Eprefix, -> Edetach, -> Eattach in Htmp.
@@ -3858,6 +3767,7 @@ Section TC_Join.
       rewrite -> Edetach in H.
       destruct tc as [(?, clk_z, ?) ?].
       simpl in H |- *.
+      hnf in H.
       rewrite -> List.Forall_forall in H.
       destruct chn_z as [ | ch ? ]; simpl.
       1: lia.
@@ -3880,21 +3790,21 @@ Section TC_Join.
     apply Nat.nlt_ge in Hroot_clk_le.
     unfold tc_getclk in Htmp3' at 1.
     rewrite -> tc_getnode_self in Htmp3'.
-    rewrite -> Htmp3', <- tc_getnode_subtc_iff in Hroot_clk_le.
+    rewrite -> Htmp3', <- tc_getnode_in_iff in Hroot_clk_le.
     specialize (Htmp Htmp2 Hroot_clk_le).
 
     rewrite -> Htmp.
     destruct (tc_getnode t (tc_get_updated_nodes_join tc tc')) as [ res | ] eqn:Eres.
     - match type of Eres with ?a = _ => assert (a) as Eres' by now rewrite Eres end.
       rewrite <- Htmp3 in Eres'.
-      pose proof Eres as (Eres2 & <-)%tc_getnode_has_tid.
-      apply in_map with (f:=tc_rootinfo), (prefixtc_flatten_info_incl _ _ Hprefix), in_map_iff in Eres2.
+      pose proof Eres as (Eres2 & <-)%tcs_find_has_tid.
+      apply in_map with (f:=tc_rootinfo), (prefixtc_flatten_info_incl Hprefix), in_map_iff in Eres2.
       destruct Eres2 as (res2 & Einfo & Hres2).
       (* TODO extract this unifying process? *)
       pose proof (tid_nodup_find_self _ (tid_nodup _ Hshape')) as HH%Foralltc_Forall_subtree.
       eapply Foralltc_subtc in HH.
       2: apply Hres2.
-      rewrite -> (tc_rootinfo_tid_inj _ _ Einfo) in HH.
+      rewrite -> (tc_rootinfo_tid_inj Einfo) in HH.
       replace (tc_rootclk res) with (tc_getclk (tc_roottid res) tc').
       2: unfold tc_getclk, tc_getnode, tc_rootclk; now rewrite -> HH, -> Einfo.
       lia.
@@ -3957,7 +3867,7 @@ Section TC_Join.
     destruct (tc_attach_nodes forest prefix_tc') as [ni chn_w] eqn:Eattach.
     pose proof (tc_attach_nodes_rootinfo_same forest prefix_tc') as Eni.
     epose proof (tc_detach_nodes_fst_rootinfo_same _ _) as Eni_z.
-    rewrite -> Eattach, -> Eprefix, -> (prefixtc_rootinfo_same _ _ (tc_get_updated_nodes_join_is_prefix _ _)), 
+    rewrite -> Eattach, -> Eprefix, -> (prefixtc_rootinfo_same (tc_get_updated_nodes_join_is_prefix _ _)), 
       -> Etc' in Eni.
     rewrite -> Edetach in Eni_z.
     destruct pivot as [ni_z chn_z] eqn:Epivot.
@@ -3977,6 +3887,7 @@ Section TC_Join.
       + (* impossible by assumption *)
         simpl.
         destruct tc as [(?, ?, ?) ?].
+        hnf in Hroot_clk_lt' |- *.
         simpl in Hroot_clk_lt' |- *.
         lia.
       + constructor.
@@ -3985,6 +3896,7 @@ Section TC_Join.
           rewrite -> Foralltc_cons_iff in Hrespect_attach |- *.
           split; [ | intuition ].
           apply proj1 in Hrespect_attach.
+          hnf in Hrespect_attach |- *.
           simpl in Hrespect_attach |- *.
           unfold tc_ge in Hrespect_attach |- *.
           now rewrite -> Foralltc_cons_iff in Hrespect_attach |- *.
@@ -3999,7 +3911,7 @@ Section TC_Join.
         simpl.
         constructor.
         * (* impossible by assumption *)
-          simpl in Hroot_clk_lt'.
+          simpl in Hroot_clk_lt' |- *.
           lia.
         * now apply imono, Foralltc_cons_iff, proj1 in Hrespect_pivot.
       + constructor.
@@ -4015,33 +3927,6 @@ Section TC_Join.
   Qed.
 
 End TC_Join.
-
-(* TODO not sure whether this will be useful ... maybe it is too weak *)
-
-Fact tc_get_updated_nodes_join_trace tc' : forall tc sub_prefix
-  (H : subtc sub_prefix (tc_get_updated_nodes_join tc tc')), 
-  exists sub, subtc sub tc' /\ sub_prefix = tc_get_updated_nodes_join tc sub.
-Proof.
-  induction tc' as [(u', clk', aclk') chn' IH] using treeclock_ind_2; intros.
-  tc_get_updated_nodes_join_unfold in_ H.
-  cbn delta [tc_flatten In info_tid] beta iota in H.
-  destruct H as [ <- | (ch & Hin_ch & H)%in_flat_map ].
-  - eexists. 
-    split; [ apply tc_flatten_self_in | ].
-    reflexivity.
-  - pose proof (tc_get_updated_nodes_join_aux_result_submap tc (tc_getclk u' tc) chn') 
-      as (chn'' & Hsl & E).
-    rewrite -> E in Hin_ch.
-    apply in_map_iff in Hin_ch.
-    destruct Hin_ch as (ch'' & <- & Hin_ch).
-    pose proof (sublist_In _ _ Hsl _ Hin_ch) as Hin_ch'.
-    eapply Forall_forall in IH.
-    2: apply Hin_ch'.
-    destruct (IH _ _ H) as (sub & Hsub & ->).
-    exists sub.
-    split; [ | reflexivity ].
-    now eapply subtc_trans; [ | apply subtc_chn; simpl; apply Hin_ch' ].
-Qed.
 
 (* TODO tc_join tc tc' = tc_join tc (prefix); this may not be useful enough, though *)
 

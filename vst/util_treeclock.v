@@ -32,7 +32,7 @@ Proof.
     Z.of_nat (info_clk sub) <= Int.max_signed /\ Z.of_nat (info_aclk sub) <= Int.max_signed)) as Htmp.
   simpl in Htmp.
   rewrite <- Htmp, -> Forall_forall in H |- *.
-  intros x Hin%(prefixtc_flatten_info_incl _ _ Hpf).
+  intros x Hin%(prefixtc_flatten_info_incl Hpf).
   now apply H.
 Qed.
 
@@ -58,7 +58,7 @@ Proof.
   eapply Permutation_Forall. 1: symmetry; apply tc_join_partial_dom_info.
   apply Forall_app. split.
   - rewrite Forall_forall in H |- *.
-    intros x Hin%(prefixtc_flatten_info_incl _ _ (tc_detach_nodes_fst_is_prefix _ _)).
+    intros x Hin%(prefixtc_flatten_info_incl (tc_detach_nodes_fst_is_prefix _ _)).
     now apply H.
   - pose proof (tc_attach_nodes_dom_info _ _ Hnodup Hnodup') as Hnodup''.
     destruct (tc_attach_nodes (snd (tc_detach_nodes (tc_flatten tc') tc)) tc') as [(u, clk, aclk) chn] eqn:E.
@@ -91,7 +91,7 @@ Proof.
         destruct Hin_sub' as (sub & Hin_sub & ->).
         pose proof (subtc_trans _ _ _ Hin_sub'' Htmp3) as Htmp3'.
         apply subtc_flatten_incl, incl_map with (f:=tc_rootinfo) in Hin_sub.
-        apply in_map with (f:=tc_rootinfo), (prefixtc_flatten_info_incl _ _ (tc_detach_nodes_fst_is_prefix _ _)), Hin_sub in Htmp3'.
+        apply in_map with (f:=tc_rootinfo), (prefixtc_flatten_info_incl (tc_detach_nodes_fst_is_prefix _ _)), Hin_sub in Htmp3'.
         eapply Forall_forall in Htmp3'. 2: apply H.
         now apply Htmp3'.
 Qed.

@@ -1,4 +1,4 @@
-From Coq Require Import List Bool Lia ssrbool PeanoNat Sorting RelationClasses.
+From Coq Require Import List Bool Lia ssrbool PeanoNat Sorting RelationClasses Permutation.
 From Coq Require ssreflect.
 Import ssreflect.SsrSyntax.
 
@@ -145,11 +145,11 @@ Proof.
   apply base.elem_of_list_In, list.elem_of_Permutation in Hinx.
   destruct Hinx as (l' & Hperm).
   pose proof Hperm as Hperm_backup.
-  apply Permutation.Permutation_map with (f:=f), Permutation.Permutation_NoDup in Hperm.
+  apply Permutation_map with (f:=f), Permutation_NoDup in Hperm.
   2: assumption.
   simpl in Hperm.
   apply NoDup_cons_iff in Hperm.
-  eapply Permutation.Permutation_in in Hperm_backup.
+  eapply Permutation_in in Hperm_backup.
   2: apply Hiny.
   simpl in Hperm_backup.
   destruct Hperm_backup as [ | Htmp ].
@@ -260,7 +260,7 @@ Fact map_flat_map_In_conv [A B C : Type] (f : B -> C) (g : A -> list B) (l : lis
 Proof. apply map_flat_map_In. eauto. Qed.
 
 Fact Permutation_partition [A : Type] (f : A -> bool) l :
-  Permutation.Permutation l ((fst (partition f l)) ++ (snd (partition f l))).
+  Permutation l ((fst (partition f l)) ++ (snd (partition f l))).
 Proof. 
   induction l as [ | x l IH ].
   - now simpl.
@@ -269,7 +269,7 @@ Proof.
     simpl in IH |- *.
     destruct (f x); simpl.
     + now constructor.
-    + rewrite <- Permutation.Permutation_middle.
+    + rewrite <- Permutation_middle.
       now constructor.
 Qed.
 
@@ -349,15 +349,15 @@ Proof.
 Qed.
 
 Lemma Permutation_split_combine {A : Type} (f : A -> bool) (l : list A) :
-  Permutation.Permutation l (filter f l ++ filter (fun a => negb (f a)) l).
+  Permutation l (filter f l ++ filter (fun a => negb (f a)) l).
 Proof.
   induction l as [ | a l IH ]; auto.
   simpl.
   destruct (f a) eqn:E; simpl.
-  - now apply Permutation.perm_skip.
+  - now apply perm_skip.
   - etransitivity. 
-    1: apply Permutation.perm_skip, IH.
-    now apply Permutation.Permutation_middle.
+    1: apply perm_skip, IH.
+    now apply Permutation_middle.
 Qed.
 
 Fact split_app {A B : Type} (l1 l2 : list (A * B)) :
@@ -449,33 +449,33 @@ Proof.
     now simpl.
 Qed.
 
-Fact Permutation_in_mutual [A : Type] (l l' : list A) (H : Permutation.Permutation l l') :
+Fact Permutation_in_mutual [A : Type] (l l' : list A) (H : Permutation l l') :
   forall x, In x l <-> In x l'.
 Proof.
   intros; split.
   2: symmetry in H.
-  all: now apply Permutation.Permutation_in.
+  all: now apply Permutation_in.
 Qed.
 
 Fact Permutation_Forall_flat_map [A B : Type] (f g : A -> list B) (l : list A)
-  (H : Forall (fun x => Permutation.Permutation (f x) (g x)) l) :
-  Permutation.Permutation (flat_map f l) (flat_map g l).
+  (H : Forall (fun x => Permutation (f x) (g x)) l) :
+  Permutation (flat_map f l) (flat_map g l).
 Proof.
   induction l as [ | x l IH ]; simpl; auto.
   rewrite -> Forall_cons_iff in H.
   destruct H as (H1 & H2).
-  apply Permutation.Permutation_app; auto.
+  apply Permutation_app; auto.
 Qed.
 
 Fact Permutation_flat_map_innerapp_split [A B : Type] (f g : A -> list B) (l : list A) :
-  Permutation.Permutation (flat_map (fun x => f x ++ g x) l) (flat_map f l ++ flat_map g l).
+  Permutation (flat_map (fun x => f x ++ g x) l) (flat_map f l ++ flat_map g l).
 Proof.
   induction l as [ | x l IH ]; simpl; auto.
   etransitivity.
-  1: apply Permutation.Permutation_app; [ reflexivity | apply IH ].
-  rewrite -> Permutation.Permutation_app_swap_app.
+  1: apply Permutation_app; [ reflexivity | apply IH ].
+  rewrite -> Permutation_app_swap_app.
   etransitivity.
-  2: apply Permutation.Permutation_app; [ apply Permutation.Permutation_app_comm | reflexivity ].
+  2: apply Permutation_app; [ apply Permutation_app_comm | reflexivity ].
   now rewrite <- ! app_assoc.
 Qed.
 
@@ -515,13 +515,13 @@ Proof.
 Qed.
 
 Fact Permutation_upto_pick m n (H : m < n) :
-  Permutation.Permutation (seq 0 n) (m :: ((seq 0 m) ++ (seq (S m) (n - (S m))))).
+  Permutation (seq 0 n) (m :: ((seq 0 m) ++ (seq (S m) (n - (S m))))).
 Proof.
   replace n with (m + (S (n - (S m)))) at 1 by lia.
   rewrite -> seq_app.
   simpl. 
   symmetry.
-  now apply Permutation.Permutation_middle.
+  now apply Permutation_middle.
 Qed.
 
 Fact in_pre_suf [A : Type] [pre suf : list A] (sub : A) : In sub (pre ++ sub :: suf).
@@ -564,3 +564,12 @@ Qed.
 
 Fact list_ifnil_destruct [A : Type] (l : list A) : {l = nil} + {l <> nil}.
 Proof. destruct l; [ now left | now right ]. Qed.
+
+Fact NoDup_app_ [A : Type] (l l' : list A) :
+  NoDup (l ++ l') <->
+  NoDup l /\ (forall a : A, In a l -> In a l' -> False) /\ NoDup l'.
+Proof.
+  rewrite <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup.
+  repeat setoid_rewrite base.elem_of_list_In.
+  reflexivity.
+Qed.
