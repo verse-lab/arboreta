@@ -58,39 +58,39 @@ int less_than(int* clk1, int* clk2) {
 
 int detect(Event* e) {
     int is_race = 0;
-    switch (e -> type)
+    switch (e->type)
     {
         case ACQUIRE:
-            join(thread_clk[e -> thread], lock_clk[e -> lock]);
+            join(thread_clk[e->thread], lock_clk[e->lock]);
             break;
         case RELEASE:
-            increment(thread_clk[e -> thread], e -> thread);
-            copy(lock_clk[e -> lock], thread_clk[e -> thread]);
+            increment(thread_clk[e->thread], e->thread);
+            copy(lock_clk[e->lock], thread_clk[e->thread]);
             break;
         case FORK:
-            increment(thread_clk[e -> thread], e -> thread);
-            join(thread_clk[e -> thr2], thread_clk[e -> thread]);
+            increment(thread_clk[e->thread], e->thread);
+            join(thread_clk[e->thr2], thread_clk[e->thread]);
             break;
         case JOIN:
-            increment(thread_clk[e -> thr2], e -> thr2);
-            join(thread_clk[e -> thread], thread_clk[e -> thr2]);
+            increment(thread_clk[e->thr2], e->thr2);
+            join(thread_clk[e->thread], thread_clk[e->thr2]);
             break;
         case READ:
-            if(less_than(write_clk[e -> var], thread_clk[e -> thread])) {
+            if(less_than(write_clk[e->var], thread_clk[e->thread])) {
                 // think of this
-                read_clk[e -> var][e -> thread] = thread_clk[e -> thread][e -> thread];
+                read_clk[e->var][e->thread] = thread_clk[e->thread][e->thread];
             }
-            else if(read_clk[e -> var][e -> thread] != thread_clk[e -> thread][e -> thread]) {
+            else if(read_clk[e->var][e->thread] != thread_clk[e->thread][e->thread]) {
                 is_race = 1;
             }
             break;
         case WRITE:
-            if(less_than(write_clk[e -> var], thread_clk[e -> thread])
-                && less_than(read_clk[e -> var], thread_clk[e -> thread])) {
+            if(less_than(write_clk[e->var], thread_clk[e->thread])
+                && less_than(read_clk[e->var], thread_clk[e->thread])) {
                 // think of this
-                write_clk[e -> var][e -> thread] = thread_clk[e -> thread][e -> thread];
+                write_clk[e->var][e->thread] = thread_clk[e->thread][e->thread];
             }
-            else if(write_clk[e -> var][e -> thread] != thread_clk[e -> thread][e -> thread]) {
+            else if(write_clk[e->var][e->thread] != thread_clk[e->thread][e->thread]) {
                 is_race = 1;
             }
             break;
