@@ -542,3 +542,45 @@ Proof.
     rewrite -> Nat.sub_diag. simpl.
     eapply IH; eauto.
 Qed.
+
+Fact tc_vertical_splitr_tofull l : forall tc sub (H : tc_locate tc l = Some sub), 
+  tc_vertical_splitr true tc l = tc_locate_update (tc_vertical_splitr false tc l) (List.repeat 0%nat (length l)) sub.
+Proof.
+  induction l as [ | x l IH ]; intros [ni chn]; intros; simpl in *.
+  - now injection H as <-.
+  - destruct (nth_error chn x) as [ ch | ] eqn:Enth; try discriminate.
+    specialize (IH _ _ H).
+    rewrite upd_Znth0.
+    congruence.
+Qed.
+
+(* a very niche case *)
+
+Fact tc_locate_update_prepend_dom [A : Type] l tcs ni' (f : nodeinfo -> A) : 
+  forall tc sub (H : tc_locate tc l = Some sub) (E : f ni' = f (tc_rootinfo sub)), 
+  Permutation (map f (map tc_rootinfo (tc_flatten (tc_locate_update tc l (Node ni' (tcs ++ tc_rootchn sub))))))
+    (map f (map tc_rootinfo (flat_map tc_flatten tcs ++ tc_flatten tc))).
+Proof.
+  induction l as [ | x l IH ]; intros; simpl in *.
+  - injection H as <-.
+    rewrite E, <- flat_map_app, -> ! map_app, -> tc_flatten_direct_result with (tc:=tc).
+    simpl.
+    apply Permutation_middle.
+  - destruct tc as [ni chn].
+    simpl in H |- *.
+    destruct (nth_error chn x) as [ ch | ] eqn:Enth; try discriminate.
+    specialize (IH _ _ H E).
+    pose proof Enth as (pre & suf & -> & Elen)%nth_error_split.
+    rewrite upd_Znth_char.
+    2: rewrite Zlength_correct; now f_equal.
+    simpl.
+    rewrite <- ! flat_map_app, -> ! map_app.
+    simpl.
+    rewrite -> ! map_app, -> IH, -> ! map_app.
+    (* handcraft *)
+    rewrite <- Permutation_middle.
+    constructor.
+    rewrite -> ! app_assoc.
+    do 2 apply Permutation_app_tail.
+    apply Permutation_app_comm.
+Qed.
