@@ -2,7 +2,7 @@
 #define _HEADER_DETECTOR_H
 #include "data_structure.h"
 
-void init();
+void init_detector();
 int detect(Event* e);
 
 #endif
