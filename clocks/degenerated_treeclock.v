@@ -60,7 +60,7 @@ Proof.
   pose proof (tc_get_updated_nodes_join_degen_shape _ _ Hroot_clk_le) as H.
   apply Foralltc_Forall_subtree in H.
   intros t Hres.
-  rewrite <- tc_getnode_subtc_iff, -> in_map_iff in Hres.
+  rewrite <- tc_getnode_in_iff, -> in_map_iff in Hres.
   destruct Hres as (sub & <- & Hin).
   pose proof Hin as Einfo.
   apply in_map with (f:=tc_rootinfo) in Einfo.
@@ -68,8 +68,8 @@ Proof.
   2: apply tc_get_updated_nodes_join_degen_is_prefix.
   rewrite -> in_map_iff in Einfo.
   destruct Einfo as (sub' & Einfo & Hin').
-  pose proof (tc_rootinfo_tid_inj _ _ Einfo) as Et.
-  pose proof (tc_rootinfo_clk_inj _ _ Einfo) as Eclk.
+  pose proof (tc_rootinfo_tid_inj Einfo) as Et.
+  pose proof (tc_rootinfo_clk_inj Einfo) as Eclk.
   pose proof (tid_nodup_find_self _ Hnodup) as Hself.
   rewrite -> List.Forall_forall in H, Hself.
   specialize (H _ Hin).
@@ -133,8 +133,8 @@ Proof.
   }
   apply Nat.leb_gt in Eclk_le_ch.
   specialize (IH _ Hin_ch (Hnodup_chn' _ Hin_ch) _ (Hdmono_chn' _ Hin_ch) Eclk_le_ch _ Hlt).
-  rewrite <- tc_getnode_in_iff.
-  rewrite <- tc_getnode_subtc_iff in IH.
+  rewrite <- tcs_find_in_iff.
+  rewrite <- tc_getnode_in_iff in IH.
   apply map_flat_map_In.
   exists (tc_get_updated_nodes_join_degen tc ch).
   split; auto.
@@ -184,8 +184,8 @@ Proof.
     now apply NoDup_cons_iff in Hnodup_forest.
   - pose proof (tc_detach_nodes_forest_recombine _ _ Hnodup Hnodup_pf) as Hperm.
     rewrite <- Eforest in Hperm.
-    eapply Permutation.Permutation_NoDup.
-    1: apply Permutation.Permutation_map, Permutation.Permutation_flat_map, Hperm.
+    eapply Permutation_NoDup.
+    1: apply Permutation_map, Permutation_flat_map, Hperm.
     now apply tid_nodup_root_chn_split.
   - intros t H t' Hres.
     destruct (find (has_same_tid t') forest) as [ [ni chn] | ] eqn:E.
@@ -201,7 +201,7 @@ Proof.
     rewrite -> List.Forall_forall in Hsnd2fst.
     apply Hsnd2fst in Hin.
     destruct Hin as (sub & Hin & Hsnd).
-    rewrite <- tc_getnode_in_iff, -> in_map_iff in Hres.
+    rewrite <- tcs_find_in_iff, -> in_map_iff in Hres.
     destruct Hres as (sub' & <- & Hin').
     pose proof (tc_detach_nodes_dom_excl _ sub _ H sub') as Htmp.
     rewrite <- Hsnd in Htmp.
@@ -249,7 +249,7 @@ Proof.
     rewrite <- Eforest, -> List.Forall_forall in Hsnd2pf.
     specialize (Hsnd2pf _ Hin).
     destruct Hsnd2pf as (sub & Hin_sub & E).
-    pose proof (prefixtc_rootinfo_same _ _ E) as Einfo.
+    pose proof (prefixtc_rootinfo_same E) as Einfo.
     pose proof (tid_nodup_find_self_sub _ Hnodup _ Hin_sub) as Hres.
     apply option.fmap_Some in Hres.
     destruct Hres as (res & Hres & Einfo').
