@@ -1,16 +1,19 @@
 CC=gcc
 CFLAGS = -c
 
-OBJECTS = engine.o parser.o detector.o
+OBJECTS = treeclock_ndt.o vectorclock.o detector.o
 
 all: prog
 
 prog: $(OBJECTS)
-	$(CC) $(OBJECTS) -o Engine
+	rm -rf Engine.so output
+	$(CC) $(OBJECTS) -shared -o Engine.so
+	mkdir output
+	mv *.o output
 
-%.o: %.c
-	$(CC) $(CFLAGS) $<
+%.o: detector/%.c
+	$(CC) $(CFLAGS) $< 
 
 .PONY: clean
 clean:
-	rm -rf Engine *.o
+	rm -rf Engine.so output

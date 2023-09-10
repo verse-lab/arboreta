@@ -1,0 +1,5 @@
+    @ Rd(1, x)
+    @ Acquire(2, l1)
+    @ Rd(2, x)
+    @  Release(2,l1)
+    @ Wr(3, x)
