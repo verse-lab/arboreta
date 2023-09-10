@@ -43,17 +43,17 @@ class Engine:
             self.event.type = types[res.group(1)]
             self.event.thread = int(res.group(2))
             info = res.group(3)
-            if self.event.type == 0 or 1:
+            if self.event.type == 0 or self.event.type == 1:
                 if self.var_map.get(info) == None:
                     self.var_map[info] = self.var_cnt
                     self.var_cnt += 1
                 self.event.var = self.var_map.get(info)
-            elif self.event.type == 2 or 3:
+            elif self.event.type == 2 or self.event.type == 3:
                 if self.lock_map.get(info) == None:
                     self.lock_map[info] = self.lock_cnt
                     self.lock_cnt += 1
                 self.event.lock = self.lock_map.get(info)
-            elif self.event.type == 4 or 5:
+            elif self.event.type == 4 or self.event.type == 5:
                 self.event.thr2 = int(info)
             return 1
         else:
@@ -73,7 +73,7 @@ class Engine:
         if(self.is_race):
             print("RACE FOUND after " + str(self.count) + " events.")
         else:
-            print("No race found.")
+            print("No race found after " + str(self.count) + " events.")
 
 engine = Engine("traces/trace")
 engine.detect()

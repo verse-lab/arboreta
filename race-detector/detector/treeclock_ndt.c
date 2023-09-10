@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "treeclock_ndt.h"
+#include "data_structure.h"
 
 /*
     General known issues: 
@@ -78,10 +79,18 @@ int tc_read_clock(TreeClock_T self, int tid){
 }
 
 int tc_is_less_than_or_equal(TreeClock_T self, TreeClock_T tc){
-    int root_tid = self->root_tid;
-    int cl = tc_read_clock(self, root_tid);
-    int cr = tc_read_clock(tc, root_tid);
-    return cl <= cr;
+    for(int i = 0; i < MAX_THREADS; i++) {
+        int cl = tc_read_clock(self, i);
+        int cr = tc_read_clock(tc, i);
+        if(cl > cr) {
+            return 0;
+        }
+    }
+    return 1;
+    // int root_tid = self->root_tid;
+    // int cl = tc_read_clock(self, root_tid);
+    // int cr = tc_read_clock(tc, root_tid);
+    // return cl <= cr;
 }
 
 void detach_from_neighbors(TreeClock_T self, int t, struct Node* nd){
