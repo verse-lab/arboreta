@@ -1,13 +1,21 @@
 CC=gcc
 CFLAGS = -c
 
-OBJECTS = treeclock_ndt.o vectorclock.o detector.o
+OBJECTS = treeclock_ndt.o vectorclock.o
+OBJ_HB 	= detector_hb.o
+OBJ_FT	= detector_ft.o
 
-all: prog
+all: hb
 
-prog: $(OBJECTS)
-	rm -rf Engine.so output
-	$(CC) $(OBJECTS) -shared -o Engine.so
+hb: $(OBJECTS) $(OBJ_HB)
+	rm -rf Engine_hb.so output
+	$(CC) $(OBJECTS) $(OBJ_HB) -shared -o Engine_hb.so
+	mkdir output
+	mv *.o output
+
+ft: $(OBJECTS) $(OBJ_FT)
+	rm -rf Engine_ft.so output
+	$(CC) $(OBJECTS) $(OBJ_FT) -shared -o Engine_ft.so
 	mkdir output
 	mv *.o output
 
@@ -16,4 +24,4 @@ prog: $(OBJECTS)
 
 .PONY: clean
 clean:
-	rm -rf Engine.so output
+	rm -rf *.so output

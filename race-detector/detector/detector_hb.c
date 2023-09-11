@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include "detector.h"
+#include "detector_hb.h"
 #include "treeclock_ndt.h"
 #include "vectorclock.h"
 
@@ -29,16 +29,6 @@ CLOCK_T thread_clk[MAX_THREADS];
 CLOCK_T read_clk[MAX_VARS];
 CLOCK_T write_clk[MAX_VARS];
 CLOCK_T lock_clk[MAX_LOCKS];
-int a = 0;
-
-#ifdef _DEBUG
-void print_clk(CLOCK_T clk) {
-    for(int i = 0; i < MAX_THREADS; i++) {
-        printf("%d ", (clk->clocks)[i]);
-    }
-    printf("\n");
-}
-#endif
 
 void init_detector() {
     for(int i = 0; i < MAX_THREADS; i++) {
@@ -73,46 +63,28 @@ int detect(Event* e) {
             increment_clock(thread_clk[e->thr2], 1);
             break;
         case READ:
-            if(is_less_than_or_equal(write_clk[e->var], thread_clk[e->thread])) {
-                join(read_clk[e->var], thread_clk[e->thread]);
-            }
-            else if(read_clock(read_clk[e->var], e->thread) != read_clock(thread_clk[e->thread], e->thread)) {
-                is_race = 1;
+            if(read_clock(read_clk[e->var], e->thread) != read_clock(thread_clk[e->thread], e->thread)) {
+                if(is_less_than_or_equal(write_clk[e->var], thread_clk[e->thread])) {
+                    join(read_clk[e->var], thread_clk[e->thread]);
+                }
+                else {
+                    is_race = 1;
+                }
             }
             break;
         case WRITE:
-            #ifdef _DEBUG
-            printf("write\n");
-            print_clk(write_clk[e->var]);
-            print_clk(thread_clk[e->thread]);
-            printf("lessw: %d\n", is_less_than_or_equal(write_clk[e->var], thread_clk[e->thread]));
-            printf("lessr: %d\n", is_less_than_or_equal(read_clk[e->var], thread_clk[e->thread]));
-            #endif
-            
-            if(is_less_than_or_equal(write_clk[e->var], thread_clk[e->thread])
+            if(read_clock(write_clk[e->var], e->thread) != read_clock(thread_clk[e->thread], e->thread)) {
+                if(is_less_than_or_equal(write_clk[e->var], thread_clk[e->thread])
                 && is_less_than_or_equal(read_clk[e->var], thread_clk[e->thread])) {
-                join(write_clk[e->var], thread_clk[e->thread]);
-            }
-            else if(read_clock(write_clk[e->var], e->thread) != read_clock(thread_clk[e->thread], e->thread)) {
-                is_race = 1;
+                    join(write_clk[e->var], thread_clk[e->thread]);
+                }
+                else {
+                    is_race = 1;
+                }
             }
             break;
         default:
             break;
     }
-    #ifdef _DEBUG
-    for(int i = 0; i < MAX_THREADS; i++) {
-        print_clk(thread_clk[i]);
-    }
-    for(int i = 0; i < MAX_THREADS; i++) {
-        print_clk(read_clk[i]);
-    }
-    for(int i = 0; i < MAX_THREADS; i++) {
-        print_clk(write_clk[i]);
-    }
-    for(int i = 0; i < MAX_THREADS; i++) {
-        print_clk(lock_clk[i]);
-    }
-    #endif
     return is_race;
 }

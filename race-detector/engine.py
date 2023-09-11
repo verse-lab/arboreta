@@ -23,7 +23,8 @@ class Event(Structure):
 
 class Engine:
 
-    def __init__(self, path):
+    def __init__(self, path, engine):
+        self.engine = engine
         self.path = path
         self.event = Event()
         self.count = 0
@@ -33,7 +34,7 @@ class Engine:
         self.lock_map = {}
         self.lock_cnt = 0
 
-        self.cdll = cdll.LoadLibrary('./Engine.so')
+        self.cdll = cdll.LoadLibrary('./Engine_' + engine + '.so')
         init_detector = self.cdll.init_detector
         init_detector()
     
@@ -75,6 +76,6 @@ class Engine:
         else:
             print("No race found after " + str(self.count) + " events.")
 
-engine = Engine("traces/trace")
+engine = Engine("traces/trace", "ft")
 engine.detect()
 

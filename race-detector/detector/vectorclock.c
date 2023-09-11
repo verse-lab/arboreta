@@ -34,8 +34,8 @@ void vc_increment_clock(VectorClock_T self, int delta){
     (self->clocks)[self->tid] += delta;
 }
 
-void vc_write_clock(VectorClock_T self, int val){
-    (self->clocks)[self->tid] = val;
+void vc_write_clock(VectorClock_T self, int tid, int val){
+    (self->clocks)[tid] = val;
 }
 
 int vc_read_clock(VectorClock_T self, int tid){
