@@ -31,6 +31,6 @@ void tc_write_clock(TreeClock_T self, int val);
 int tc_read_clock(TreeClock_T self, int tid);
 int tc_is_less_than_or_equal(TreeClock_T self, TreeClock_T tc);
 void tc_join(TreeClock_T self, TreeClock_T tc);
-void tc_monotone_copy(TreeClock_T self, TreeClock_T tc);
+void tc_copy(TreeClock_T self, TreeClock_T from_tree_clock);
 
 #endif

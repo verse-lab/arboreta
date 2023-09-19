@@ -29,3 +29,5 @@ __pycache__/
 
 **/*.o
 **/*.so
+
+race-detector/benchmarks/**

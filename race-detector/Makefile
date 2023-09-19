@@ -1,7 +1,7 @@
 CC=gcc
 CFLAGS = -c
 
-OBJECTS = treeclock_ndt.o vectorclock.o
+OBJECTS = treeclock_ndt.o treeclock_ptr.o vectorclock.o
 OBJ_HB 	= detector_hb.o
 OBJ_FT	= detector_ft.o
 
@@ -24,4 +24,4 @@ ft: $(OBJECTS) $(OBJ_FT)
 
 .PONY: clean
 clean:
-	rm -rf *.so output
+	rm -rf Engine_ft.so Engine_hb.so output
