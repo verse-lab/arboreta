@@ -7,6 +7,18 @@
 #include "treeclock_ptr.h"
 #include "data_structure.h"
 
+void ptc_set_pNode(struct pNode* pnd, int tid, int clk, int aclk, 
+                   struct pNode* par, struct pNode* next, 
+                   struct pNode* prev, struct pNode* headch) {
+    pnd->tid = tid;
+    pnd->clock_clk = clk;
+    pnd->clock_aclk = aclk;
+    pnd->node_par = par;
+    pnd->node_next = next;
+    pnd->node_prev = prev;
+    pnd->node_headch = headch;
+}
+
 pTreeClock_T ptc_init(int dim){
     pTreeClock_T tc_new;
     tc_new = (pTreeClock_T) malloc(sizeof *tc_new);
@@ -18,9 +30,11 @@ pTreeClock_T ptc_init(int dim){
 
     tc_new->tree = (struct pNode*) malloc(sizeof *(tc_new->tree));
     struct pNode* ptr = tc_new->tree;
+    ptc_set_pNode(tc_new->tree, 0, 0, 0, NULL, NULL, NULL, NULL);
     for(int i = 0; i < dim - 1; i++) {
         ptr->node_next = (struct pNode*) malloc(sizeof *(tc_new->tree));
         ptr = ptr->node_next;
+        ptc_set_pNode(ptr, 0, 0, 0, NULL, NULL, NULL, NULL);
     }
 
     return tc_new;
@@ -36,11 +50,6 @@ pTreeClock_T ptc_init_tid(int dim, int tid){
     tc_new->top = -1;
 
     tc_new->tree = (struct pNode*) malloc(sizeof *(tc_new->tree));
-    tc_new->tree->tid = tid;
-    tc_new->tree->node_par = NULL;
-    tc_new->tree->node_next = NULL;
-    tc_new->tree->node_prev = NULL;
-    tc_new->tree->clock_clk = 1;
 
     struct pNode* ptr = NULL;
     struct pNode* next_ptr = NULL;
@@ -49,19 +58,13 @@ pTreeClock_T ptc_init_tid(int dim, int tid){
             continue;
         }
         ptr = (struct pNode*) malloc(sizeof *(tc_new->tree));
-        ptr->tid = i;
-        ptr->clock_clk = 0;
-        ptr->clock_aclk = 0;
-        ptr->node_par = tc_new->tree;
-        ptr->node_next = next_ptr;
-        ptr->node_prev = NULL;
-        ptr->node_headch = NULL;
+        ptc_set_pNode(ptr, i, 0, 0, tc_new->tree, next_ptr, NULL, NULL);
         if(next_ptr != NULL) {
             next_ptr->node_prev = ptr;
         }
         next_ptr = ptr;
     }
-    tc_new->tree->node_headch = next_ptr;
+    ptc_set_pNode(tc_new->tree, tid, 1, -1, NULL, NULL, NULL, next_ptr);
 
     return tc_new;
 }
@@ -85,6 +88,26 @@ int* ptc_get_clock(pTreeClock_T tc, int tid) {
         }   
     }
     return NULL;
+}
+
+void ptc_free(pTreeClock_T tc) {
+    free(tc->S);
+    struct pNode* working[tc->dim];
+    int top = -1;
+
+    working[++top] = tc->tree;
+
+    while(top >= 0) {
+        struct pNode* node = working[top--];
+        if(node->node_next != NULL){
+            working[++top] = node->node_next;
+        }
+        if(node->node_headch != NULL) {
+            working[++top] = node->node_headch;
+        }   
+        free(node);
+    }
+    free(tc);
 }
 
 struct pNode* ptc_get_node(pTreeClock_T tc, int tid) {
@@ -153,15 +176,13 @@ void ptc_push_child(pTreeClock_T self, int par, int t, struct pNode* nd){
     if (par_node->node_headch != NULL){
         par_node->node_headch->node_prev = nd;
     }
-    // this is not in the original paper (since prev is not used so it is still okay if prev is not maintained?), but add it here anyway
     nd->node_prev = NULL;
     nd->node_next = par_node->node_headch;
     nd->node_par = par_node;
     par_node->node_headch = nd;
 }
 
-void ptc_get_updated_nodes_join_chn(pTreeClock_T self, pTreeClock_T tc, int par, int par_clock){
-    struct pNode* nd_par = ptc_get_node(tc, par);
+void ptc_get_updated_nodes_join_chn(pTreeClock_T self, pTreeClock_T tc, struct pNode* nd_par, int par_clock){
     struct pNode* ptr = nd_par->node_headch;
     while (ptr != NULL){
         struct pNode* vprime_clocks = ptc_get_node(tc, ptr->tid);
@@ -178,32 +199,15 @@ void ptc_get_updated_nodes_join_chn(pTreeClock_T self, pTreeClock_T tc, int par,
 }
 
 void ptc_join(pTreeClock_T self, pTreeClock_T tc){
-    int root_tid_this = self->root_tid;
-    // possibly would be better to early return, but not sure; this is closer to the Java code, anyway
-    if (root_tid_this == tc->root_tid || tc->root_tid < 0){
+    if (self->root_tid == tc->root_tid || tc->root_tid < 0){
         return;
     }
 
-    int zprime_tid = tc->root_tid;
-    // for alignment, this line should be removed.
-    //      ... but complete alignment is hard (due to the root check), so skip for now
-    int zprime_clock = *ptc_get_clock(tc, zprime_tid);
-    struct pNode* z_node = ptc_get_node(self, zprime_tid);
-
-
-    int z_clock = z_node->clock_clk;
-    if (zprime_clock <= z_clock){
+    if (*ptc_get_clock(tc, tc->root_tid) <= *ptc_get_clock(self, tc->root_tid)){
         return;
-    } else {
-        ptc_detach_from_neighbors(self, zprime_tid, z_node);
     }
 
-
-    // TODO generalize this as clock assignment?
-    z_node->clock_clk = zprime_clock; /* local optimization */
-    z_node->clock_aclk = *ptc_get_clock(self, root_tid_this);
-    ptc_push_child(self, root_tid_this, zprime_tid, z_node);
-    ptc_get_updated_nodes_join_chn(self, tc, zprime_tid, z_clock);
+    self->S[++self->top] = ptc_get_node(self, tc->root_tid);
 
     while (self->top >= 0){
         int uprime_tid = self->S[self->top--]->tid;
@@ -214,16 +218,21 @@ void ptc_join(pTreeClock_T self, pTreeClock_T tc){
         ptc_detach_from_neighbors(self, uprime_tid, u_node);
         u_node->clock_clk = uprime_node->clock_clk;
         u_node->clock_aclk = uprime_node->clock_aclk;
-        int y = uprime_node->node_par->tid;
-        ptc_push_child(self, y, uprime_tid, u_node); 
-        ptc_get_updated_nodes_join_chn(self, tc, uprime_tid, u_clock);
+        int par_tid;
+        if(uprime_node->node_par == NULL) {
+            par_tid = self->root_tid;
+        }
+        else {
+            par_tid = uprime_node->node_par->tid;
+        }
+        ptc_push_child(self, par_tid, uprime_tid, u_node); 
+        ptc_get_updated_nodes_join_chn(self, tc, uprime_node, u_clock);
     }
 }
 
 
 void ptc_copy(pTreeClock_T self, pTreeClock_T from_tree_clock){
     self->root_tid = from_tree_clock->root_tid;
-
     struct pNode freelist;
     if(self->root_tid < 0) {
         freelist.node_next = self->tree;
@@ -256,13 +265,9 @@ void ptc_copy(pTreeClock_T self, pTreeClock_T from_tree_clock){
     
     struct pNode* ptr1 = freelist.node_next;
     freelist.node_next = ptr1->node_next;
-    ptr1->tid = from_tree_clock->tree->tid;
-    ptr1->clock_clk = from_tree_clock->tree->clock_clk;
-    ptr1->clock_aclk = from_tree_clock->tree->clock_aclk;
-    ptr1->node_next = NULL;
-    ptr1->node_prev = NULL;
-    ptr1->node_par = NULL;
-    ptr1->node_headch = NULL;
+    ptc_set_pNode(ptr1, from_tree_clock->tree->tid, 
+                  from_tree_clock->tree->clock_clk, from_tree_clock->tree->clock_aclk,
+                  NULL, NULL, NULL, NULL);
 
     while(top1 >= 0) {
         struct pNode* node1 = working1[top1--];
@@ -273,13 +278,8 @@ void ptc_copy(pTreeClock_T self, pTreeClock_T from_tree_clock){
             struct pNode* ptr1 = freelist.node_next;
             freelist.node_next = ptr1->node_next;
             node2->node_next = ptr1;
-            ptr1->node_prev = node2;
-            ptr1->node_next = NULL;
-            ptr1->node_par = node2->node_par;
-            ptr1->node_headch = NULL;
-            ptr1->tid = node1->node_next->tid;
-            ptr1->clock_clk = node1->node_next->clock_clk;
-            ptr1->clock_aclk = node1->node_next->clock_aclk;
+            ptc_set_pNode(ptr1, node1->node_next->tid, node1->node_next->clock_clk, node1->node_next->clock_aclk,
+                          node2->node_par, NULL, node2, NULL);
         }
         if(node1->node_headch != NULL) {
             working1[++top1] = node1->node_headch;
@@ -287,13 +287,8 @@ void ptc_copy(pTreeClock_T self, pTreeClock_T from_tree_clock){
             struct pNode* ptr1 = freelist.node_next;
             freelist.node_next = ptr1->node_next;
             node2->node_headch = ptr1;
-            ptr1->node_par = node2;
-            ptr1->node_next = NULL;
-            ptr1->node_prev = NULL;
-            ptr1->node_headch = NULL;
-            ptr1->tid = node1->node_headch->tid;
-            ptr1->clock_clk = node1->node_headch->clock_clk;
-            ptr1->clock_aclk = node1->node_headch->clock_aclk;
+            ptc_set_pNode(ptr1, node1->node_headch->tid, node1->node_headch->clock_clk, node1->node_headch->clock_aclk,
+                          node2, NULL, NULL, NULL);
         }
     }
 }
@@ -301,7 +296,6 @@ void ptc_copy(pTreeClock_T self, pTreeClock_T from_tree_clock){
 void ptc_print(pTreeClock_T tc) {
     struct pNode* working[tc->dim];
     int top = -1;
-    printf("root: %d\n", tc->root_tid);
     working[++top] = tc->tree;
 
     while(top >= 0) {
@@ -313,7 +307,7 @@ void ptc_print(pTreeClock_T tc) {
         }
         if(node->node_headch != NULL) {
             working[++top] = node->node_headch;
-            printf("c%d:", node->node_headch->tid);
+            printf("ch%d:", node->node_headch->tid);
         }   
         printf(" ");
     }

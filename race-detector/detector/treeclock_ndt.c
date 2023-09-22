@@ -87,6 +87,13 @@ TreeClock_T tc_init_tid(int dim, int tid){
     return tc_new;
 }
 
+void tc_free(TreeClock_T tc) {
+    free(tc->clocks);
+    free(tc->S);
+    free(tc->tree);
+    free(tc);
+}
+
 void tc_increment_clock(TreeClock_T self, int delta){
     struct Clock* c = get_clock(self, self->root_tid);
     c->clock_clk += delta;
@@ -226,6 +233,14 @@ void tc_join(TreeClock_T self, TreeClock_T tc){
     }
 }
 
+// void tc_copy(TreeClock_T self, TreeClock_T from_tree_clock){
+//     self->root_tid = from_tree_clock->root_tid;
+//     memcpy(self->clocks, from_tree_clock->clocks, self->dim * (sizeof *(self->clocks)));
+//     memcpy(self->tree, from_tree_clock->tree, self->dim * (sizeof *(self->tree)));
+//     // memcpy(self->S, from_tree_clock->S, self->dim * (sizeof *(self->S)));
+//     // self->top = -1;
+// }
+
 void get_updated_nodes_copy_chn(TreeClock_T self, TreeClock_T tc, int par, int par_clock, int targ){
     struct Node* nd_par = get_node(tc, par);
     int vprime_tid = get_tid(nd_par->node_headch);
@@ -247,10 +262,54 @@ void get_updated_nodes_copy_chn(TreeClock_T self, TreeClock_T tc, int par, int p
     }
 }
 
-void tc_copy(TreeClock_T self, TreeClock_T from_tree_clock){
-    self->root_tid = from_tree_clock->root_tid;
-    memcpy(self->clocks, from_tree_clock->clocks, self->dim * (sizeof *(self->clocks)));
-    memcpy(self->tree, from_tree_clock->tree, self->dim * (sizeof *(self->tree)));
-    // memcpy(self->S, from_tree_clock->S, self->dim * (sizeof *(self->S)));
-    // self->top = -1;
+void tc_copy(TreeClock_T self, TreeClock_T tc){
+    int root_tid_this = self->root_tid;
+
+    int zprime_tid = tc->root_tid;
+    struct Clock* zprime_clocks = get_clock(tc, zprime_tid);
+    struct Node* z_node = get_node(self, zprime_tid);
+    struct Clock* z_clocks = get_clock(self, zprime_tid);
+
+    int z_clock = z_clocks->clock_clk;
+    if (!node_is_null(z_node)){
+        if (zprime_tid != root_tid_this){
+            detach_from_neighbors(self, zprime_tid, z_node);
+        }
+    }
+
+    z_clocks->clock_clk = zprime_clocks->clock_clk;
+    z_clocks->clock_aclk = zprime_clocks->clock_aclk;       // TODO is this really necessary?
+    z_node->node_par = NODE_NULL;
+    z_node->node_prev = NODE_NULL;          // seems necessary to keep tree shape
+    z_node->node_next = NODE_NULL;          // seems necessary to keep tree shape
+
+    push_child(self, root_tid_this, zprime_tid, z_node);
+
+    get_updated_nodes_copy_chn(self, tc, zprime_tid, z_clock, root_tid_this);
+
+    while (self->top >= 0){
+        int uprime_tid = self->S[self->top--];
+        struct Clock* uprime_clocks = get_clock(tc, uprime_tid);
+        struct Node* u_node = get_node(self, uprime_tid);
+        struct Clock* u_clocks = get_clock(self, uprime_tid);
+        int u_clock = u_clocks->clock_clk;
+
+        if (!node_is_null(u_node)){
+            if (uprime_tid != root_tid_this){
+                detach_from_neighbors(self, uprime_tid, u_node);
+            }
+        }
+
+        u_clocks->clock_clk = uprime_clocks->clock_clk;
+        u_clocks->clock_aclk = uprime_clocks->clock_aclk;
+        
+        struct Node* uprime_node = get_node(tc, uprime_tid);
+        int y = get_tid(uprime_node->node_par);
+
+        push_child(self, y, uprime_tid, u_node); 
+
+        get_updated_nodes_copy_chn(self, tc, uprime_tid, u_clock, root_tid_this);
+    }
+
+    self->root_tid = zprime_tid;            // TODO will this make things easier or harder?
 }

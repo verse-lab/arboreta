@@ -26,6 +26,7 @@ typedef struct TreeClock* TreeClock_T;
 
 TreeClock_T tc_init(int dim);
 TreeClock_T tc_init_tid(int dim, int tid);
+void tc_free(TreeClock_T tc);
 void tc_increment_clock(TreeClock_T self, int delta);
 void tc_write_clock(TreeClock_T self, int val);
 int tc_read_clock(TreeClock_T self, int tid);

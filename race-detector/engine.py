@@ -41,8 +41,6 @@ class Engine:
             for line in f.readlines():
                 self.preparse(line)
                 self.event_cnt += 1
-                # if(self.event_cnt >= 5000000):
-                #     break
 
         print('number of events: %d' % (self.event_cnt))
         print('number of threads: %d' % (self.thr_cnt))
@@ -51,10 +49,14 @@ class Engine:
 
     def init(self, clock):
         self.is_race = False
-        self.cdll = cdll.LoadLibrary('./Engine_' + self.engine + '_' + clock + '.so')
+        self.cdll = cdll.LoadLibrary('./libEngine_' + self.engine + '_' + clock + '.so')
         init_detector = self.cdll.init_detector
         init_detector.argtypes = [c_int, c_int, c_int]
         init_detector(self.thr_cnt, self.var_cnt, self.lock_cnt)
+    
+    def free(self):
+        free_detector = self.cdll.free_detector
+        free_detector()
 
     def preparse(self, line):
         res = re.search(r"\s*(\w+)\s*\|(\w+)\((.+)\)\|.*", line)
@@ -98,51 +100,55 @@ class Engine:
 
     def detect(self):
         count = 0
+        t = 0
         with open(self.path, "r") as f:
             for line in f.readlines():
                 if(self.parse(line)):
                     count += 1
                     detect = self.cdll.detect
                     detect.restype = c_int
-                    detect.argtypes = [POINTER(Event), c_int]
-                    debug = 0
-                    if(detect(byref(self.event), debug) == 1):
+                    detect.argtypes = [POINTER(Event)]
+                    t1 = time.process_time()
+                    res = detect(byref(self.event))
+                    t2 = time.process_time()
+                    t += (t2 - t1) * 100000000
+                    if(res == 1):
                         self.is_race = True
                         break 
-                # if(count >= 60000000):
-                #     break
         if(self.is_race):
             print("RACE FOUND after " + str(count) + " events.")
         else:
             print("No race found after " + str(count) + " events.")
-
+        return t / 100000.0
 
 if __name__ == "__main__":
     opts, args = getopt.getopt(sys.argv[1:], "t:a:")
-    path, algo, clock = "", "", ""
+    path, algo = "", ""
     for opt, arg in opts:
         if opt == '-t':
             path = arg
         elif opt == '-a':
             algo = arg
-    # engine = Engine("benchmarks/SimpleMOC/170M_events_16_threads/traces.std", "hb")
+    
     engine = Engine(path, algo)
+    
+    # sum = 0
+    # for i in range(3):
+    #     engine.init("vc")
+    #     sum += engine.detect()
+    #     engine.free()
+    # print('vc time: %.3f ms' % (1.0 * sum / 3))
 
-    engine.init("ptc")
-    t1 = time.time()
-    engine.detect()
-    t2 = time.time()
-    print('ptc time %d: %.3f ms' % (0, (t2 - t1) * 1000))
+    # sum = 0
+    # for i in range(3):
+    #     engine.init("tc")
+    #     sum += engine.detect()
+    #     engine.free()
+    # print('tc time: %.3f ms' % (1.0 * sum / 3))
 
-    engine.init("tc")
-    t1 = time.time()
-    engine.detect()
-    t2 = time.time()
-    print('tc time %d: %.3f ms' % (0, (t2 - t1) * 1000))
-
-    engine.init("vc")
-    t1 = time.time()
-    engine.detect()
-    t2 = time.time()
-    print('vc time %d: %.3f ms' % (0, (t2 - t1) * 1000))
-
+    sum = 0 
+    for i in range(3):
+        engine.init("ptc")
+        sum += engine.detect()
+        engine.free()
+    print('ptc time: %.3f ms' % (1.0 * sum / 3))

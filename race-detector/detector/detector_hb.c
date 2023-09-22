@@ -12,6 +12,7 @@
 #define CLOCK_T                 TreeClock_T
 #define init_tid                tc_init_tid
 #define init                    tc_init
+#define free			tc_free
 #define increment_clock         tc_increment_clock
 #define read_clock              tc_read_clock
 #define write_clock             tc_write_clock
@@ -24,6 +25,7 @@
 #define CLOCK_T                 pTreeClock_T
 #define init_tid                ptc_init_tid
 #define init                    ptc_init
+#define free			ptc_free
 #define increment_clock         ptc_increment_clock
 #define read_clock              ptc_read_clock
 #define write_clock             ptc_write_clock
@@ -36,6 +38,7 @@
 #define CLOCK_T                 VectorClock_T
 #define init_tid                vc_init_tid
 #define init                    vc_init
+#define free			vc_free
 #define increment_clock         vc_increment_clock
 #define read_clock              vc_read_clock
 #define write_clock             vc_write_clock
@@ -66,6 +69,19 @@ void init_detector(int tnum, int vnum, int lnum) {
     }
     for(int i = 0; i < locks_num; i++) {
         lock_clk[i] = init(threads_num);
+    }
+}
+
+void free_detector() {
+    for(int i = 0; i < threads_num; i++) {
+        free(thread_clk[i]);
+    }
+    for(int i = 0; i < vars_num; i++) {
+        vc_free(read_clk[i]);
+        free(write_clk[i]);
+    }
+    for(int i = 0; i < locks_num; i++) {
+        free(lock_clk[i]);
     }
 }
 
@@ -100,7 +116,7 @@ int detect(Event* e) {
             break;
         case WRITE:
             if(read_clock(write_clk[e->var], e->thread) != read_clock(thread_clk[e->thread], e->thread)) {
-                if(is_less_than_or_equal(write_clk[e->var], thread_clk[e->thread])) {
+                if(is_less_than_or_equal(write_clk[e->var], thread_clk[e->thread])) {    
                     for(int i = 0; i < threads_num; i++) {
                         int cl = vc_read_clock(read_clk[e->var], i);
                         int cr = read_clock(thread_clk[e->thread], i);

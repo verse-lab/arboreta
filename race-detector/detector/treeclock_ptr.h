@@ -23,6 +23,7 @@ typedef struct pTreeClock* pTreeClock_T;
 
 pTreeClock_T ptc_init(int dim);
 pTreeClock_T ptc_init_tid(int dim, int tid);
+void ptc_free(pTreeClock_T tc);
 void ptc_increment_clock(pTreeClock_T self, int delta);
 void ptc_write_clock(pTreeClock_T self, int val);
 int ptc_read_clock(pTreeClock_T self, int tid);

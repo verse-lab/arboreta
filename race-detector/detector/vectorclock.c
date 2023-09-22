@@ -30,6 +30,11 @@ VectorClock_T vc_init_tid(int dim, int tid){
     return vc_new;
 }
 
+void vc_free(VectorClock_T vc) {
+    free(vc->clocks);
+    free(vc);
+}
+
 void vc_increment_clock(VectorClock_T self, int delta){
     (self->clocks)[self->tid] += delta;
 }
