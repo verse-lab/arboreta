@@ -139,16 +139,16 @@ if __name__ == "__main__":
     #     engine.free()
     # print('vc time: %.3f ms' % (1.0 * sum / 3))
 
-    # sum = 0
-    # for i in range(3):
-    #     engine.init("tc")
-    #     sum += engine.detect()
-    #     engine.free()
-    # print('tc time: %.3f ms' % (1.0 * sum / 3))
-
-    sum = 0 
+    sum = 0
     for i in range(3):
-        engine.init("ptc")
+        engine.init("tc")
         sum += engine.detect()
         engine.free()
-    print('ptc time: %.3f ms' % (1.0 * sum / 3))
+    print('tc time: %.3f ms' % (1.0 * sum / 3))
+
+    # sum = 0 
+    # for i in range(3):
+    #     engine.init("ptc")
+    #     sum += engine.detect()
+    #     engine.free()
+    # print('ptc time: %.3f ms' % (1.0 * sum / 3))

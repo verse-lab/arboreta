@@ -40,7 +40,12 @@ TreeClock_T tc_init(int dim){
     tc_new->top = -1;
 
     memset(tc_new->clocks, 0, dim * (sizeof *(tc_new->clocks)));
-    memset(tc_new->tree, 0, dim * (sizeof *(tc_new->tree)));
+    for(int i = 0; i < dim; i++) {
+        tc_new->tree[i].node_next = NODE_NULL;
+        tc_new->tree[i].node_prev = NODE_NULL;
+        tc_new->tree[i].node_par = NODE_NULL;
+        tc_new->tree[i].node_headch = NODE_NULL;
+    }
 
     return tc_new;
 }
@@ -57,32 +62,13 @@ TreeClock_T tc_init_tid(int dim, int tid){
     tc_new->top = -1;
 
     memset(tc_new->clocks, 0, dim * (sizeof *(tc_new->clocks)));
-    memset(tc_new->tree, 0, dim * (sizeof *(tc_new->tree)));
-    struct Node* node = NULL;
-    int next = NODE_NULL;
+    tc_new->clocks[tid].clock_clk = 1;
     for(int i = 0; i < dim; i++) {
-        node = get_node(tc_new, i);
-        struct Clock* clock = get_clock(tc_new, i);
-        if(i == tid) {
-            node->node_next = NODE_NULL;
-            clock->clock_clk = 1;
-        }
-        else {
-            node->node_par = tid;
-            node->node_next = next;
-            node->node_headch = NODE_NULL;
-            node->node_prev = NODE_NULL;
-            clock->clock_clk = 0;
-            clock->clock_aclk = 0;
-            if(next != NODE_NULL) {
-                struct Node* nodetmp = get_node(tc_new, next);
-                nodetmp->node_prev = i;
-            }
-            next = i;
-        }
+        tc_new->tree[i].node_next = NODE_NULL;
+        tc_new->tree[i].node_prev = NODE_NULL;
+        tc_new->tree[i].node_par = NODE_NULL;
+        tc_new->tree[i].node_headch = NODE_NULL;
     }
-    node = get_node(tc_new, tid);
-    node->node_headch = next;
 
     return tc_new;
 }
@@ -282,8 +268,6 @@ void tc_copy(TreeClock_T self, TreeClock_T tc){
     z_node->node_par = NODE_NULL;
     z_node->node_prev = NODE_NULL;          // seems necessary to keep tree shape
     z_node->node_next = NODE_NULL;          // seems necessary to keep tree shape
-
-    push_child(self, root_tid_this, zprime_tid, z_node);
 
     get_updated_nodes_copy_chn(self, tc, zprime_tid, z_clock, root_tid_this);
 

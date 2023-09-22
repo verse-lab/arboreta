@@ -56,6 +56,8 @@ int threads_num;
 int vars_num;
 int locks_num;
 
+void tc_print(TreeClock_T clk);
+
 void init_detector(int tnum, int vnum, int lnum) {
     threads_num = tnum;
     vars_num = vnum;

@@ -28,15 +28,16 @@ pTreeClock_T ptc_init(int dim){
     tc_new->S = (struct pNode**) malloc(dim * (sizeof *(tc_new->S)));
     tc_new->top = -1;
 
-    tc_new->tree = (struct pNode*) malloc(sizeof *(tc_new->tree));
     struct pNode* ptr = tc_new->tree;
-    ptc_set_pNode(tc_new->tree, 0, 0, 0, NULL, NULL, NULL, NULL);
-    for(int i = 0; i < dim - 1; i++) {
-        ptr->node_next = (struct pNode*) malloc(sizeof *(tc_new->tree));
-        ptr = ptr->node_next;
-        ptc_set_pNode(ptr, 0, 0, 0, NULL, NULL, NULL, NULL);
+    struct pNode* prev = NULL;
+    for(int i = 0; i < dim; i++) {
+        ptr = (struct pNode*) malloc(sizeof *(tc_new->tree));
+        ptc_set_pNode(ptr, i, 0, 0, NULL, NULL, prev, NULL);
+        if(prev != NULL) {
+            prev->node_next = ptr;
+        }
+        prev = ptr;
     }
-
     return tc_new;
 }
 
