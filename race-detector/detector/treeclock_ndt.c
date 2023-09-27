@@ -41,6 +41,7 @@ TreeClock_T tc_init(int dim){
 
     memset(tc_new->clocks, 0, dim * (sizeof *(tc_new->clocks)));
     for(int i = 0; i < dim; i++) {
+        tc_new->clocks[i].clock_clk = -1;
         tc_new->tree[i].node_next = NODE_NULL;
         tc_new->tree[i].node_prev = NODE_NULL;
         tc_new->tree[i].node_par = NODE_NULL;

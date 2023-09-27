@@ -32,7 +32,7 @@ pTreeClock_T ptc_init(int dim){
     struct pNode* prev = NULL;
     for(int i = 0; i < dim; i++) {
         ptr = (struct pNode*) malloc(sizeof *(tc_new->tree));
-        ptc_set_pNode(ptr, i, 0, 0, NULL, NULL, prev, NULL);
+        ptc_set_pNode(ptr, i, -1, 0, NULL, NULL, prev, NULL);
         if(prev != NULL) {
             prev->node_next = ptr;
         }
@@ -232,67 +232,67 @@ void ptc_join(pTreeClock_T self, pTreeClock_T tc){
 }
 
 
-void ptc_copy(pTreeClock_T self, pTreeClock_T from_tree_clock){
-    self->root_tid = from_tree_clock->root_tid;
-    struct pNode freelist;
-    if(self->root_tid < 0) {
-        freelist.node_next = self->tree;
-    }
-    else {
-        struct pNode* ptr = &freelist;
-        struct pNode* working[self->dim];
-        int top = -1;
+// void ptc_copy(pTreeClock_T self, pTreeClock_T from_tree_clock){
+//     self->root_tid = from_tree_clock->root_tid;
+//     struct pNode freelist;
+//     if(self->root_tid < 0) {
+//         freelist.node_next = self->tree;
+//     }
+//     else {
+//         struct pNode* ptr = &freelist;
+//         struct pNode* working[self->dim];
+//         int top = -1;
 
-        working[++top] = self->tree;
+//         working[++top] = self->tree;
 
-        while(top >= 0) {
-            struct pNode* node = working[top--];
-            if(node->node_next != NULL){
-                working[++top] = node->node_next;
-            }
-            if(node->node_headch != NULL) {
-                working[++top] = node->node_headch;
-            }
-            ptr->node_next = node;
-            ptr = node;
-        }
-    }
+//         while(top >= 0) {
+//             struct pNode* node = working[top--];
+//             if(node->node_next != NULL){
+//                 working[++top] = node->node_next;
+//             }
+//             if(node->node_headch != NULL) {
+//                 working[++top] = node->node_headch;
+//             }
+//             ptr->node_next = node;
+//             ptr = node;
+//         }
+//     }
     
-    struct pNode* working1[self->dim];
-    struct pNode* working2[self->dim];
-    int top1 = -1, top2 = -1;
-    working1[++top1] = from_tree_clock->tree;
-    working2[++top2] = freelist.node_next;
+//     struct pNode* working1[self->dim];
+//     struct pNode* working2[self->dim];
+//     int top1 = -1, top2 = -1;
+//     working1[++top1] = from_tree_clock->tree;
+//     working2[++top2] = freelist.node_next;
     
-    struct pNode* ptr1 = freelist.node_next;
-    freelist.node_next = ptr1->node_next;
-    ptc_set_pNode(ptr1, from_tree_clock->tree->tid, 
-                  from_tree_clock->tree->clock_clk, from_tree_clock->tree->clock_aclk,
-                  NULL, NULL, NULL, NULL);
+//     struct pNode* ptr1 = freelist.node_next;
+//     freelist.node_next = ptr1->node_next;
+//     ptc_set_pNode(ptr1, from_tree_clock->tree->tid, 
+//                   from_tree_clock->tree->clock_clk, from_tree_clock->tree->clock_aclk,
+//                   NULL, NULL, NULL, NULL);
 
-    while(top1 >= 0) {
-        struct pNode* node1 = working1[top1--];
-        struct pNode* node2 = working2[top2--];
-        if(node1->node_next != NULL){
-            working1[++top1] = node1->node_next;
-            working2[++top2] = freelist.node_next;
-            struct pNode* ptr1 = freelist.node_next;
-            freelist.node_next = ptr1->node_next;
-            node2->node_next = ptr1;
-            ptc_set_pNode(ptr1, node1->node_next->tid, node1->node_next->clock_clk, node1->node_next->clock_aclk,
-                          node2->node_par, NULL, node2, NULL);
-        }
-        if(node1->node_headch != NULL) {
-            working1[++top1] = node1->node_headch;
-            working2[++top2] = freelist.node_next;
-            struct pNode* ptr1 = freelist.node_next;
-            freelist.node_next = ptr1->node_next;
-            node2->node_headch = ptr1;
-            ptc_set_pNode(ptr1, node1->node_headch->tid, node1->node_headch->clock_clk, node1->node_headch->clock_aclk,
-                          node2, NULL, NULL, NULL);
-        }
-    }
-}
+//     while(top1 >= 0) {
+//         struct pNode* node1 = working1[top1--];
+//         struct pNode* node2 = working2[top2--];
+//         if(node1->node_next != NULL){
+//             working1[++top1] = node1->node_next;
+//             working2[++top2] = freelist.node_next;
+//             struct pNode* ptr1 = freelist.node_next;
+//             freelist.node_next = ptr1->node_next;
+//             node2->node_next = ptr1;
+//             ptc_set_pNode(ptr1, node1->node_next->tid, node1->node_next->clock_clk, node1->node_next->clock_aclk,
+//                           node2->node_par, NULL, node2, NULL);
+//         }
+//         if(node1->node_headch != NULL) {
+//             working1[++top1] = node1->node_headch;
+//             working2[++top2] = freelist.node_next;
+//             struct pNode* ptr1 = freelist.node_next;
+//             freelist.node_next = ptr1->node_next;
+//             node2->node_headch = ptr1;
+//             ptc_set_pNode(ptr1, node1->node_headch->tid, node1->node_headch->clock_clk, node1->node_headch->clock_aclk,
+//                           node2, NULL, NULL, NULL);
+//         }
+//     }
+// }
 
 void ptc_print(pTreeClock_T tc) {
     struct pNode* working[tc->dim];
