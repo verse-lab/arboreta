@@ -1286,22 +1286,19 @@ Qed.
 
 (* magic wand as frame *)
 
-Lemma tc_rep_subtree_frame tc : forall l sub (Hsub : subtc_witness l sub tc) 
+Lemma tc_rep_subtree_frame_pre tc : forall l sub (Hsub : subtc_witness l sub tc) 
   dim plnode plclk z1 z2 z3,
   tc_subroot_rep dim plnode plclk tc z1 z2 z3 *
     tc_rep_noroot dim plnode plclk tc |--
   EX z1' z2' z3' ,
-  (* TODO is this enough? or reuse the position to pose stronger constraints? *)
   !! (l = nil -> z1 = z1' /\ z2 = z2' /\ z3 = z3') &&
   tc_subroot_rep dim plnode plclk sub z1' z2' z3' *
     tc_rep_noroot dim plnode plclk sub *
-  (* (ALL sub',  *)
-  (* TODO or use implication? *)
-  (ALL chn_sub', 
-    (tc_subroot_rep dim plnode plclk (Node (tc_rootinfo sub) chn_sub') z1' z2' z3' *
-      tc_rep_noroot dim plnode plclk (Node (tc_rootinfo sub) chn_sub')) -*
-    tc_subroot_rep dim plnode plclk (tc_locate_update tc l (Node (tc_rootinfo sub) chn_sub')) z1 z2 z3 *
-      tc_rep_noroot dim plnode plclk (tc_locate_update tc l (Node (tc_rootinfo sub) chn_sub'))).
+  (ALL sub', !! (tc_roottid sub = tc_roottid sub') -->
+    ((tc_subroot_rep dim plnode plclk sub' z1' z2' z3' *
+      tc_rep_noroot dim plnode plclk sub') -*
+    tc_subroot_rep dim plnode plclk (tc_locate_update tc l sub') z1 z2 z3 *
+      tc_rep_noroot dim plnode plclk (tc_locate_update tc l sub'))).
 Proof.
   induction tc as [(u, clk, aclk) chn IH] using treeclock_ind_2; intros.
   destruct l as [ | x l ].
@@ -1309,7 +1306,9 @@ Proof.
     Exists z1 z2 z3.
     entailer!.
     simpl.
-    apply allp_right. intros chn_sub'.
+    apply allp_right. intros sub'.
+    apply imp_andp_adjoint.
+    Intros.
     apply wand_frame_intro'. entailer!.
   - hnf in Hsub. simpl in Hsub.
     destruct (nth_error chn x) as [ ch | ] eqn:Enth; try eqsolve.
@@ -1336,17 +1335,12 @@ Proof.
     fold fold_right_sepcon.
     Exists z1' z2' z3'.
     entailer!.
-    apply allp_right. intros chn_sub'.
+    apply allp_right. intros sub'.
     (* hint. *)
-    allp_left chn_sub'.
+    allp_left sub'.
     fold fold_right_sepcon.
+    apply imp_andp_adjoint. Intros. rewrite prop_imp; try assumption.
     apply wand_frame_intro'.
-    (*
-    (* ? *) 
-    pose proof (eq_refl (tc_rep_noroot dim plnode plclk (Node (tc_rootinfo sub) chn_sub'))) as Htmp.
-    unfold tc_rep_noroot in Htmp at 1.
-    fold tc_rep_noroot in Htmp. rewrite Htmp. entailer!.
-    *)
     match goal with |- ?a * ?b * _ |-- _ => sep_apply (wand_frame_elim' (a * b)%logic) end.
     1: now unfold tc_rep_noroot.
     fold fold_right_sepcon.
@@ -1360,7 +1354,7 @@ Proof.
     entailer!.
 
     (* still, need to destruct l and discuss? *)
-    assert (tc_roottid (tc_locate_update ch l (Node (tc_rootinfo sub) chn_sub')) = tc_roottid ch) as Eid.
+    assert (tc_roottid (tc_locate_update ch l sub') = tc_roottid ch) as Eid.
     {
       destruct l.
       - simpl in Hsub |- *. now injection Hsub as <-.
@@ -1370,6 +1364,30 @@ Proof.
     entailer!.
     destruct pre; unfold tc_headch_Z; simpl; now try rewrite Eid.
 Qed. 
+
+Lemma tc_rep_subtree_frame tc : forall l sub (Hsub : subtc_witness l sub tc) 
+  dim plnode plclk z1 z2 z3,
+  tc_subroot_rep dim plnode plclk tc z1 z2 z3 *
+    tc_rep_noroot dim plnode plclk tc |--
+  EX z1' z2' z3' ,
+  !! (l = nil -> z1 = z1' /\ z2 = z2' /\ z3 = z3') &&
+  tc_subroot_rep dim plnode plclk sub z1' z2' z3' *
+    tc_rep_noroot dim plnode plclk sub *
+  (ALL chn_sub', 
+    (tc_subroot_rep dim plnode plclk (Node (tc_rootinfo sub) chn_sub') z1' z2' z3' *
+      tc_rep_noroot dim plnode plclk (Node (tc_rootinfo sub) chn_sub')) -*
+    tc_subroot_rep dim plnode plclk (tc_locate_update tc l (Node (tc_rootinfo sub) chn_sub')) z1 z2 z3 *
+      tc_rep_noroot dim plnode plclk (tc_locate_update tc l (Node (tc_rootinfo sub) chn_sub'))).
+Proof.
+  intros.
+  sep_eapply tc_rep_subtree_frame_pre.
+  1: apply Hsub.
+  Intros z1' z2' z3'. Exists z1' z2' z3'.
+  entailer!.
+  apply allp_right. intros chn_sub'.
+  allp_left (Node (tc_rootinfo sub) chn_sub').
+  now rewrite prop_imp.
+Qed.
 
 (* simple malloc/free spec; TODO may use the one in VSU? *)
 Definition malloc_spec :=
