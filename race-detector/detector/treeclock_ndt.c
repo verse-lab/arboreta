@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include "treeclock_ndt.h"
 #include "data_structure.h"
 
@@ -39,7 +40,13 @@ TreeClock_T tc_init(int dim){
     tc_new->top = -1;
 
     memset(tc_new->clocks, 0, dim * (sizeof *(tc_new->clocks)));
-    memset(tc_new->tree, 0, dim * (sizeof *(tc_new->tree)));
+    for(int i = 0; i < dim; i++) {
+        tc_new->clocks[i].clock_clk = -1;
+        tc_new->tree[i].node_next = NODE_NULL;
+        tc_new->tree[i].node_prev = NODE_NULL;
+        tc_new->tree[i].node_par = NODE_NULL;
+        tc_new->tree[i].node_headch = NODE_NULL;
+    }
 
     return tc_new;
 }
@@ -56,11 +63,22 @@ TreeClock_T tc_init_tid(int dim, int tid){
     tc_new->top = -1;
 
     memset(tc_new->clocks, 0, dim * (sizeof *(tc_new->clocks)));
-    memset(tc_new->tree, 0, dim * (sizeof *(tc_new->tree)));
-
-    get_clock(tc_new, tid)->clock_clk = 1;
+    tc_new->clocks[tid].clock_clk = 1;
+    for(int i = 0; i < dim; i++) {
+        tc_new->tree[i].node_next = NODE_NULL;
+        tc_new->tree[i].node_prev = NODE_NULL;
+        tc_new->tree[i].node_par = NODE_NULL;
+        tc_new->tree[i].node_headch = NODE_NULL;
+    }
 
     return tc_new;
+}
+
+void tc_free(TreeClock_T tc) {
+    free(tc->clocks);
+    free(tc->S);
+    free(tc->tree);
+    free(tc);
 }
 
 void tc_increment_clock(TreeClock_T self, int delta){
@@ -79,18 +97,13 @@ int tc_read_clock(TreeClock_T self, int tid){
 }
 
 int tc_is_less_than_or_equal(TreeClock_T self, TreeClock_T tc){
-    for(int i = 0; i < MAX_THREADS; i++) {
-        int cl = tc_read_clock(self, i);
-        int cr = tc_read_clock(tc, i);
-        if(cl > cr) {
-            return 0;
-        }
+    int root_tid = self->root_tid;
+    if(root_tid < 0) {
+        return 1;
     }
-    return 1;
-    // int root_tid = self->root_tid;
-    // int cl = tc_read_clock(self, root_tid);
-    // int cr = tc_read_clock(tc, root_tid);
-    // return cl <= cr;
+    int cl = tc_read_clock(self, root_tid);
+    int cr = tc_read_clock(tc, root_tid);
+    return cl <= cr;
 }
 
 void detach_from_neighbors(TreeClock_T self, int t, struct Node* nd){
@@ -156,7 +169,7 @@ void tc_join(TreeClock_T self, TreeClock_T tc){
     int root_tid_this = self->root_tid;
 
     // possibly would be better to early return, but not sure; this is closer to the Java code, anyway
-    if (root_tid_this == tc->root_tid){
+    if (root_tid_this == tc->root_tid || root_tid_this < 0){
         return ;
     }
 
@@ -207,6 +220,14 @@ void tc_join(TreeClock_T self, TreeClock_T tc){
     }
 }
 
+// void tc_copy(TreeClock_T self, TreeClock_T from_tree_clock){
+//     self->root_tid = from_tree_clock->root_tid;
+//     memcpy(self->clocks, from_tree_clock->clocks, self->dim * (sizeof *(self->clocks)));
+//     memcpy(self->tree, from_tree_clock->tree, self->dim * (sizeof *(self->tree)));
+//     // memcpy(self->S, from_tree_clock->S, self->dim * (sizeof *(self->S)));
+//     // self->top = -1;
+// }
+
 void get_updated_nodes_copy_chn(TreeClock_T self, TreeClock_T tc, int par, int par_clock, int targ){
     struct Node* nd_par = get_node(tc, par);
     int vprime_tid = get_tid(nd_par->node_headch);
@@ -228,7 +249,7 @@ void get_updated_nodes_copy_chn(TreeClock_T self, TreeClock_T tc, int par, int p
     }
 }
 
-void tc_monotone_copy(TreeClock_T self, TreeClock_T tc){
+void tc_copy(TreeClock_T self, TreeClock_T tc){
     int root_tid_this = self->root_tid;
 
     int zprime_tid = tc->root_tid;

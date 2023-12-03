@@ -30,12 +30,17 @@ VectorClock_T vc_init_tid(int dim, int tid){
     return vc_new;
 }
 
+void vc_free(VectorClock_T vc) {
+    free(vc->clocks);
+    free(vc);
+}
+
 void vc_increment_clock(VectorClock_T self, int delta){
     (self->clocks)[self->tid] += delta;
 }
 
-void vc_write_clock(VectorClock_T self, int val){
-    (self->clocks)[self->tid] = val;
+void vc_write_clock(VectorClock_T self, int tid, int val){
+    (self->clocks)[tid] = val;
 }
 
 int vc_read_clock(VectorClock_T self, int tid){
@@ -43,17 +48,12 @@ int vc_read_clock(VectorClock_T self, int tid){
 }
 
 int vc_is_less_than_or_equal(VectorClock_T self, VectorClock_T vc){
-    for(int i = 0; i < MAX_THREADS; i++) {
-        int cl = vc_read_clock(self, i);
-        int cr = vc_read_clock(vc, i);
-        if(cl > cr) {
-            return 0;
-        }
+    if(self->tid < 0) {
+        return 1;
     }
-    return 1;
-    // int cl = vc_read_clock(self, self->tid);
-    // int cr = vc_read_clock(vc, self->tid);
-    // return cl <= cr;
+    int cl = vc_read_clock(self, self->tid);
+    int cr = vc_read_clock(vc, self->tid);
+    return cl <= cr;
 }
 
 void vc_join(VectorClock_T self, VectorClock_T vc) {
@@ -67,8 +67,9 @@ void vc_join(VectorClock_T self, VectorClock_T vc) {
     }
 }
 
-void vc_monotone_copy(VectorClock_T self, VectorClock_T vc) {
+void vc_copy(VectorClock_T self, VectorClock_T vc) {
     for(int i = 0; i < self->dim; i++) {
         (self->clocks)[i] = (vc->clocks)[i];
     }
+    self->tid = vc->tid;
 }

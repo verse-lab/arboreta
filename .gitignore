@@ -26,3 +26,8 @@ extraction/lib/*.mli
 .depend
 .DS_Store
 __pycache__/
+
+**/*.o
+**/*.so
+
+race-detector/benchmarks/**

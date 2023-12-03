@@ -1,9 +1,9 @@
 #ifndef _HEADER_DATA_STRUCTURE_H
 #define _HEADER_DATA_STRUCTURE_H
 
-#define MAX_THREADS 4
-#define MAX_VARS    1024
-#define MAX_LOCKS   1024
+#define MAX_THREADS 300
+#define MAX_VARS    40000000
+#define MAX_LOCKS   60000
 
 #define READ        0
 #define WRITE       1
