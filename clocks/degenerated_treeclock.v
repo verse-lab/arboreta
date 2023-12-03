@@ -1,6 +1,6 @@
 From Coq Require Import List Bool Lia ssrbool PeanoNat Sorting RelationClasses.
 From Coq Require ssreflect.
-From distributedclocks.clocks Require Export treeclock.
+From arboreta.clocks Require Export treeclock.
 Import ssreflect.SsrSyntax.
 
 From stdpp Require list.

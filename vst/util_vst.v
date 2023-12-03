@@ -3,7 +3,7 @@ From Coq Require Import List Bool Lia ssrbool PeanoNat Sorting RelationClasses.
 From Coq Require ssreflect.
 Import ssreflect.SsrSyntax.
 
-From distributedclocks.utils Require Import util.
+From arboreta.utils Require Import util.
 
 Section Short_Integer_Type.
 

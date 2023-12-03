@@ -1,6 +1,6 @@
 From Coq Require Import List Bool Lia ssrbool PeanoNat Sorting RelationClasses Permutation.
 From Coq Require ssreflect.
-From distributedclocks.utils Require Export util libtac.
+From arboreta.utils Require Export util libtac.
 Import ssreflect.SsrSyntax.
 
 From stdpp Require list.

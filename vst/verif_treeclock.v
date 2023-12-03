@@ -1,7 +1,7 @@
 Require Import VST.floyd.proofauto.
-Require Import distributedclocks.clocks.treeclock.
-From distributedclocks.vst Require Import treeclock_clight util_vst array_support util_treeclock.
-From distributedclocks.utils Require Import libtac.
+Require Import arboreta.clocks.treeclock.
+From arboreta.vst Require Import treeclock_clight util_vst array_support util_treeclock.
+From arboreta.utils Require Import libtac.
 
 #[export] Instance CompSpecs : compspecs. make_compspecs prog. Defined.
 Definition Vprog : varspecs. mk_varspecs prog. Defined.

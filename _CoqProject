@@ -1,6 +1,6 @@
--Q utils distributedclocks.utils
--Q clocks distributedclocks.clocks
--Q vst distributedclocks.vst
+-Q utils arboreta.utils
+-Q clocks arboreta.clocks
+-Q vst arboreta.vst
 
 -arg -w -arg -notation-overridden
 -arg -w -arg -local-declaration
