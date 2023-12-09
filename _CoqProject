@@ -9,6 +9,8 @@
 
 utils/libtac.v
 utils/util.v
+utils/util_perm.v
+utils/rosetree.v
 clocks/treeclock.v
 clocks/degenerated_treeclock.v
 extraction/extract_driver.v

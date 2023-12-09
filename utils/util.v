@@ -1,12 +1,11 @@
-From Coq Require Import List Bool Lia ssrbool PeanoNat Sorting RelationClasses Permutation.
-From Coq Require ssreflect.
-Import ssreflect.SsrSyntax.
+From Coq Require Import List Bool Lia PeanoNat Sorting RelationClasses Permutation.
+(* From Coq Require ssreflect.
+Import ssreflect.SsrSyntax. *)
 
-(* Coq's list library is not very complete.  *)
 From stdpp Require list.
 
-(* TODO is this in somewhere of Coq std lib? *)
 (* Search "ind" inside PeanoNat. *)
+(*
 Lemma nat_ind_2 : forall P : nat -> Prop,
   P 0 -> 
   (forall n : nat, (forall m : nat, m <= n -> P m) -> P (S n)) -> 
@@ -24,7 +23,9 @@ Proof.
   }
   intros. unfold Q in Hfinal. now apply Hfinal with (n:=n).
 Qed.
-
+*)
+(*
+(* see "Wf_nat.lt_wf_ind" *)
 Lemma nat_ind_3 : forall P : nat -> Prop,
   (forall n : nat, (forall m : nat, m < n -> P m) -> P n) -> 
   forall n : nat, P n.
@@ -41,21 +42,24 @@ Proof.
   }
   intros. unfold Q in Hfinal. apply Hfinal with (n:=S n). lia.
 Qed.
+*)
 
-Section Sublist_Additional_Lemmas. 
+(* Some additional lemmas about the "sublist" predicate in stdpp. Mostly for adaptation. *)
 
-  Lemma sublist_In [A : Type] (l1 l2 : list A) 
-    (Hsub : list.sublist l1 l2) (x : A) (Hin : In x l1) : In x l2.
+Section Sublist_Additional_Lemmas.
+
+  Lemma sublist_In [A : Type] [l1 l2 : list A] 
+    (Hsub : list.sublist l1 l2) [x : A] (Hin : In x l1) : In x l2.
   Proof. 
     eapply list.sublist_submseteq, list.elem_of_submseteq with (x:=x) in Hsub.
     all: now apply base.elem_of_list_In.
   Qed.
 
-  Corollary sublist_Forall [A : Type] (P : A -> Prop) (l1 l2 : list A) 
+  Corollary sublist_Forall [A : Type] (P : A -> Prop) [l1 l2 : list A]
     (Hsub : list.sublist l1 l2) (H : Forall P l2) : Forall P l1.
   Proof. eapply incl_Forall. 2: apply H. hnf. intros ?. now apply sublist_In. Qed.
 
-  Corollary sublist_cons_remove [A : Type] (x : A) (l1 l2 : list A) 
+  Corollary sublist_cons_remove [A : Type] [x : A] [l1 l2 : list A]
     (Hsub : list.sublist (x :: l1) l2) : list.sublist l1 l2.
   Proof.
     induction l2 as [ | y l2 IH ].
@@ -66,7 +70,7 @@ Section Sublist_Additional_Lemmas.
         intuition.
   Qed.
 
-  Corollary sublist_cons_In [A : Type] (x : A) (l1 l2 : list A) 
+  Corollary sublist_cons_In [A : Type] [x : A] [l1 l2 : list A]
     (Hsub : list.sublist (x :: l1) l2) : In x l2.
   Proof.
     eapply sublist_In; eauto.
@@ -74,7 +78,7 @@ Section Sublist_Additional_Lemmas.
     intuition.
   Qed.
 
-  Fact sublist_map [A B : Type] (f : A -> B) (l1 l2 : list A)
+  Fact sublist_map [A B : Type] (f : A -> B) [l1 l2 : list A]
     (Hsub : list.sublist l1 l2) :
     list.sublist (map f l1) (map f l2).
   Proof.
@@ -86,15 +90,15 @@ Section Sublist_Additional_Lemmas.
       now constructor.
   Qed.
 
-  Fact sublist_NoDup [A : Type] (l1 l2 : list A)
+  Fact sublist_NoDup [A : Type] [l1 l2 : list A]
     (Hsub : list.sublist l1 l2) (Hnodup : NoDup l2) : NoDup l1.
   Proof.
     induction Hsub as [ | x l1 l2 Hsub IHsub | x l1 l2 Hsub IHsub ]; intros.
     - auto.
-    - pose proof (sublist_In _ _ Hsub x).
+    - pose proof (sublist_In Hsub).
       rewrite -> NoDup_cons_iff in Hnodup |- *.
       firstorder.
-    - pose proof (sublist_In _ _ Hsub x).
+    - pose proof (sublist_In Hsub).
       rewrite -> NoDup_cons_iff in Hnodup.
       firstorder.
   Qed.
@@ -108,8 +112,8 @@ Section Sublist_Additional_Lemmas.
       now destruct (f x); constructor.
   Qed.
 
-  Fact sublist_StronglySorted [A : Type] (R : A -> A -> Prop) l1 l2
-    (H : StronglySorted R l2) (Hsub : list.sublist l1 l2) :
+  Fact sublist_StronglySorted [A : Type] (R : A -> A -> Prop) [l1 l2]
+    (Hsub : list.sublist l1 l2) (H : StronglySorted R l2):
     StronglySorted R l1.
   Proof.
     induction Hsub as [ | x l1 l2 Hsub IHsub | x l1 l2 Hsub IHsub ]; intros.
@@ -119,44 +123,58 @@ Section Sublist_Additional_Lemmas.
       1: intuition.
       destruct H as (_ & H).
       rewrite -> List.Forall_forall in H |- *.
-      pose proof (sublist_In _ _ Hsub).
+      pose proof (sublist_In Hsub).
       firstorder.
     - apply StronglySorted_inv in H.
       intuition.
   Qed.
 
-End Sublist_Additional_Lemmas. 
+End Sublist_Additional_Lemmas.
 
-Lemma NoDup_concat [A : Type] (l : list (list A)) 
-  (H : (@List.NoDup A) (concat l)) : Forall (@List.NoDup A) l.
-Proof.
-  induction l as [ | xs l IH ].
-  - auto.
-  - simpl in H.
-    rewrite <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup in H.
-    destruct H as (H1 & _ & H2).
-    constructor; intuition.
-Qed.
+Section NoDup_Additional_Lemmas.
 
-Lemma NoDup_map_inj [A B : Type] (l : list A) 
-  (f : A -> B) (H : List.NoDup (map f l))
-  x y (Heq : f x = f y) (Hinx : In x l) (Hiny : In y l) : x = y.
-Proof.
-  apply base.elem_of_list_In, list.elem_of_Permutation in Hinx.
-  destruct Hinx as (l' & Hperm).
-  pose proof Hperm as Hperm_backup.
-  apply Permutation_map with (f:=f), Permutation_NoDup in Hperm.
-  2: assumption.
-  simpl in Hperm.
-  apply NoDup_cons_iff in Hperm.
-  eapply Permutation_in in Hperm_backup.
-  2: apply Hiny.
-  simpl in Hperm_backup.
-  destruct Hperm_backup as [ | Htmp ].
-  1: assumption.
-  apply in_map with (f:=f) in Htmp.
-  intuition congruence.
-Qed.
+  Fact NoDup_app_ [A : Type] (l l' : list A) :
+    NoDup (l ++ l') <->
+    NoDup l /\ (forall a : A, In a l -> In a l' -> False) /\ NoDup l'.
+  Proof.
+    (* adapted from stdpp *)
+    rewrite <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup.
+    repeat setoid_rewrite base.elem_of_list_In.
+    reflexivity.
+  Qed.
+
+  Lemma NoDup_concat [A : Type] [l : list (list A)] 
+    (H : (@List.NoDup A) (concat l)) : Forall (@List.NoDup A) l.
+  Proof.
+    induction l as [ | xs l IH ].
+    - auto.
+    - simpl in H.
+      rewrite NoDup_app_ in H.
+      destruct H as (H1 & _ & H2).
+      constructor; intuition.
+  Qed.
+
+  Lemma NoDup_map_inj [A B : Type] (f : A -> B) [l : list A]
+    (H : List.NoDup (map f l))
+    [x y] (Hinx : In x l) (Hiny : In y l) (Heq : f x = f y) : x = y.
+  Proof.
+    apply base.elem_of_list_In, list.elem_of_Permutation in Hinx.
+    destruct Hinx as (l' & Hperm).
+    pose proof Hperm as Hperm_backup.
+    apply Permutation_map with (f:=f), Permutation_NoDup in Hperm.
+    2: assumption.
+    simpl in Hperm.
+    apply NoDup_cons_iff in Hperm.
+    eapply Permutation_in in Hperm_backup.
+    2: apply Hiny.
+    simpl in Hperm_backup.
+    destruct Hperm_backup as [ | Htmp ].
+    1: assumption.
+    apply in_map with (f:=f) in Htmp.
+    intuition congruence.
+  Qed.
+
+End NoDup_Additional_Lemmas.
 
 Lemma split_map_fst_snd [A B : Type] (l : list (A * B)) :
   List.split l = (map fst l, map snd l).
@@ -224,25 +242,45 @@ Proof.
       firstorder.
 Qed.
 
-Fact Forall2_forall_exists_l [A B : Type] (P : A -> B -> Prop) l1 l2
-  (H : Forall2 P l1 l2) (x : A) (Hin : In x l1) :
-  exists y, In y l2 /\ P x y.
-Proof.
-  induction H as [ | x0 y0 l1 l2 Hp H IH ].
-  - inversion Hin.
-  - simpl in Hin |- *.
-    destruct Hin as [ -> | Hin ]; firstorder.
-Qed.
+Section Forall2_Additional_Lemmas. 
 
-Fact Forall2_forall_exists_r [A B : Type] (P : A -> B -> Prop) l1 l2
-  (H : Forall2 P l1 l2) (y : B) (Hin : In y l2) :
-  exists x, In x l1 /\ P x y.
-Proof.
-  induction H as [ | x0 y0 l1 l2 Hp H IH ].
-  - inversion Hin.
-  - simpl in Hin |- *.
-    destruct Hin as [ -> | Hin ]; firstorder.
-Qed.
+  Fact Forall2_forall_exists_l [A B : Type] (P : A -> B -> Prop) l1 l2
+    (H : Forall2 P l1 l2) (x : A) (Hin : In x l1) :
+    exists y, In y l2 /\ P x y.
+  Proof.
+    induction H as [ | x0 y0 l1 l2 Hp H IH ].
+    - inversion Hin.
+    - simpl in Hin |- *.
+      destruct Hin as [ -> | Hin ]; firstorder.
+  Qed.
+
+  Fact Forall2_forall_exists_r [A B : Type] (P : A -> B -> Prop) l1 l2
+    (H : Forall2 P l1 l2) (y : B) (Hin : In y l2) :
+    exists x, In x l1 /\ P x y.
+  Proof.
+    induction H as [ | x0 y0 l1 l2 Hp H IH ].
+    - inversion Hin.
+    - simpl in Hin |- *.
+      destruct Hin as [ -> | Hin ]; firstorder.
+  Qed.
+
+  Fact Forall2_and [A B : Type] (P Q : A -> B -> Prop) l1 l2 :
+    Forall2 P l1 l2 /\ Forall2 Q l1 l2 <-> Forall2 (fun a b => P a b /\ Q a b) l1 l2.
+  Proof.
+    split; [ intros (H & H0) | intros H ]; induction H; rewrite -> ? list.Forall2_cons in *; firstorder.
+  Qed.
+
+  Lemma Forall2_mapself_l [A B : Type] (f : A -> B) (P : B -> A -> Prop) l :
+    Forall2 P (map f l) l <-> Forall (fun x => P (f x) x) l.
+  Proof.
+    induction l as [ | x l IH ].
+    - intuition constructor.
+    - simpl.
+      rewrite -> list.Forall2_cons, -> Forall_cons_iff.
+      intuition.
+  Qed.
+
+End Forall2_Additional_Lemmas. 
 
 (* a simple swap of map and flat_map over In *)
 
@@ -319,17 +357,6 @@ Proof.
   - simpl.
     rewrite -> ! IH.
     now destruct (f x).
-Qed.
-
-Lemma Forall2_mapself_l [A B : Type] (f : A -> B) (l : list A)
-  (P : B -> A -> Prop) :
-  Forall2 P (map f l) l <-> Forall (fun x => P (f x) x) l.
-Proof.
-  induction l as [ | x l IH ].
-  - intuition constructor.
-  - simpl.
-    rewrite -> list.Forall2_cons, -> Forall_cons_iff.
-    intuition.
 Qed.
 
 Fact filter_all_true {A : Type} (f : A -> bool) (l : list A) 
@@ -565,11 +592,29 @@ Qed.
 Fact list_ifnil_destruct [A : Type] (l : list A) : {l = nil} + {l <> nil}.
 Proof. destruct l; [ now left | now right ]. Qed.
 
-Fact NoDup_app_ [A : Type] (l l' : list A) :
-  NoDup (l ++ l') <->
-  NoDup l /\ (forall a : A, In a l -> In a l' -> False) /\ NoDup l'.
-Proof.
-  rewrite <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup.
-  repeat setoid_rewrite base.elem_of_list_In.
-  reflexivity.
-Qed.
+Fact eqdec_must_left [A B : Type] (eqd : forall (a1 a2 : A), {a1 = a2} + {a1 <> a2}) [b1 b2 : B] (a : A) :
+  (if eqd a a then b1 else b2) = b1.
+Proof. destruct (eqd _ _); auto; try contradiction. Qed.
+
+Fact eqdec_must_right [A B : Type] (eqd : forall (a1 a2 : A), {a1 = a2} + {a1 <> a2}) [b1 b2 : B] [a1 a2 : A] (H : a1 <> a2) :
+  (if eqd a1 a2 then b1 else b2) = b2.
+Proof. destruct (eqd _ _); auto; try contradiction. Qed.
+
+Definition isSome [A : Type] (o : option A) : Prop :=
+  match o with Some _ => True | _ => False end.
+
+Global Arguments isSome [_] !_.
+
+(* although this can be defined with firstn and lastn, now use this anyway *)
+Fixpoint upd_nth [A : Type] (n : nat) (l : list A) (a : A) :=
+  match l with
+  | nil => nil
+  | x :: l' => match n with O => a :: l' | S n' => upd_nth n' l' a end
+  end.
+
+(*
+Fact upd_Znth_upd_nth [A : Type] n (l : list A) a (H : (n < length l)%nat):
+  upd_Znth (Z.of_nat n) l a = upd_nth n l a.
+*)
+
+
