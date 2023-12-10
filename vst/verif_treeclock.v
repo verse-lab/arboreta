@@ -3027,7 +3027,7 @@ Proof.
     unfold tc_getclk in Hlt_sub_getclk. intros EE. rewrite EE, tc_getnode_self in Hlt_sub_getclk. 
     assert (tc_getclk (tc_roottid tc) tc' = tc_rootclk sub).
     {
-      rewrite <- EE, <- (tc_rootinfo_tid_inj Esub_info), tc_getclk_viewchange, tid_nodup_find_self_sub; try assumption.
+      rewrite <- EE, <- (tc_rootinfo_tid_inj Esub_info), tc_getclk_as_fmap, tid_nodup_find_self_sub; try assumption.
       now apply tc_rootinfo_clk_inj.
     }
     lia.
@@ -3118,7 +3118,7 @@ Proof.
   replace (tc_getclk (tc_roottid sub) _) with (tc_getclk (tc_roottid sub) tc) in Eclk.
   2:{
     (* TODO ... *)
-    rewrite -> ! tc_getclk_viewchange.
+    rewrite -> ! tc_getclk_as_fmap.
     destruct (tc_getnode (tc_roottid sub) tc) as [[(?, ?, ?) ?] | ], 
       (tc_getnode (tc_roottid sub) (tc_join_partial tc pf)) as [[(?, ?, ?) ?] | ]; simpl in Egetsub |- *; congruence.
   }
