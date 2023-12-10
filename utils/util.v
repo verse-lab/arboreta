@@ -176,6 +176,66 @@ Section NoDup_Additional_Lemmas.
 
 End NoDup_Additional_Lemmas.
 
+Section Permutation_Additional_Lemmas.
+
+  Fact Permutation_partition [A : Type] (f : A -> bool) l :
+    Permutation l ((fst (partition f l)) ++ (snd (partition f l))).
+  Proof. 
+    induction l as [ | x l IH ].
+    - now simpl.
+    - simpl.
+      destruct (partition f l) as (l1, l2).
+      simpl in IH |- *.
+      destruct (f x); simpl.
+      + now constructor.
+      + rewrite <- Permutation_middle.
+        now constructor.
+  Qed.
+
+  Lemma Permutation_split_combine [A : Type] (f : A -> bool) (l : list A) :
+    Permutation l (filter f l ++ filter (fun a => negb (f a)) l).
+  Proof.
+    induction l as [ | a l IH ]; auto.
+    simpl.
+    destruct (f a) eqn:E; simpl.
+    - now apply perm_skip.
+    - etransitivity. 
+      1: apply perm_skip, IH.
+      now apply Permutation_middle.
+  Qed.  
+
+  Fact Permutation_in_mutual [A : Type] [l l' : list A] (H : Permutation l l') :
+    forall x, In x l <-> In x l'.
+  Proof.
+    intros; split.
+    2: symmetry in H.
+    all: now apply Permutation_in.
+  Qed.
+
+  Fact Permutation_Forall_flat_map [A B : Type] (f g : A -> list B) [l : list A]
+    (H : Forall (fun x => Permutation (f x) (g x)) l) :
+    Permutation (flat_map f l) (flat_map g l).
+  Proof.
+    induction l as [ | x l IH ]; simpl; auto.
+    rewrite -> Forall_cons_iff in H.
+    destruct H as (H1 & H2).
+    apply Permutation_app; auto.
+  Qed.
+
+  Fact Permutation_flat_map_innerapp_split [A B : Type] (f g : A -> list B) (l : list A) :
+    Permutation (flat_map (fun x => f x ++ g x) l) (flat_map f l ++ flat_map g l).
+  Proof.
+    induction l as [ | x l IH ]; simpl; auto.
+    etransitivity.
+    1: apply Permutation_app; [ reflexivity | apply IH ].
+    rewrite -> Permutation_app_swap_app.
+    etransitivity.
+    2: apply Permutation_app; [ apply Permutation_app_comm | reflexivity ].
+    now rewrite <- ! app_assoc.
+  Qed.
+
+End Permutation_Additional_Lemmas.
+
 Lemma split_map_fst_snd [A B : Type] (l : list (A * B)) :
   List.split l = (map fst l, map snd l).
 Proof.
@@ -244,8 +304,8 @@ Qed.
 
 Section Forall2_Additional_Lemmas. 
 
-  Fact Forall2_forall_exists_l [A B : Type] (P : A -> B -> Prop) l1 l2
-    (H : Forall2 P l1 l2) (x : A) (Hin : In x l1) :
+  Fact Forall2_forall_exists_l [A B : Type] [P : A -> B -> Prop] [l1 l2]
+    (H : Forall2 P l1 l2) [x : A] (Hin : In x l1) :
     exists y, In y l2 /\ P x y.
   Proof.
     induction H as [ | x0 y0 l1 l2 Hp H IH ].
@@ -254,8 +314,8 @@ Section Forall2_Additional_Lemmas.
       destruct Hin as [ -> | Hin ]; firstorder.
   Qed.
 
-  Fact Forall2_forall_exists_r [A B : Type] (P : A -> B -> Prop) l1 l2
-    (H : Forall2 P l1 l2) (y : B) (Hin : In y l2) :
+  Fact Forall2_forall_exists_r [A B : Type] [P : A -> B -> Prop] [l1 l2]
+    (H : Forall2 P l1 l2) [y : B] (Hin : In y l2) :
     exists x, In x l1 /\ P x y.
   Proof.
     induction H as [ | x0 y0 l1 l2 Hp H IH ].
@@ -296,20 +356,6 @@ Qed.
 Fact map_flat_map_In_conv [A B C : Type] (f : B -> C) (g : A -> list B) (l : list A) 
   (x : C) (y : A) (Hin : In y l) (Hin2 : In x (map f (g y))) : In x (map f (flat_map g l)).
 Proof. apply map_flat_map_In. eauto. Qed.
-
-Fact Permutation_partition [A : Type] (f : A -> bool) l :
-  Permutation l ((fst (partition f l)) ++ (snd (partition f l))).
-Proof. 
-  induction l as [ | x l IH ].
-  - now simpl.
-  - simpl.
-    destruct (partition f l) as (l1, l2).
-    simpl in IH |- *.
-    destruct (f x); simpl.
-    + now constructor.
-    + rewrite <- Permutation_middle.
-      now constructor.
-Qed.
 
 Fact in_flat_map_conv : forall [A B : Type] (f : A -> list B) (l : list A) (x : A) (y : B),
   In x l -> In y (f x) -> In y (flat_map f l).
@@ -373,18 +419,6 @@ Proof.
   induction l as [ | y l IH ]; simpl in *; auto.
   pose proof (H _ (or_introl eq_refl)) as ->.
   f_equal; auto.
-Qed.
-
-Lemma Permutation_split_combine {A : Type} (f : A -> bool) (l : list A) :
-  Permutation l (filter f l ++ filter (fun a => negb (f a)) l).
-Proof.
-  induction l as [ | a l IH ]; auto.
-  simpl.
-  destruct (f a) eqn:E; simpl.
-  - now apply perm_skip.
-  - etransitivity. 
-    1: apply perm_skip, IH.
-    now apply Permutation_middle.
 Qed.
 
 Fact split_app {A B : Type} (l1 l2 : list (A * B)) :
@@ -474,36 +508,6 @@ Proof.
     rewrite -> skipn_app, -> skipn_all2 at 1; try lia.
     replace (S _ - _) with 1 by lia.
     now simpl.
-Qed.
-
-Fact Permutation_in_mutual [A : Type] (l l' : list A) (H : Permutation l l') :
-  forall x, In x l <-> In x l'.
-Proof.
-  intros; split.
-  2: symmetry in H.
-  all: now apply Permutation_in.
-Qed.
-
-Fact Permutation_Forall_flat_map [A B : Type] (f g : A -> list B) (l : list A)
-  (H : Forall (fun x => Permutation (f x) (g x)) l) :
-  Permutation (flat_map f l) (flat_map g l).
-Proof.
-  induction l as [ | x l IH ]; simpl; auto.
-  rewrite -> Forall_cons_iff in H.
-  destruct H as (H1 & H2).
-  apply Permutation_app; auto.
-Qed.
-
-Fact Permutation_flat_map_innerapp_split [A B : Type] (f g : A -> list B) (l : list A) :
-  Permutation (flat_map (fun x => f x ++ g x) l) (flat_map f l ++ flat_map g l).
-Proof.
-  induction l as [ | x l IH ]; simpl; auto.
-  etransitivity.
-  1: apply Permutation_app; [ reflexivity | apply IH ].
-  rewrite -> Permutation_app_swap_app.
-  etransitivity.
-  2: apply Permutation_app; [ apply Permutation_app_comm | reflexivity ].
-  now rewrite <- ! app_assoc.
 Qed.
 
 Fact map_id_eq [A : Type] (l : list A) : map (fun x => x) l = l.
@@ -600,8 +604,11 @@ Fact eqdec_must_right [A B : Type] (eqd : forall (a1 a2 : A), {a1 = a2} + {a1 <>
   (if eqd a1 a2 then b1 else b2) = b2.
 Proof. destruct (eqd _ _); auto; try contradiction. Qed.
 
-Definition isSome [A : Type] (o : option A) : Prop :=
-  match o with Some _ => True | _ => False end.
+Fact contra_not [P Q : Prop] (H : P -> Q) : ~ Q -> ~ P.
+Proof. intuition. Qed.
+
+Definition isSome [A : Type] (o : option A) : bool :=
+  match o with Some _ => true | _ => false end.
 
 Global Arguments isSome [_] !_.
 

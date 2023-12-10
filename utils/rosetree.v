@@ -20,7 +20,7 @@ Local Ltac intuition_solver ::= auto. (* follow the modification in stdpp *)
 Local Tactic Notation "eqsolve" := 
   intuition congruence; intuition discriminate.
 
-Variable A : Type.
+Context {A : Type}.
 
 (* A rosetree is a node with some information of type A, and some rosetrees as children. *)
 
@@ -76,7 +76,7 @@ Section Tree_Height.
     - assumption.
   Qed.
 
-  Lemma tr_ind_2 (P : tree -> Prop)
+  Lemma tree_ind_2 (P : tree -> Prop)
     (Hind : forall (ni : A) (chn : list tree), Forall P chn -> P (Node ni chn)) : 
     forall (tr : tree), P tr.
   Proof.
@@ -108,7 +108,7 @@ Section Tree_Equality.
 
   Lemma tr_eqP tr : forall tr', tr_eqb tr tr' = true <-> tr = tr'.
   Proof.
-    induction tr as [ni chn IH] using tr_ind_2; intros [ni' chn']; simpl.
+    induction tr as [ni chn IH] using tree_ind_2; intros [ni' chn']; simpl.
     destruct (eqdec ni ni') as [ <- | Hnineq ], (Nat.eq_dec (length chn) (length chn')) as [ El | Hlneq ].
     all: try eqsolve.
     rewrite -> forallb_forall, <- Forall_forall.
@@ -164,7 +164,7 @@ Section Core_Auxiliary_Functions.
   Fact tr_height_else_lt tr :
     Forall (fun tr' => tr_height tr' < tr_height tr) (flat_map tr_flatten (tr_rootchn tr)).
   Proof.
-    induction tr as [ni chn IH] using tr_ind_2; intros.
+    induction tr as [ni chn IH] using tree_ind_2; intros.
     rewrite -> List.Forall_forall in IH |- *.
     simpl.
     intros sub ([ni_ch chn_ch] & Hin_ch & Hin)%in_flat_map.
@@ -269,7 +269,7 @@ Section Tree_Size.
   Fact tr_size_subtr_le_full [tr] : forall [sub] (H : In sub (tr_flatten tr)), 
     tr_size sub <= tr_size tr.
   Proof.
-    induction tr as [ni chn IH] using tr_ind_2; intros; simpl in H |- *.
+    induction tr as [ni chn IH] using tree_ind_2; intros; simpl in H |- *.
     destruct H as [ <- | (ch & Hin_ch & H)%in_flat_map ]; simpl.
     1: constructor.
     transitivity (tr_size ch).
@@ -301,7 +301,7 @@ Section Subtree_Theory.
   Lemma subtr_trans [tr tr' tr''] : subtr tr'' tr' -> subtr tr' tr -> subtr tr'' tr.
   Proof.
     revert tr'' tr'.
-    induction tr as [ni chn IH] using tr_ind_2; intros.
+    induction tr as [ni chn IH] using tree_ind_2; intros.
     simpl in H, H0. 
     destruct H0 as [ <- | (ch & Hin_ch & H0)%in_flat_map ]; auto.
     rewrite -> Forall_forall in IH. 
@@ -331,7 +331,7 @@ Section Subtree_Theory.
   Lemma subtr_subtr_witness [tr] :
     forall [sub], subtr sub tr -> exists l, subtr_witness l sub tr.
   Proof.
-    induction tr as [ni chn IH] using tr_ind_2; intros.
+    induction tr as [ni chn IH] using tree_ind_2; intros.
     simpl in H. 
     destruct H as [ <- | (ch & Hin_ch & Hin)%in_flat_map ].
     - now exists nil.
@@ -350,6 +350,22 @@ Section Subtree_Theory.
     split; intros.
     - now apply subtr_subtr_witness in H.
     - destruct H as (l & H). now apply subtr_witness_subtr in H.
+  Qed.
+
+  (* if sub has a parent and its parent is a subtree of tr, then sub must be a subtree of a child of tr *)
+  Fact subtr_has_par [sub_par sub tr] (Hsub : subtr sub_par tr) (Hin : In sub (tr_rootchn sub_par)) :
+    exists ch, In ch (tr_rootchn tr) /\ subtr sub ch.
+  Proof.
+    destruct tr as [ni chn]; simpl.
+    simpl in Hsub.
+    destruct Hsub as [ <- | (ch & Hin_ch & Hsub)%in_flat_map ].
+    - exists sub.
+      auto using tr_flatten_self_in.
+    - exists ch.
+      split; auto.
+      eapply subtr_trans.
+      + apply subtr_chn, Hin.
+      + assumption.
   Qed.
 
 End Subtree_Theory.
@@ -386,7 +402,7 @@ Section Forall_Tree_Theory.
   Lemma Foralltr_Forall_subtree (P : tree -> Prop) tr :
     Foralltr P tr <-> Forall P (tr_flatten tr).
   Proof.
-    induction tr as [ni chn IH] using tr_ind_2; intros.
+    induction tr as [ni chn IH] using tree_ind_2; intros.
     simpl.
     rewrite -> ! Foralltr_cons_iff, List.Forall_cons_iff, -> ! List.Forall_forall.
     setoid_rewrite in_flat_map.
@@ -401,7 +417,7 @@ Section Forall_Tree_Theory.
   Lemma Foralltr_impl_pre (P Q : tree -> Prop) [tr] 
     (Hf : Foralltr (fun tr' => P tr' -> Q tr') tr) (H : Foralltr P tr) : Foralltr Q tr.
   Proof.
-    induction tr as [ni chn IH] using tr_ind_2; intros.
+    induction tr as [ni chn IH] using tree_ind_2; intros.
     rewrite -> Foralltr_cons_iff in Hf, H |- *.
     destruct H as (H & H0), Hf as (Hf & Hf0).
     rewrite -> Forall_forall in *. 
@@ -415,7 +431,7 @@ Section Forall_Tree_Theory.
   Lemma Foralltr_Forall_chn_comm P tr : 
     Foralltr (fun tr' => Forall P (tr_rootchn tr')) tr <-> Forall (Foralltr P) (tr_rootchn tr).
   Proof.
-    induction tr as [ni chn IH] using tr_ind_2; intros.
+    induction tr as [ni chn IH] using tree_ind_2; intros.
     rewrite -> Foralltr_cons_iff at 1. simpl.
     rewrite <- list.Forall_and. 
     repeat rewrite -> List.Forall_forall in *.
@@ -426,7 +442,7 @@ Section Forall_Tree_Theory.
   Lemma Foralltr_and (P Q : tree -> Prop) tr :
     Foralltr (fun tr => P tr /\ Q tr) tr <-> Foralltr P tr /\ Foralltr Q tr.
   Proof.
-    induction tr as [ni chn IH] using tr_ind_2; intros.
+    induction tr as [ni chn IH] using tree_ind_2; intros.
     rewrite -> ! Foralltr_cons_iff, -> ! List.Forall_forall.
     rewrite -> List.Forall_forall in IH.
     firstorder.
@@ -435,7 +451,7 @@ Section Forall_Tree_Theory.
   Lemma Foralltr_idempotent (P : tree -> Prop) tr :
     Foralltr (Foralltr P) tr <-> Foralltr P tr.
   Proof.
-    induction tr as [ni chn IH] using tr_ind_2; intros.
+    induction tr as [ni chn IH] using tree_ind_2; intros.
     rewrite -> ! Foralltr_cons_iff, -> ! List.Forall_forall.
     rewrite -> List.Forall_forall in IH.
     firstorder.
@@ -466,12 +482,11 @@ Section Tree_Prefix_Theory.
     (Hind : forall (ni : A) (chn1 chn2_sub chn2 : list tree), 
       list.sublist chn2_sub chn2 ->
       Forall2 prefixtr chn1 chn2_sub -> 
-      Forall2 P chn1 chn2_sub -> P (Node ni chn1) (Node ni chn2)) : 
-    forall [tr1 tr2 : tree], prefixtr tr1 tr2 -> P tr1 tr2.
+      Forall2 P chn1 chn2_sub -> P (Node ni chn1) (Node ni chn2))
+    (tr1 tr2 : tree) (H : prefixtr tr1 tr2) : P tr1 tr2.
   Proof.
-    intros.
     revert tr2 H.
-    induction tr1 as [ni chn1 IH] using tr_ind_2; intros.
+    induction tr1 as [ni chn1 IH] using tree_ind_2; intros.
     destruct tr2 as [ni2 chn2].
     apply prefixtr_inv in H.
     destruct H as (<- & (chn2_sub & Hsub & H)).
@@ -495,7 +510,7 @@ Section Tree_Prefix_Theory.
   Proof.
     hnf.
     intros tr.
-    induction tr as [ni chn IH] using tr_ind_2; intros.
+    induction tr as [ni chn IH] using tree_ind_2; intros.
     econstructor.
     1: reflexivity.
     now apply list.Forall_Forall2_diag.
@@ -631,8 +646,7 @@ End Tree_Prefix_Theory.
 
 (* Now we start to consider trees with (decidable) indices. *)
 
-Variables (B : Type).
-Context `{B_getter : IdGetter A B}.
+Context {B : Type} `{B_getter : IdGetter A B}.
 
 Definition tr_rootid tr := info_id (tr_rootinfo tr).
 
@@ -640,6 +654,19 @@ Global Arguments tr_rootid !_ /.
 
 Fact tr_rootinfo_id_inj : forall [x y], tr_rootinfo x = tr_rootinfo y -> tr_rootid x = tr_rootid y.
 Proof. intros [ni ?] [ni' ?]. unfold tr_rootid. now intros ->. Qed.
+
+Fact prefixtr_rootid_same [tr tr'] (Hprefix : prefixtr tr tr') :
+  tr_rootid tr = tr_rootid tr'.
+Proof. unfold tr_rootid. erewrite prefixtr_rootinfo_same; eauto. Qed.
+
+Fact Permutation_rootinfo2rootid [trs1 trs2]
+  (H : Permutation (map tr_rootinfo trs1) (map tr_rootinfo trs2)) :
+  Permutation (map tr_rootid trs1) (map tr_rootid trs2).
+Proof.
+  unfold tr_rootid.
+  rewrite <- ! (map_map tr_rootinfo info_id).
+  now apply Permutation_map.
+Qed.
 
 Section NoDup_Indices_Theory.
 
@@ -669,7 +696,7 @@ Section NoDup_Indices_Theory.
 
   Lemma id_nodup_Foralltr_id tr : tr_NoDupId tr <-> Foralltr tr_NoDupId tr.
   Proof.
-    induction tr as [ni chn IH] using tr_ind_2; intros.
+    induction tr as [ni chn IH] using tree_ind_2; intros.
     rewrite -> Foralltr_cons_iff.
     split; [ | intuition ].
     intros H.
@@ -749,7 +776,7 @@ Section Tree_Find.
   Qed.
 
   Fact trs_find_in_iff t trs : 
-    In t (map tr_rootid trs) <-> isSome (find (has_same_id t) trs).
+    In t (map tr_rootid trs) <-> isSome (find (has_same_id t) trs) = true.
   Proof.
     rewrite -> in_map_iff.
     split.
@@ -760,7 +787,7 @@ Section Tree_Find.
       2: apply Hin.
       now rewrite -> has_same_id_false in E.
     - destruct (find (has_same_id t) trs) as [ res | ] eqn:E.
-      2: intros; contradiction.
+      2: intros; discriminate.
       intros _.
       apply trs_find_has_id in E.
       destruct E.
@@ -768,15 +795,14 @@ Section Tree_Find.
   Qed.
 
   Fact tr_getnode_in_iff t tr : 
-    In t (map tr_rootid (tr_flatten tr)) <-> isSome (tr_getnode t tr).
+    In t (map tr_rootid (tr_flatten tr)) <-> isSome (tr_getnode t tr) = true.
   Proof. apply trs_find_in_iff. Qed.
 
   Fact tr_getnode_res_Foralltr (P : tree -> Prop) [t tr res]
     (Hp : Foralltr P tr) (Hres : tr_getnode t tr = Some res) : 
     P res /\ tr_rootid res = t.
   Proof.
-    apply find_some in Hres.
-    rewrite -> has_same_id_true in Hres.
+    apply trs_find_has_id in Hres.
     destruct Hres as (Hin & ->).
     rewrite -> Foralltr_Forall_subtree, -> Forall_forall in Hp.
     firstorder. 
@@ -805,6 +831,45 @@ Section Tree_Find.
   Qed.
 
   (* fully parameterized; B' can be regarded as the type of a portion of information *)
+  (* FIXME: is this related with fmap, or something else about category theory? *)
+  Corollary id_nodup_find_congr_fmap [B' : Type] (g : tree -> B') (h : B' -> B)
+    (Hh : forall tr, h (g tr) = tr_rootid tr)
+    [trs trs'] (Hnodup : trs_roots_NoDupId trs) (Hperm : Permutation (map g trs) (map g trs')) :
+    forall t, base.fmap g (find (has_same_id t) trs) = base.fmap g (find (has_same_id t) trs').
+  Proof.
+    unfold trs_roots_NoDupId in Hnodup.
+    pose proof Hnodup as Hnodup1.
+    rewrite -> map_ext with (g:=fun x => h (g x)), <- map_map in Hnodup1; auto.
+    apply NoDup_map_inv in Hnodup1.
+    pose proof Hnodup1 as Hnodup2.
+    eapply Permutation_NoDup in Hnodup2.
+    2: apply Hperm.
+    pose proof Hperm as Hperm'%(Permutation_map h).
+    rewrite -> 2 map_map, -> 2 (map_ext (fun x : tree => h (g x)) tr_rootid) in Hperm'; auto.
+    pose proof Hnodup as Hnodup'.
+    eapply Permutation_NoDup in Hnodup'.
+    2: apply Hperm'.
+
+    intros t.
+    pose proof (Permutation_in_mutual Hperm' t) as Hin.
+    rewrite -> ! trs_find_in_iff in Hin.
+    (* unfold tc_getclk. *)
+    destruct (find (has_same_id t) trs) as [ res | ] eqn:Eres.
+    all: destruct (find (has_same_id t) trs') as [ res' | ] eqn:Eres';
+      try solve [ simpl in Hin; eqsolve ].
+    simpl.
+    f_equal.
+    (* use NoDup_map_inj *)
+    apply trs_find_has_id in Eres, Eres'.
+    destruct Eres as (Hsub%(in_map g) & Et), Eres' as (Hsub'%(in_map g) & Et').
+    eapply Permutation_in in Hsub.
+    2: apply Hperm.
+    eapply NoDup_map_inj with (l:=(map g trs')) (f:=h); auto.
+    - rewrite -> map_map, -> (map_ext _ tr_rootid); auto.
+    - rewrite ! Hh.
+      congruence.
+  Qed.
+
   Corollary id_nodup_find_self_fmap [C B' : Type] (f : B' -> C) (g : tree -> B') (h : B' -> B)
     (Hh : forall tr, h (g tr) = tr_rootid tr)
     [trs] (Hnodup : trs_roots_NoDupId trs) 
@@ -829,8 +894,6 @@ Section Tree_Find.
     apply Hnodup.
   Qed.
 
-  (* TODO still need a counterpart of "tc_getclk_perm_congr_pre" *)
-
 End Tree_Find.
 
 Section Tree_Locate_Update.
@@ -846,3 +909,5 @@ Section Reversed_Preorder_Traversal_Theory.
 End Reversed_Preorder_Traversal_Theory.
 
 End RoseTree.
+
+Global Arguments tree : clear implicits.
