@@ -4,6 +4,8 @@ Tests are done here.
 
 This directory is messy; many things were added on a temporary basis. 
 
+**Note**: before going through, please first install `cyaron` for Python3, and install `dune` using `opam`. 
+
 ## Organization
 
 ### Coq & OCaml Part
