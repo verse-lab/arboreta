@@ -30,7 +30,31 @@ Instance EqDec_nodeinfo : EqDec nodeinfo := nodeinfo_eqdec.
 
 Instance nodeinfo_IdGetter : IdGetter nodeinfo thread := info_tid.
 
-Definition treeclock := tree nodeinfo.
+(*
+  Currently, define "treeclock" as a notation instead of a definition. 
+  The reason is that if "treeclock" is an alias of "tree nodeinfo", 
+    then sometimes unification (including rewriting/destructing/...) will
+    fail, since the type inference will usually return "tree nodeinfo", but
+    "treeclock" is not syntactically equivalent to "tree nodeinfo". 
+
+  The line containing "rewrite <- (map_ext_Forall _ _ IH)." is an example. 
+  One may "Set Printing All" to see the "tree nodeinfo" inside 
+    "(map_ext_Forall _ _ IH)" clear. 
+
+  There are several possible ways to work around this: 
+  (1) use "setoid_rewrite" whenever possible; 
+  (2) use the variant of "rewrite" in mathcomp; 
+  (3) "Set Keyed Unification" (suggested in https://github.com/coq/coq/issues/16786); 
+  (4) ...
+
+  However, at this stage, possibly the most convenient solution is to
+    force this alias not to be a definition. 
+
+  FIXME: for now, there are several issues reporting the problem on Github. 
+    See if this problem will be addressed in the future. 
+*)
+
+Local Notation treeclock := (tree nodeinfo).
 
 Definition tc_init t : treeclock := Node (mkInfo t 0 0) nil.
 
@@ -1249,7 +1273,7 @@ Proof.
   simpl.
   f_equal.
   subst.
-  setoid_rewrite <- (map_ext_Forall _ _ IH). (* TODO why need setoid_rewrite here? *)
+  rewrite <- (map_ext_Forall _ _ IH).
 
   (* local induction to avoid too much manipulation *)
   clear Edetach1 Edetach2 Edetach ni IH. 
@@ -1259,12 +1283,11 @@ Proof.
   rewrite ! (prefixtr_rootid_same (Hpf2 _)).
   rewrite ! (prefixtr_rootid_same (Hpf1 _)).
   rewrite find_app.
-  destruct (find (has_same_id (tr_rootid ch)) tcs1) as [ res1 | ] eqn:E1 in |- *; setoid_rewrite E1; simpl.
-  (* TODO why need setoid_rewrite here? *)
+  destruct (find (has_same_id (tr_rootid ch)) tcs1) as [ res1 | ] eqn:E1 in |- *; simpl.
   - apply IH.
   - rewrite ! (prefixtr_rootid_same (Hpf2 _)).
     rewrite ! (prefixtr_rootid_same (Hpf1 _)).
-    destruct (find (has_same_id (tr_rootid ch)) tcs2) as [ res2 | ] eqn:E2; setoid_rewrite E2; simpl.
+    destruct (find (has_same_id (tr_rootid ch)) tcs2) as [ res2 | ] eqn:E2; simpl.
     + apply IH.
     + f_equal; apply IH.
 Qed.
@@ -1297,8 +1320,8 @@ Proof.
     eapply Permutation_trans with (l:=al) (l':=bl) in Hperm end.
   2: apply Permutation_app; [ | reflexivity ].
   2: apply Permutation_flat_map, Permutation_split_combine.
-  setoid_rewrite -> Eres1' in Hperm.
-  setoid_rewrite -> Enew_chn1' in Hperm. (* TODO why need setoid_rewrite here? *)
+  rewrite -> Eres1' in Hperm.
+  rewrite -> Enew_chn1' in Hperm.
   rewrite -> flat_map_app, -> 2 flat_map_concat_map, -> Eres2 in Hperm.
   rewrite <- map_map with (g:=snd), <- flat_map_concat_map in Hperm.
 
@@ -1323,11 +1346,7 @@ Proof.
   rewrite ! map_app, flat_map_app.
   match type of Hperm with Permutation _ ?al =>
     transitivity (al ++ (res2' ++ map fst (map (tc_detach_nodes tcs2) res1'))) end.
-  2:{
-    apply Permutation_count_occ with (eq_dec:=tr_eqdec).
-    intros. repeat setoid_rewrite count_occ_app with (eq_dec:=tr_eqdec). (* TODO why need setoid_rewrite here? *)
-    lia.
-  }
+  2: list.solve_Permutation.
   apply Permutation_app; auto.
 
   subst.
@@ -1346,13 +1365,10 @@ Proof.
   end.
   induction chn as [ | ch chn IH ]; simpl; auto.
   rewrite find_app.
-  (* BOOM! *)
   destruct (find (has_same_id (tr_rootid ch)) tcs1) as [ res1 | ] eqn:E1, 
     (find (has_same_id (tr_rootid ch)) tcs2) as [ res2 | ] eqn:E2; 
     simpl; try rewrite E1; try rewrite E2; simpl; try rewrite IH.
-  all: apply Permutation_count_occ with (eq_dec:=tr_eqdec).
-  all: intros; simpl; repeat setoid_rewrite count_occ_app with (eq_dec:=tr_eqdec); simpl.
-  all: destruct (tr_eqdec ch x); simpl; try lia.
+  all: list.solve_Permutation.
 Qed.
 
 (* a niche case *)
@@ -1391,18 +1407,18 @@ Proof.
   simpl.
   constructor.
   rewrite -> flat_map_app, -> ! map_app.
-  (* FIXME: perm solver *)
   etransitivity.
   2:{
     rewrite -> Permutation_app_comm, <- app_assoc, <- map_app, <- flat_map_app.
-    apply Permutation_app_head, Permutation_map, Permutation_flat_map.
+    apply Permutation_app_head.
     match type of Epar with partition ?f ?l = (?a, ?b) => 
       replace a with (fst (partition f l)) by (rewrite -> Epar; now simpl);
       replace b with (snd (partition f l)) by (rewrite -> Epar; now simpl)
     end.
-    apply Permutation_partition.
+    rewrite <- Permutation_partition.
+    reflexivity.
   }
-  (* seems a local induction is needed *)
+  (* TODO seems a local induction is needed? *)
   clear -chn IH Enew_chn Eres.
   revert new_chn forest IH Enew_chn Eres.
   induction chn as [ | ch chn IH2 ]; intros.
@@ -1412,22 +1428,8 @@ Proof.
     destruct IH as (HH & IH).
     specialize (IH2 _ _ IH eq_refl eq_refl).
     simpl.
-    (* TODO this seems to be quite straightforward, but hard to deal with in Coq! *)
-    rewrite -> flat_map_app.
-    rewrite -> ! map_app.
-    match goal with |- Permutation _ ((?a ++ ?b) ++ (?c ++ ?d)) => 
-      transitivity ((c ++ a) ++ (b ++ d)) end.
-    2:{
-      match goal with |- Permutation _ ((?a ++ ?b) ++ (?c ++ ?d)) => 
-        remember a as la; remember b as lb; remember c as lc; remember d as ld end.
-      rewrite -> ! app_assoc with (n:=ld).
-      apply Permutation_app_tail.
-      rewrite <- 2 app_assoc.
-      apply Permutation_app_rot.
-    }
-    apply Permutation_app.
-    + now rewrite <- map_app.
-    + assumption.
+    rewrite -> flat_map_app, -> ! map_app, -> IH2, -> HH, -> map_app.
+    list.solve_Permutation.
 Qed.
 
 Corollary tc_detach_nodes_intact_pre tcs tc :
@@ -1437,7 +1439,7 @@ Proof.
   destruct (tc_detach_nodes tcs tc) as (pivot, forest) eqn:E.
   simpl.
   intros ->.
-  apply prefixtc_size_eq_tc_eq.
+  apply prefixtr_size_eq_tr_eq.
   1: eapply eq_ind_r with (y:=pivot); [ apply tc_detach_nodes_fst_is_prefix | ]; now rewrite E.
   pose proof (tc_detach_nodes_dom_partition tcs tc) as Hperm.
   rewrite E, app_nil_r in Hperm.
@@ -1478,7 +1480,7 @@ Proof.
   rewrite -> map_app.
   apply Permutation_app_head. 
   rewrite <- map_app.
-  now apply Permutation_map, tc_flatten_root_chn_split.
+  now apply Permutation_map, tr_flatten_root_chn_split.
 Qed.
 
 Corollary tc_detach_nodes_tid_nodup tcs tc 
@@ -1489,7 +1491,7 @@ Corollary tc_detach_nodes_tid_nodup tcs tc
     In t (map tr_rootid (flat_map tr_flatten (snd (tc_detach_nodes tcs tc)))) -> False) /\
   NoDup (map tr_rootid (tr_flatten (fst (tc_detach_nodes tcs tc)))).
 Proof.
-  pose proof (tc_detach_nodes_dom_partition tcs tc) as Hperm%Permutation_rootinfo2roottid.
+  pose proof (tc_detach_nodes_dom_partition tcs tc) as Hperm%Permutation_rootinfo2rootid.
   pose proof (Permutation_NoDup Hperm Hnodup) as Htmp.
   rewrite -> map_app, <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup in Htmp.
   repeat setoid_rewrite -> base.elem_of_list_In in Htmp.
@@ -1499,7 +1501,7 @@ Qed.
 (* there will not be any tid in tcs that is also inside the pivot tree *)
 
 Lemma tc_detach_nodes_dom_excl tcs tc :
-  forall t (Htarg : find (has_same_id t) tcs)
+  forall t (Htarg : isSome (find (has_same_id t) tcs) = true)
   res (Hin : In res (tr_flatten (fst (tc_detach_nodes tcs tc)))) (Et : tr_rootid res = t),
   res = (fst (tc_detach_nodes tcs tc)).
 Proof.
@@ -1525,21 +1527,21 @@ Proof.
 Qed.
 
 (* FIXME: use this alternative version to replace/optimize the original version? *)
-Corollary tc_detach_nodes_dom_excl' tcs tc t (Htarg : find (has_same_id t) tcs) :
+Corollary tc_detach_nodes_dom_excl' tcs tc t (Htarg : isSome (find (has_same_id t) tcs) = true) :
   ~ In t (map tr_rootid (flat_map tr_flatten (tr_rootchn (fst (tc_detach_nodes tcs tc))))).
 Proof.
   destruct (fst (tc_detach_nodes tcs tc)) as [ni chn] eqn:E.
   simpl.
   intros (ch & Hin_ch & (res & Eid & H)%in_map_iff)%map_flat_map_In.
   apply tc_detach_nodes_dom_excl with (res:=res) (tc:=tc) in Htarg; try assumption.
-  2: rewrite E; apply subtr_trans with (tc':=ch); [ assumption | apply subtr_chn; now simpl ].
+  2: rewrite E; apply subtr_trans with (tr':=ch); [ assumption | apply subtr_chn; now simpl ].
   (* contradiction *)
-  apply self_not_in_tc_flatten_chn with (ni:=ni) (chn:=chn), in_flat_map.
+  apply self_not_in_tr_flatten_chn with (tr:=Node ni chn), in_flat_map.
   rewrite Htarg, E in H.
   eauto.
 Qed.
 
-Corollary tc_detach_nodes_dom_excl'' tcs tc t (Htarg : find (has_same_id t) tcs) :
+Corollary tc_detach_nodes_dom_excl'' tcs tc t (Htarg : isSome (find (has_same_id t) tcs) = true) :
   ~ In t (map tr_rootid (flat_map tr_flatten (flat_map tr_rootchn (snd (tc_detach_nodes tcs tc))))).
 Proof.
   intros (ch & (sub & Hpick & Hin_ch)%in_flat_map & Hin_sub)%map_flat_map_In.
@@ -2184,7 +2186,7 @@ Proof.
   (* TODO still needs some preparation when using tc_attach_nodes_dom_info *)
   pose proof (tc_attach_nodes_dom_info _ _ Hnodup Hnodup') as Hperm.
   rewrite <- map_app in Hperm.
-  apply Permutation_rootinfo2roottid in Hperm.
+  apply Permutation_rootinfo2rootid in Hperm.
   eapply Permutation_NoDup. 
   1: symmetry; apply Hperm. 
   rewrite -> map_app.
@@ -2735,7 +2737,7 @@ Section TC_Join_Partial.
   Proof.
     pose proof tc_join_partial_dom_info as Hperm.
     rewrite <- map_app in Hperm.
-    apply Permutation_rootinfo2roottid in Hperm.
+    apply Permutation_rootinfo2rootid in Hperm.
     etransitivity; [ apply Hperm | ].
     rewrite -> map_app.
     apply Permutation_app_head.
@@ -2778,7 +2780,7 @@ Section TC_Join_Partial.
   Proof.
     pose proof (tc_attach_nodes_dom_info _ _ Hnodup Hnodup') as Hperm.
     rewrite <- map_app in Hperm.
-    apply Permutation_rootinfo2roottid in Hperm.
+    apply Permutation_rootinfo2rootid in Hperm.
     rewrite -> map_app in Hperm.
     etransitivity; [ apply tc_join_partial_dom_tid; auto | ].
     now apply Permutation_app_head.
