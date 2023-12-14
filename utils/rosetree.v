@@ -5,13 +5,13 @@ From stdpp Require list.
 
 (* Use some typeclasses to insert default arguments. *)
 
-Class EqDec (A : Type) := {
-  eqdec : forall (x y : A), {x = y} + {x <> y}
-}.
+Class EqDec (A : Type) :=
+  eqdec : forall (x y : A), {x = y} + {x <> y}.
 
-Class IdGetter (A B : Type) := {
-  info_id : A -> B
-}.
+Class IdGetter (A B : Type) := 
+  info_id : A -> B.
+
+Global Arguments info_id {_ _ _} !_ /.
 
 Section RoseTree.
 
@@ -591,55 +591,27 @@ Section Tree_Prefix_Theory.
   (* A interesting property of prefix is that if the size of a prefix is equal to 
     the original tree, then the prefix is exactly the original tree. *)
 
-  (* TODO optimize this proof? *)
-
   Lemma prefixtr_size_eq_tr_eq [tr1 tr2] (Hprefix : prefixtr tr1 tr2) 
     (H : length (tr_flatten tr1) = length (tr_flatten tr2)) : tr1 = tr2.
   Proof.
     induction Hprefix as [ni chn1 chn2_sub chn2 Hsub Hprefix IH] using prefixtr_ind_2.
-    simpl in H.
     injection H as H.
     f_equal; clear ni.
     pose proof Hprefix as Hple.
     eapply list.Forall2_impl in Hple.
     2: apply prefixtr_size_le.
-    assert (length (flat_map tr_flatten chn1) <= length (flat_map tr_flatten chn2_sub)) as H1.
-    {
-      rewrite -> ! flat_map_concat_map.
-      eapply length_concat_le, list.Forall2_fmap_2.
-      assumption.
-    }
-    pose proof (length_concat_sum (map tr_flatten chn2_sub)) as E'.
-    pose proof (length_concat_sum (map tr_flatten chn2)) as E.
-    rewrite <- ! flat_map_concat_map in E, E'.
+    pose proof Hple as Hple'%Forall2_map.
+    pose proof Hple' as Hle1%pointwise_le_sum_le.
     pose proof Hsub as H2.
     apply sublist_map with (f:=fun t => length (tr_flatten t)), sublist_sum_le in H2.
+    rewrite -> 2 flat_map_concat_map, -> 2 length_concat_sum, -> 2 map_map in H.
     assert (chn2_sub = chn2) as ->.
     {
       apply sublist_map_sum_eq_ with (f:=fun t => length (tr_flatten t)); auto.
       - intros [? ?]; simpl; lia.
-      - rewrite -> map_map in E, E'; lia.
+      - lia.
     }
-    clear -H Hprefix Hple IH.
-    induction Hprefix as [ | ch1 ch2 chn1 chn2 Hp Hprefix ]; try reflexivity.
-    simpl in H.
-    rewrite -> ! app_length in H.
-    rewrite -> list.Forall2_cons in IH, Hple.
-    destruct Hple as (Hp1 & Hp2).
-    assert (length (flat_map tr_flatten chn1) <= length (flat_map tr_flatten chn2)) as H1.
-    {
-      rewrite -> ! flat_map_concat_map.
-      eapply length_concat_le, list.Forall2_fmap_2.
-      assumption.
-    }
-    destruct (Nat.leb (length (tr_flatten ch2)) (length (tr_flatten ch1))) eqn:E.
-    - apply Nat.leb_le in E.
-      f_equal.
-      + apply IH.
-        lia.
-      + apply IHHprefix; intuition; lia.
-    - apply Nat.leb_gt in E.
-      lia.
+    eapply pointwise_le_sum_le_; eauto.
   Qed.
 
 End Tree_Prefix_Theory.
@@ -911,3 +883,7 @@ End Reversed_Preorder_Traversal_Theory.
 End RoseTree.
 
 Global Arguments tree : clear implicits.
+
+(* need some tweak, otherwise will need to put @ before when doing induction, or
+    face the "Not the right number of induction arguments" error *)
+Global Arguments prefixtr_ind_2 [_].

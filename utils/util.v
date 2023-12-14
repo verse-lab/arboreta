@@ -44,6 +44,11 @@ Proof.
 Qed.
 *)
 
+Section Begin.
+
+(* Sometimes using auto with * is affordable. *)
+Local Ltac intuition_solver ::= auto with *.
+
 (* Some additional lemmas about the "sublist" predicate in stdpp. Mostly for adaptation. *)
 
 Section Sublist_Additional_Lemmas.
@@ -340,6 +345,24 @@ Section Forall2_Additional_Lemmas.
       intuition.
   Qed.
 
+  Lemma Forall2_map [A B C D : Type] (f : A -> B) (g : C -> D) (P : B -> D -> Prop) l1 l2 :
+    Forall2 (fun a c => P (f a) (g c)) l1 l2 <->
+    Forall2 P (map f l1) (map g l2).
+  Proof.
+    split; intros H.
+    - induction H; simpl in *; rewrite -> ? list.Forall2_cons in *; firstorder.
+    - remember (map f l1) as l1' eqn:E1.
+      remember (map g l2) as l2' eqn:E2.
+      revert l1 l2 E1 E2.
+      induction H; intros ?? ?%eq_sym ?%eq_sym.
+      + apply map_eq_nil in E1, E2.
+        now subst.
+      + destruct l1 as [ | x' l1 ], l2 as [ | y' l2 ].
+        all: simpl in E1, E2; try discriminate; injection E1 as <-; injection E2 as <-.
+        subst.
+        constructor; auto.
+  Qed.
+
 End Forall2_Additional_Lemmas. 
 
 (* a simple swap of map and flat_map over In *)
@@ -433,11 +456,48 @@ Proof.
     now destruct (List.split l1), (List.split l2).
 Qed.
 
+Fact map_id_eq [A : Type] (l : list A) : map id l = l.
+Proof. induction l; simpl; congruence. Qed.
+
 (* only pose some simple things *)
 
-Fact pointwise_le_sum_le (l1 l2 : list nat) (H : Forall2 Nat.le l1 l2) :
+Fact pointwise_le_sum_le [l1 l2 : list nat] (H : Forall2 Nat.le l1 l2) :
   fold_right Nat.add 0%nat l1 <= fold_right Nat.add 0%nat l2.
 Proof. induction H; intros; simpl; try reflexivity. lia. Qed.
+
+Fact pointwise_le_sum_le_ [A : Type] [l1 l2 : list A] 
+  (f : A -> nat) (H : Forall2 Nat.le (map f l1) (map f l2)) 
+  (IH : Forall2 (fun a1 a2 => f a1 = f a2 -> a1 = a2) l1 l2)
+  (H0 : fold_right Nat.add 0%nat (map f l1) = fold_right Nat.add 0%nat (map f l2)) : 
+  l1 = l2.
+Proof.
+  remember (map f l1) as l1' eqn:E1.
+  remember (map f l2) as l2' eqn:E2.
+  revert l1 l2 E1 E2 IH.
+  induction H; intros ?? ?%eq_sym ?%eq_sym ?.
+  - apply map_eq_nil in E1, E2.
+    now subst.
+  - destruct l1 as [ | x' l1 ], l2 as [ | y' l2 ].
+    all: simpl in E1, E2; try discriminate; injection E1 as <-; injection E2 as <-.
+    subst.
+    simpl in H0.
+    pose proof (pointwise_le_sum_le H1).
+    apply list.Forall2_cons in IH.
+    destruct IH as (Hxy & IH).
+    f_equal.
+    + apply Hxy; lia.
+    + apply IHForall2; auto; lia.
+Qed.
+
+Fact pointwise_le_sum_le_' [l1 l2 : list nat] (H : Forall2 Nat.le l1 l2) 
+  (H0 : fold_right Nat.add 0%nat l1 = fold_right Nat.add 0%nat l2) : l1 = l2.
+Proof.
+  apply pointwise_le_sum_le_ with (f:=id).
+  all: rewrite ? map_id_eq; auto.
+  eapply list.Forall2_impl.
+  1: apply H.
+  auto.
+Qed.
 
 Fact length_concat_sum {A : Type} (l : list (list A)) :
   length (concat l) = fold_right Nat.add 0%nat (map length l).
@@ -446,41 +506,28 @@ Proof.
   rewrite -> ! app_length.
   now f_equal.
 Qed.
-
+(*
 Fact length_concat_le {A B : Type} (l1 : list (list A)) (l2 : list (list B))
   (H : Forall2 (fun c1 c2 => length c1 <= length c2) l1 l2) :
   length (concat l1) <= length (concat l2).
 Proof. rewrite -> ! length_concat_sum. now apply pointwise_le_sum_le, list.Forall2_fmap_2. Qed.
-
-(*
-Fact length_concat_le {A : Type} (l1 l2 : list (list A))
-  (H : Forall2 (fun c1 c2 => length c1 <= length c2) l1 l2) :
-  length (concat l1) <= length (concat l2).
-Proof.
-  induction H; intros; simpl; try reflexivity.
-  rewrite -> ! app_length.
-  now apply Nat.add_le_mono.
-Qed.
 *)
-
-(* really ad-hoc *)
+(* really ad-hoc lemmas; not quite belong to sublist ones *)
 
 Fact sublist_sum_le l1 l2 (Hsub : list.sublist l1 l2) :
   fold_right Nat.add 0%nat l1 <= fold_right Nat.add 0%nat l2.
 Proof. induction Hsub; intros; simpl in *; try lia. Qed.
 
-Fact sublist_map_sum_eq_ [A : Type] l1 l2 (Hsub : list.sublist l1 l2)
+Fact sublist_map_sum_eq_ [A : Type] [l1 l2 : list A] (Hsub : list.sublist l1 l2)
   (f : A -> nat) (Hf : forall a, 0 < f a) :
-  fold_right Nat.add 0%nat (map f l1) = fold_right Nat.add 0%nat (map f l2) <->
+  fold_right Nat.add 0%nat (map f l1) = fold_right Nat.add 0%nat (map f l2) ->
   l1 = l2.
 Proof.
   induction Hsub; intros; simpl in *; try tauto.
-  - split; intros HH; try intuition.
+  - f_equal; auto with *.
   - apply sublist_map with (f:=f), sublist_sum_le in Hsub.
-    split; intros HH.
-    + specialize (Hf x).
-      lia.
-    + now subst l1.
+    specialize (Hf x).
+    lia.
 Qed.
 
 Fact Forall_impl_impl {A : Type} (P Q : A -> Prop) (l : list A) (H : Forall (fun x => P x -> Q x) l)
@@ -509,9 +556,6 @@ Proof.
     replace (S _ - _) with 1 by lia.
     now simpl.
 Qed.
-
-Fact map_id_eq [A : Type] (l : list A) : map (fun x => x) l = l.
-Proof. induction l; simpl; congruence. Qed.
 
 Lemma list_ind_3 : forall (A : Type) (P : list A -> Prop),
   P nil ->
@@ -624,4 +668,4 @@ Fact upd_Znth_upd_nth [A : Type] n (l : list A) a (H : (n < length l)%nat):
   upd_Znth (Z.of_nat n) l a = upd_nth n l a.
 *)
 
-
+End Begin.

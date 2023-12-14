@@ -7,6 +7,9 @@ From stdpp Require list.
 
 Section TreeClock.
 
+(* Sometimes using auto with * is affordable. *)
+Local Ltac intuition_solver ::= auto with *.
+
 Variable thread : Type.
 
 Context `{thread_eqdec : EqDec thread}.
@@ -17,16 +20,15 @@ Record nodeinfo : Type := mkInfo {
   info_aclk : nat
 }.
 
-Instance nodeinfo_eqdec : EqDec nodeinfo.
+Definition nodeinfo_eqdec (ni ni' : nodeinfo) : {ni = ni'} + {ni <> ni'}.
 Proof.
-  constructor.
   decide equality.
   1-2: apply Nat.eq_dec.
-  apply eqdec.
 Qed.
 
-Instance nodeinfo_IdGetter : IdGetter nodeinfo thread.
-Proof. constructor. exact info_tid. Defined.
+Instance EqDec_nodeinfo : EqDec nodeinfo := nodeinfo_eqdec.
+
+Instance nodeinfo_IdGetter : IdGetter nodeinfo thread := info_tid.
 
 Definition treeclock := tree nodeinfo.
 
@@ -331,8 +333,7 @@ Section Pointwise_Treeclock.
 
   Context [tc1 tc2 tc_max : treeclock].
   Hypotheses (Hpmax : forall t, tc_getclk t tc_max = Nat.max (tc_getclk t tc1) (tc_getclk t tc2))
-    (Hnodup1 : List.NoDup (map tr_rootid (tr_flatten tc1)))
-    (Hnodup2 : List.NoDup (map tr_rootid (tr_flatten tc2))).
+    (Hnodup1 : tr_NoDupId tc1) (Hnodup2 : tr_NoDupId tc2).
 
   Fact tc_ge_from_pointwise_max : tc_ge tc_max tc1 /\ tc_ge tc_max tc2.
   Proof.
@@ -412,14 +413,7 @@ Lemma dmono_prefix_preserve [tc tc' : treeclock] (Hprefix : prefixtr tc' tc) :
   forall [tc_larger] (Hdmono : Foralltr (dmono_single tc_larger) tc),
   Foralltr (dmono_single tc_larger) tc'.
 Proof.
-  (* TODO why induction will complain here? *)
-  (* induction Hprefix as [ni chn1 chn2_sub chn2 Hsub Hprefix IH] using prefixtr_ind_2; intros. *)
-  pose (P := fun tc' tc => forall tc_larger : treeclock,
-    Foralltr (dmono_single tc_larger) tc -> Foralltr (dmono_single tc_larger) tc').
-  change (P tc' tc).
-  revert tc' tc Hprefix.
-  apply prefixtr_ind_2; intros ni chn1 chn2_sub chn2 Hsub Hprefix IH ? Hdmono; subst P; cbn beta.
-
+  induction Hprefix as [ni chn1 chn2_sub chn2 Hsub Hprefix IH] using prefixtr_ind_2; intros.
   rewrite -> Foralltr_cons_iff in Hdmono |- *.
   destruct Hdmono as (Hdmono & Hdmono_chn).
   split.
@@ -441,14 +435,7 @@ Lemma imono_prefix_preserve [tc tc' : treeclock] (Hprefix : prefixtr tc' tc) :
   forall [tc_larger] (Himono : Foralltr (imono_single tc_larger) tc),
   Foralltr (imono_single tc_larger) tc'.
 Proof.
-  (* TODO why induction will complain here? *)
-  (* induction Hprefix as [ni chn1 chn2_sub chn2 Hsub Hprefix IH] using prefixtr_ind_2; intros. *)
-  pose (P := fun tc' tc => forall tc_larger : treeclock,
-    Foralltr (imono_single tc_larger) tc -> Foralltr (imono_single tc_larger) tc').
-  change (P tc' tc).
-  revert tc' tc Hprefix.
-  apply prefixtr_ind_2; intros ni chn1 chn2_sub chn2 Hsub Hprefix IH ? Himono; subst P; cbn beta.
-
+  induction Hprefix as [ni chn1 chn2_sub chn2 Hsub Hprefix IH] using prefixtr_ind_2; intros.
   rewrite -> Foralltr_cons_iff in Himono |- *.
   unfold imono_single in Himono |- *.
   rewrite <- list.Forall_and in Himono |- *.
@@ -554,15 +541,10 @@ Proof.
   apply proj2 in Hshape.
   rewrite <- Foralltr_and in Hshape |- *.
 
-  (* TODO why induction will complain here? *)
-  (* induction Hprefix as [ni chn1 chn2_sub chn2 Hsub Hprefix IH] using prefixtr_ind_2; intros. *)
   revert Hshape.
-  pose (P := fun tc tc' => Foralltr (fun tr => tc_chn_aclk_ub tr /\ tc_chn_aclk_decsorted tr) tc' ->
-    Foralltr (fun tr => tc_chn_aclk_ub tr /\ tc_chn_aclk_decsorted tr) tc).
-  change (P tc tc').
-  revert tc tc' Hprefix.
-  apply prefixtr_ind_2; intros ni chn1 chn2_sub chn2 Hsub Hprefix IH Hshape; subst P; cbn beta.
+  apply Foralltr_impl_pre.
 
+  induction Hprefix as [ni chn1 chn2_sub chn2 Hsub Hprefix IH] using prefixtr_ind_2; intros.
   rewrite -> Foralltr_cons_iff in Hshape |- *.
   split.
   - destruct Hshape as ((Hshape1 & Hshape2) & _).
