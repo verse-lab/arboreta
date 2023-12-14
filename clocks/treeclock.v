@@ -541,9 +541,6 @@ Proof.
   apply proj2 in Hshape.
   rewrite <- Foralltr_and in Hshape |- *.
 
-  revert Hshape.
-  apply Foralltr_impl_pre.
-
   induction Hprefix as [ni chn1 chn2_sub chn2 Hsub Hprefix IH] using prefixtr_ind_2; intros.
   rewrite -> Foralltr_cons_iff in Hshape |- *.
   split.
@@ -627,7 +624,7 @@ Tactic Notation "tc_get_updated_nodes_join_unfold" "in_" hyp(H) :=
   cbn delta -[tc_get_updated_nodes_join] iota beta in H;
   rewrite -> tc_get_updated_nodes_join_eta in H.
 
-(* purely computational *)
+(* purely computational, with minimal precondition *)
 
 Fact tc_get_updated_nodes_join_aux_app tc clk chn1 chn2 
   (H : Forall (fun tc' => clk < tc_rootaclk tc' \/ (tc_getclk (tr_rootid tc') tc) < tc_rootclk tc') chn1) :
@@ -794,7 +791,7 @@ Proof.
       now subst ch.
 Qed.
 
-Fact tc_get_updated_nodes_join_trace tc' : forall tc sub_prefix
+Fact tc_get_updated_nodes_join_trace [tc'] : forall [tc sub_prefix]
   (H : subtr sub_prefix (tc_get_updated_nodes_join tc tc')), 
   exists sub, subtr sub tc' /\ sub_prefix = tc_get_updated_nodes_join tc sub.
 Proof.
@@ -835,7 +832,7 @@ Proof.
   firstorder.
 Qed.
 
-Fact imono_single_aclk_impl_clk tc u' clk_u' aclk_u' chn_u'
+Fact imono_single_aclk_impl_clk [tc u' clk_u' aclk_u' chn_u']
   (Himono : imono_single tc (Node (mkInfo u' clk_u' aclk_u') chn_u')) :
   forall tc', In tc' chn_u' -> 
     tc_rootaclk tc' <= (tc_getclk u' tc) -> 
@@ -865,7 +862,7 @@ Proof.
   (* get aclk_impl_clk *)
   pose proof (imono Hrespect) as Himono.
   apply Foralltr_cons_iff, proj1 in Himono.
-  pose proof (imono_single_aclk_impl_clk _ _ _ _ _ Himono) as Haclk_impl_clk.
+  pose proof (imono_single_aclk_impl_clk Himono) as Haclk_impl_clk.
   pose proof (fun tc' H => contra_not (Haclk_impl_clk tc' H)) as Haclk_impl_clk'.
   repeat setoid_rewrite -> Nat.nle_gt in Haclk_impl_clk'.
   removehead H.
@@ -911,8 +908,8 @@ Qed.
 
 (* make it over the whole tree; also soundness *)
 
-Corollary tc_get_updated_nodes_join_shape tc' (Hshape: tc_shape_inv tc') : 
-  forall tc (Hrespect: tc_respect tc' tc)
+Corollary tc_get_updated_nodes_join_shape [tc'] (Hshape: tc_shape_inv tc') : 
+  forall [tc] (Hrespect: tc_respect tc' tc)
   (Hroot_clk_le : tc_getclk (tr_rootid tc') tc < tc_rootclk tc'),
   Foralltr (fun tc' => tc_getclk (tr_rootid tc') tc < tc_rootclk tc') 
     (tc_get_updated_nodes_join tc tc') /\
@@ -953,13 +950,13 @@ Proof.
       firstorder.
 Qed.
 
-Corollary tc_get_updated_nodes_join_sound tc' (Hshape: tc_shape_inv tc')
-  tc (Hrespect: tc_respect tc' tc)
+Corollary tc_get_updated_nodes_join_sound [tc'] (Hshape: tc_shape_inv tc')
+  [tc] (Hrespect: tc_respect tc' tc)
   (Hroot_clk_le : tc_getclk (tr_rootid tc') tc < tc_rootclk tc') :
   forall t, isSome (tr_getnode t (tc_get_updated_nodes_join tc tc')) = true ->
     tc_getclk t tc < tc_getclk t tc'.
 Proof.
-  pose proof (tc_get_updated_nodes_join_shape _ Hshape _ Hrespect Hroot_clk_le) as H.
+  pose proof (tc_get_updated_nodes_join_shape Hshape Hrespect Hroot_clk_le) as H.
   apply proj1, Foralltr_Forall_subtree in H.
   intros t Hres.
 
@@ -984,8 +981,8 @@ Proof.
   congruence.
 Qed.
 
-Corollary tc_get_updated_nodes_join_complete tc' (Hshape': tc_shape_inv tc') : 
-  forall tc (Hrespect: tc_respect tc' tc)
+Corollary tc_get_updated_nodes_join_complete [tc'] (Hshape': tc_shape_inv tc') : 
+  forall [tc] (Hrespect: tc_respect tc' tc)
   (Hroot_clk_le : tc_getclk (tr_rootid tc') tc < tc_rootclk tc')
   t (Hlt : tc_getclk t tc < tc_getclk t tc'),
     (* this equality can be from the prefix property; no need to repeat *)
@@ -1083,10 +1080,10 @@ Fact tc_detach_nodes_eta ni chn tcs :
   exists new_chn res res' new_chn', 
     List.split (map (tc_detach_nodes tcs) chn) = (new_chn, res) /\
     partition (fun tc' : treeclock => isSome (find (has_same_id (tr_rootid tc')) tcs)) new_chn = (res', new_chn') /\
-    map (fun x => fst (tc_detach_nodes tcs x)) chn = new_chn /\
-    map (fun x => snd (tc_detach_nodes tcs x)) chn = res /\
-    filter (fun tc' => isSome (find (has_same_id (tr_rootid tc')) tcs)) new_chn = res' /\
-    filter (fun tc' => negb (isSome (find (has_same_id (tr_rootid tc')) tcs))) new_chn = new_chn' /\
+    map (fun x : treeclock => fst (tc_detach_nodes tcs x)) chn = new_chn /\
+    map (fun x : treeclock => snd (tc_detach_nodes tcs x)) chn = res /\
+    filter (fun tc' : treeclock => isSome (find (has_same_id (tr_rootid tc')) tcs)) new_chn = res' /\
+    filter (fun tc' : treeclock => negb (isSome (find (has_same_id (tr_rootid tc')) tcs))) new_chn = new_chn' /\
     tc_detach_nodes tcs (Node ni chn) = (Node ni new_chn', concat res ++ res').
 Proof.
   simpl.
