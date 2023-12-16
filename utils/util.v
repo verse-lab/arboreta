@@ -118,7 +118,7 @@ Section Sublist_Additional_Lemmas.
   Qed.
 
   Fact sublist_StronglySorted [A : Type] (R : A -> A -> Prop) [l1 l2]
-    (Hsub : list.sublist l1 l2) (H : StronglySorted R l2):
+    (Hsub : list.sublist l1 l2) (H : StronglySorted R l2) :
     StronglySorted R l1.
   Proof.
     induction Hsub as [ | x l1 l2 Hsub IHsub | x l1 l2 Hsub IHsub ]; intros.
@@ -132,6 +132,24 @@ Section Sublist_Additional_Lemmas.
       firstorder.
     - apply StronglySorted_inv in H.
       intuition.
+  Qed.
+
+  Fact sublist_Forall2 [A B : Type] (R : A -> B -> Prop) [l1 l2 l3]
+    (Hsub : list.sublist l1 l2) (H : Forall2 R l2 l3) :
+    exists l3', list.sublist l3' l3 /\ Forall2 R l1 l3'.
+  Proof.
+    revert l1 Hsub.
+    induction H as [ | a b l2 l3 Hab H IH ]; intros.
+    - apply list.sublist_nil_r in Hsub.
+      subst l1.
+      now exists nil.
+    - apply list.sublist_cons_r in Hsub.
+      destruct Hsub as [ (l3' & Hsub & ?)%IH | (l' & -> & (l3' & Hsub & ?)%IH) ].
+      + exists l3'.
+        split; [ apply list.sublist_cons_r | ]; auto.
+      + exists (b :: l3').
+        split; auto.
+        econstructor; eauto.
   Qed.
 
 End Sublist_Additional_Lemmas.
@@ -387,6 +405,10 @@ Proof. intros. apply in_flat_map. eauto. Qed.
 Fact flat_map_single : forall [A B : Type] (f : A -> list B) (x : A),
   f x = flat_map f (x :: nil).
 Proof. intros. simpl. now rewrite -> app_nil_r. Qed.
+
+Fact map_ext_Forall2 : forall [A B : Type] (f : A -> B) (l1 l2 : list A),
+  Forall2 (fun a1 a2 => f a1 = f a2) l1 l2 -> map f l1 = map f l2.
+Proof. intros. induction H; simpl; intuition. Qed.
 
 (* TODO did not find a good union operation for this *)
 
