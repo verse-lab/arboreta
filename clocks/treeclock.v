@@ -1127,9 +1127,13 @@ Corollary tc_detach_nodes_fst_rootinfo_same tcs tc :
   tr_rootinfo (fst (tc_detach_nodes tcs tc)) = tr_rootinfo tc.
 Proof. erewrite prefixtr_rootinfo_same; eauto using tc_detach_nodes_fst_is_prefix. Qed.
 
+Corollary tc_detach_nodes_fst_rootid_same tcs tc : 
+  tr_rootid (fst (tc_detach_nodes tcs tc)) = tr_rootid tc.
+Proof. erewrite prefixtr_rootid_same; eauto using tc_detach_nodes_fst_is_prefix. Qed.
+
 Lemma tc_detach_nodes_tcs_app_fst tcs1 tcs2 tc :
-  fst (tc_detach_nodes tcs2 (fst (tc_detach_nodes tcs1 tc))) =
-  fst (tc_detach_nodes (tcs1 ++ tcs2) tc).
+  fst (tc_detach_nodes (tcs1 ++ tcs2) tc) =
+  fst (tc_detach_nodes tcs2 (fst (tc_detach_nodes tcs1 tc))).
 Proof.
   induction tc as [ni chn IH] using tree_ind_2; intros.
   pose proof (tc_detach_nodes_eta ni chn tcs1) as (new_chn1 & res1 & res1' & new_chn1' & _ & _ & Enew_chn1 & Eres1 & Eres1' & Enew_chn1' & Edetach1).
@@ -1138,26 +1142,17 @@ Proof.
   cbn delta [fst] beta iota.
   pose proof (tc_detach_nodes_eta ni new_chn1' tcs2) as (new_chn2 & res2 & res2' & new_chn2' & _ & _ & Enew_chn2 & Eres2 & Eres2' & Enew_chn2' & Edetach2).
   rewrite Edetach2.
-  simpl.
-  f_equal.
+  simpl; f_equal.
   subst.
-  rewrite <- (map_ext_Forall _ _ IH).
-
-  (* local induction to avoid too much manipulation *)
-  clear Edetach1 Edetach2 Edetach ni IH. 
-  induction chn as [ | ch chn IH ]; simpl; auto.
-  pose proof (tc_detach_nodes_fst_is_prefix tcs1) as Hpf1.
-  pose proof (tc_detach_nodes_fst_is_prefix tcs2) as Hpf2.
-  rewrite ! (prefixtr_rootid_same (Hpf2 _)).
-  rewrite ! (prefixtr_rootid_same (Hpf1 _)).
-  rewrite find_app.
-  destruct (find (has_same_id (tr_rootid ch)) tcs1) as [ res1 | ] eqn:E1 in |- *; simpl.
-  - apply IH.
-  - rewrite ! (prefixtr_rootid_same (Hpf2 _)).
-    rewrite ! (prefixtr_rootid_same (Hpf1 _)).
-    destruct (find (has_same_id (tr_rootid ch)) tcs2) as [ res2 | ] eqn:E2; simpl.
-    + apply IH.
-    + f_equal; apply IH.
+  rewrite (map_ext_Forall _ _ IH).
+  (* do some algebraic reasoning *)
+  rewrite ! map_filter_comm, ! map_map.
+  f_equal.
+  rewrite filter_filter.
+  apply filter_ext.
+  intros ?.
+  rewrite trs_find_node_isSome_app, ! tc_detach_nodes_fst_rootid_same.
+  now destruct (trs_find_node _ tcs1), (trs_find_node _ tcs2).
 Qed.
 
 Lemma tc_detach_nodes_tcs_app_snd tcs1 tcs2 tc :
@@ -1174,69 +1169,31 @@ Proof.
   pose proof (tc_detach_nodes_eta ni new_chn1' tcs2) as (new_chn2 & res2 & res2' & new_chn2' & _ & _ & Enew_chn2 & Eres2 & Eres2' & Enew_chn2' & Edetach2).
   rewrite Edetach2.
   simpl.
-
-  (* now, manipulate *)
-  pose proof IH as Hperm.
-  apply Permutation_Forall_flat_map in Hperm.
-  rewrite -> flat_map_concat_map, -> Eres in Hperm at 1.
-  rewrite -> ! Permutation_flat_map_innerapp_split in Hperm.
-  rewrite -> flat_map_concat_map in Hperm at 1.
-  rewrite <- map_map with (g:=fun x => snd (tc_detach_nodes tcs2 x)) in Hperm at 1.
-  rewrite -> Enew_chn1, <- flat_map_concat_map in Hperm.
-  (* split new_chn1, get res1' and res2 *)
-  match type of Hperm with Permutation ?al ?bl => 
-    eapply Permutation_trans with (l:=al) (l':=bl) in Hperm end.
-  2: apply Permutation_app; [ | reflexivity ].
-  2: apply Permutation_flat_map, Permutation_split_combine.
-  rewrite -> Eres1' in Hperm.
-  rewrite -> Enew_chn1' in Hperm.
-  rewrite -> flat_map_app, -> 2 flat_map_concat_map, -> Eres2 in Hperm.
-  rewrite <- map_map with (g:=snd), <- flat_map_concat_map in Hperm.
-
-  (* TODO the following should be revised, but maybe not for now? *)
-
-  rewrite -> ! flat_map_concat_map with (l:=chn) in Hperm.
-  rewrite <- ! map_map with (f:=fun x => map (tc_detach_nodes tcs2) (snd (tc_detach_nodes tcs1 x))) in Hperm.
-  rewrite <- ! map_map with (f:=fun x => (snd (tc_detach_nodes tcs1 x))) in Hperm.
-  rewrite -> ! Eres1 in Hperm.
-  rewrite <- ! concat_map in Hperm.
-
-  (* ? *)
-  assert (concat (map (flat_map snd) (map (map (tc_detach_nodes tcs2)) res1)) = 
-    flat_map snd (map (tc_detach_nodes tcs2) (concat res1))) as EE.
-  {
-    clear.
-    induction res1; auto.
-    simpl. rewrite IHres1. now rewrite map_app, flat_map_app.
-  }
-  rewrite EE in Hperm.
-
-  rewrite ! map_app, flat_map_app.
-  match type of Hperm with Permutation _ ?al =>
-    transitivity (al ++ (res2' ++ map fst (map (tc_detach_nodes tcs2) res1'))) end.
-  2: list.solve_Permutation.
-  apply Permutation_app; auto.
-
+  subst res res' new_chn.
+  apply Permutation_Forall_flat_map in IH.
+  rewrite <- flat_map_concat_map, -> IH, -> ! Permutation_flat_map_innerapp_split.
   subst.
-  clear -chn.
-  rewrite -> ! map_filter_comm, -> ! map_map.
-  erewrite -> map_ext; [ | intros; now rewrite tc_detach_nodes_tcs_app_fst ].
-  f_equal.
-  erewrite -> filter_ext with (l:=filter _ _); [ | intros; now rewrite tc_detach_nodes_tcs_app_fst ].
-  rewrite <- map_app.
-  apply Permutation_map.
-  repeat match goal with |- context[filter ?ff ?ll] => 
-    match ff with context[fst] => 
-    erewrite -> filter_ext with (f:=ff) (l:=ll); [ | intros x; unfold tr_rootid; 
-      rewrite (prefixtr_rootinfo_same (tc_detach_nodes_fst_is_prefix _ _)); fold (tr_rootid x); reflexivity ]
-    end
-  end.
-  induction chn as [ | ch chn IH ]; simpl; auto.
-  rewrite find_app.
-  destruct (find (has_same_id (tr_rootid ch)) tcs1) as [ res1 | ] eqn:E1, 
-    (find (has_same_id (tr_rootid ch)) tcs2) as [ res2 | ] eqn:E2; 
-    simpl; try rewrite E1; try rewrite E2; simpl; try rewrite IH.
-  all: list.solve_Permutation.
+  (* applying these rewritings is not systematic, but just heuristics ... enlightened by some simplification ... *)
+  rewrite ? flat_map_concat_map, ? map_app, ? concat_app, ? flat_map_app, <- ? app_assoc.
+  rewrite ! map_filter_comm, ! filter_filter.
+  (* this is nightmare! use induction to avoid much repetition *)
+  clear.
+  induction chn as [ | ch chn IH ]; auto.
+  simpl.
+  rewrite ! tc_detach_nodes_fst_rootid_same, ! trs_find_node_isSome_app, 
+    ! map_app, ! concat_app, ? flat_map_concat_map.
+  (* exploit the decidability *)
+  assert (forall y (x : treeclock) l, count_occ tr_eqdec (x :: l) y = 
+    count_occ tr_eqdec (x :: nil) y + count_occ tr_eqdec l y) as Htmp
+    by (intros; change (x :: l) with ((x :: nil) ++ l); now rewrite ! count_occ_app).
+  destruct (trs_find_node (tr_rootid ch) tcs1), (trs_find_node (tr_rootid ch) tcs2); simpl.
+  all: rewrite ? tc_detach_nodes_tcs_app_fst.
+  all: rewrite (Permutation_count_occ tr_eqdec) in IH |- *.
+  all: intros x; specialize (IH x).
+  all: rewrite ! count_occ_app in IH; rewrite ! count_occ_app.
+  all: try rewrite ? Htmp with (l:=map _ _).
+  all: try rewrite ? Htmp with (l:=_ ++ _).
+  all: rewrite ? count_occ_app; lia.
 Qed.
 
 (* a niche case *)

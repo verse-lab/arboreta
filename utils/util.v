@@ -298,6 +298,14 @@ Proof.
     now destruct (g (f x)).
 Qed.
 
+Lemma filter_filter [A : Type] (f g : A -> bool) l :
+  filter g (filter f l) = filter (fun a => f a && g a) l.
+Proof.
+  induction l as [ | x l IH ]; simpl; auto.
+  destruct (f x) eqn:E; [ destruct (g x) eqn:E' | ].
+  all: simpl; try rewrite E'; try rewrite IH; auto.
+Qed.
+
 Fact Forall_filter [A : Type] (f : A -> bool) l (P : A -> Prop) 
   (H : Forall P l) : Forall P (filter f l).
 Proof.

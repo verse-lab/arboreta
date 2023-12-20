@@ -814,6 +814,15 @@ Section Tree_Find.
 
   Global Arguments tr_getnode _ !_ /.
 
+  Fact trs_find_node_isSome_app t trs1 trs2 :
+    isSome (trs_find_node t (trs1 ++ trs2)) = 
+    if isSome (trs_find_node t trs1) then true else isSome (trs_find_node t trs2).
+  Proof.
+    unfold trs_find_node.
+    rewrite find_app.
+    now destruct (find _ trs1), (find _ trs2).
+  Qed.
+
   Fact tr_getnode_self tr : tr_getnode (tr_rootid tr) tr = Some tr.
   Proof.
     destruct tr as [ni ?].
