@@ -152,6 +152,13 @@ Section Core_Auxiliary_Functions.
 
   Fact tr_flatten_self_in tr : In tr (tr_flatten tr).
   Proof. destruct tr as [? ?]. simpl. now left. Qed.
+
+  Fact trs_flatten_self_in [tr trs] (Hin : In tr trs) : In tr (flat_map tr_flatten trs).
+  Proof. eapply in_flat_map_conv; eauto. apply tr_flatten_self_in. Qed.
+
+  Fact tr_flatten_proper_subtr [sub tr] : 
+    In sub (flat_map tr_flatten (tr_rootchn tr)) -> In sub (tr_flatten tr).
+  Proof. intros H. rewrite (tree_recons tr). simpl. tauto. Qed.
 (*
   Fact tr_flatten_direct_result tr : tr_flatten tr = tr :: (flat_map tr_flatten (tr_rootchn tr)).
   Proof. now destruct tr as [? ?]. Qed.
@@ -573,6 +580,19 @@ Section Tree_Prefix_Theory.
     pose proof (conj H IH) as HH%Forall2_and.
     eapply list.Forall2_transitive; eauto.
     firstorder.
+  Qed.
+
+  (* if a tree is generated in a specific way, then it must be a prefix *)
+
+  Lemma prefixtr_by_sublist_map [a chn' chn] (f : tree -> tree)
+    (H : Forall (fun tr => prefixtr (f tr) tr) chn) 
+    (H' : list.sublist chn' (map f chn)) : 
+    prefixtr (Node a chn') (Node a chn).
+  Proof.
+    apply sublist_map_l_recover in H'.
+    destruct H' as (chn'' & -> & Hsub).
+    econstructor; eauto.
+    eapply Forall2_mapself_l, sublist_Forall; eauto.
   Qed.
 
   Fact prefixtr_nil_l ni chn : prefixtr (Node ni nil) (Node ni chn).

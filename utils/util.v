@@ -381,7 +381,27 @@ Section Forall2_Additional_Lemmas.
         constructor; auto.
   Qed.
 
+  Fact map_eq_to_Forall2 [A B : Type] (f : A -> B) la lb :
+    lb = map f la <-> Forall2 (fun b a => b = f a) lb la.
+  Proof.
+    split; intros.
+    - subst lb.
+      now apply Forall2_mapself_l, list.Forall_true.
+    - induction H; simpl; congruence.
+  Qed.
+
 End Forall2_Additional_Lemmas. 
+
+(* FIXME: move this somewhere else *)
+Corollary sublist_map_l_recover [A B : Type] (f : A -> B) [l1 l2]
+  (Hsub : list.sublist l1 (map f l2)) :
+  exists l2', l1 = map f l2' /\ list.sublist l2' l2.
+Proof.
+  eapply sublist_Forall2 in Hsub.
+  2: rewrite <- map_eq_to_Forall2; reflexivity.
+  destruct Hsub as (l2' & Hsub & HH%map_eq_to_Forall2).
+  eauto.
+Qed.
 
 (* a simple swap of map and flat_map over In *)
 

@@ -799,12 +799,8 @@ Proof.
   simpl.
   pose proof (tc_get_updated_nodes_join_aux_result_submap tc (tc_getclk u' tc) chn')
     as (chn'' & Hsub & ->).
-  econstructor.
-  1: apply Hsub.
-  apply Forall2_mapself_l.
-  pose proof (sublist_In Hsub).
-  rewrite -> List.Forall_forall in IH |- *.
-  firstorder.
+  eapply prefixtr_by_sublist_map; eauto.
+  now apply sublist_map.
 Qed.
 
 Corollary tc_get_updated_nodes_join_map_map_rootinfo tc tcs :
@@ -1039,45 +1035,35 @@ Proof.
   pose proof (tc_detach_nodes_eta ni chn tcs) as (new_chn & res & res' & new_chn' & Esplit & Epar & Enew_chn & Eres & Eres' & Enew_chn' & Edetach).
   rewrite Edetach.
   simpl.
-  rewrite -> List.Forall_forall in IH.
-  setoid_rewrite -> List.Forall_forall in IH.
-  rewrite -> List.Forall_app, ! List.Forall_forall.
-  split.
+  apply Forall_app; split.
   - subst res.
-    setoid_rewrite -> in_concat.
-    setoid_rewrite -> in_map_iff.
-    intros res_ch (? & (ch & <- & Hin_ch) & Hin).
-    specialize (IH _ Hin_ch _ Hin).
-    destruct IH as (sub & Hin_sub & ->).
+    (* a lot of structural predicate rules *)
+    rewrite Forall_concat, Forall_map.
+    revert IH.
+    apply Forall_impl_impl, Forall_forall.
+    intros ch Hin.
+    apply Forall_impl.
+    intros ? (sub & Hin' & ->).
     exists sub.
-    split; [ | reflexivity ].
-    eapply in_flat_map_conv; [ apply Hin_ch | ].
-    rewrite -> (tree_recons ch).
-    simpl; tauto.
+    split; auto.
+    apply (in_flat_map_conv _ _ _ sub Hin (tr_flatten_proper_subtr Hin')).
   - subst res' new_chn.
-    setoid_rewrite -> filter_In.
-    setoid_rewrite -> in_map_iff.
-    intros ? ((ch & <- & Hin_ch) & _).
+    apply Forall_filter.
+    rewrite Forall_map, Forall_forall.
+    intros ch Hin.
     exists ch.
-    split. 
-    2: reflexivity.
-    eapply in_flat_map_conv in Hin_ch; eauto.
-    destruct ch as [(?, ?, ?) ?].
-    simpl.
-    intuition.
+    split; [ apply (trs_flatten_self_in Hin) | auto ].
 Qed.
 
 Corollary tc_detach_nodes_snd2fst tcs tc :
-  Forall (fun tc' => exists sub, In sub (tr_flatten tc) /\ 
+  Forall (fun tc' => exists sub, In sub (tr_flatten tc) /\ (* weakened for convenience *)
     tc' = fst (tc_detach_nodes tcs sub))
   (snd (tc_detach_nodes tcs tc)).
 Proof.
   eapply Forall_impl.
   2: apply tc_detach_nodes_snd2fst_pre.
   simpl.
-  intros ? (sub & Hin & ->).
-  rewrite (tree_recons tc).
-  simpl.
+  intros ? (sub & Hin%tr_flatten_proper_subtr & ->).
   eauto.
 Qed.
 
@@ -1086,23 +1072,15 @@ Lemma tc_detach_nodes_dom_incl tcs tc :
   (snd (tc_detach_nodes tcs tc)).
 Proof.
   induction tc as [ni chn IH] using tree_ind_2; intros.
-  rewrite -> List.Forall_forall in IH.
-  setoid_rewrite -> List.Forall_forall in IH.
   pose proof (tc_detach_nodes_eta ni chn tcs) as (new_chn & res & res' & new_chn' & Esplit & Epar & Enew_chn & Eres & Eres' & Enew_chn' & Edetach).
   rewrite Edetach.
   simpl.
-  rewrite -> List.Forall_app, ! List.Forall_forall.
-  split.
+  apply Forall_app; split.
   - subst res.
-    setoid_rewrite -> in_concat.
-    setoid_rewrite -> in_map_iff.
-    intros res_ch (? & (ch & <- & Hin_ch) & Hin).
-    eapply IH; eauto.
+    now rewrite Forall_concat, Forall_map.
   - subst res' new_chn.
-    setoid_rewrite -> filter_In.
-    setoid_rewrite -> in_map_iff.
-    intros ? ((ch & <- & Hin_ch) & ?).
-    intuition.
+    rewrite map_filter_comm, Forall_map, Forall_forall.
+    now setoid_rewrite filter_In.
 Qed.
 
 Lemma tc_detach_nodes_tcs_congr tcs1 tcs2 
@@ -1113,7 +1091,7 @@ Proof.
   simpl.
   rewrite -> map_ext_Forall with (g:=(tc_detach_nodes tcs2)); auto.
   destruct (List.split (map (tc_detach_nodes tcs2) chn)) as (new_chn, res) eqn:Esplit.
-  rewrite -> partition_ext_Forall with (g:=(fun tc' => isSome (find (has_same_id (tr_rootid tc')) tcs2))); auto.
+  rewrite -> partition_ext_Forall with (g:=(fun tc' => isSome (trs_find_node (tr_rootid tc') tcs2))); auto.
   apply Forall_forall.
   intros tc' _.
   apply eq_iff_eq_true.
@@ -1126,24 +1104,12 @@ Proof.
   induction tc as [ni chn IH] using tree_ind_2; intros.
   pose proof (tc_detach_nodes_eta ni chn tcs) as (new_chn & res & res' & new_chn' & Esplit & Epar & Enew_chn & Eres & Eres' & Enew_chn' & Edetach).
   rewrite Edetach.
+  subst.
   simpl.
-  subst new_chn.
-  rewrite -> map_filter_comm in Enew_chn'.
-  match type of Enew_chn' with map _ (filter ?ff ?ll) = _ => 
-    remember (filter ff ll) as chn_sub;
-    remember ff as fb
-  end.
-  econstructor.
-  1: apply filter_sublist with (f:=fb).
-  subst new_chn'.
-  apply Forall_filter with (f:=fb) in IH.
-  rewrite <- Heqchn_sub in IH |- *.
-  clear -IH.
-  induction chn_sub as [ | ch chn ].
-  - reflexivity.
-  - simpl.
-    rewrite -> List.Forall_cons_iff in IH. 
-    constructor; firstorder.
+  rewrite -> map_filter_comm.
+  eapply prefixtr_by_sublist_map.
+  1: apply IH.
+  apply sublist_map, filter_sublist.
 Qed.
 
 Corollary tc_detach_nodes_snd_is_subprefix tcs tc :
@@ -1151,17 +1117,15 @@ Corollary tc_detach_nodes_snd_is_subprefix tcs tc :
     prefixtr tc' sub) (snd (tc_detach_nodes tcs tc)).
 Proof.
   pose proof (tc_detach_nodes_snd2fst tcs tc) as Hto.
-  rewrite -> List.Forall_forall in Hto |- *.
-  intros sub' Hin'.
-  specialize (Hto sub' Hin').
-  destruct Hto as (sub & Hin & ->).
+  revert Hto; apply Forall_impl.
+  intros ? (sub & Hin & ->).
   pose proof (tc_detach_nodes_fst_is_prefix tcs sub).
   eauto.
 Qed.
 
 Corollary tc_detach_nodes_fst_rootinfo_same tcs tc : 
   tr_rootinfo (fst (tc_detach_nodes tcs tc)) = tr_rootinfo tc.
-Proof. erewrite prefixtr_rootinfo_same; [ reflexivity | apply tc_detach_nodes_fst_is_prefix ]. Qed.
+Proof. erewrite prefixtr_rootinfo_same; eauto using tc_detach_nodes_fst_is_prefix. Qed.
 
 Lemma tc_detach_nodes_tcs_app_fst tcs1 tcs2 tc :
   fst (tc_detach_nodes tcs2 (fst (tc_detach_nodes tcs1 tc))) =
