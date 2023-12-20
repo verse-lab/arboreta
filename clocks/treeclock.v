@@ -1068,8 +1068,7 @@ Proof.
 Qed.
 
 Lemma tc_detach_nodes_dom_incl tcs tc :
-  Forall (fun tc' => isSome (find (has_same_id (tr_rootid tc')) tcs) = true)
-  (snd (tc_detach_nodes tcs tc)).
+  Forall (fun tc' => isSome (trs_find_node (tr_rootid tc') tcs) = true) (snd (tc_detach_nodes tcs tc)).
 Proof.
   induction tc as [ni chn IH] using tree_ind_2; intros.
   pose proof (tc_detach_nodes_eta ni chn tcs) as (new_chn & res & res' & new_chn' & Esplit & Epar & Enew_chn & Eres & Eres' & Enew_chn' & Edetach).
@@ -1198,7 +1197,7 @@ Qed.
 
 (* a niche case *)
 Fact tc_detach_nodes_prepend_child ni ch chn tcs 
-  (H : find (has_same_id (tr_rootid ch)) tcs = None) :
+  (H : trs_find_node (tr_rootid ch) tcs = None) :
   let: (pivot_ch, forest_ch) := tc_detach_nodes tcs ch in
   let: (pivot_main, forest_main) := tc_detach_nodes tcs (Node ni chn) in
   let: Node ni' chn' := pivot_main in
@@ -1212,9 +1211,8 @@ Proof.
   rewrite Ech, Esplit.
   simpl.
   rewrite -> Epar.
-  unfold tr_rootid in H |- * at 1.
   replace pivot_ch with (fst (tc_detach_nodes tcs ch)) by now rewrite Ech.
-  rewrite ! (prefixtr_rootinfo_same (tc_detach_nodes_fst_is_prefix tcs ch)), Ech, H.
+  rewrite ! tc_detach_nodes_fst_rootid_same, Ech, H.
   simpl.
   now rewrite app_assoc.
 Qed.
@@ -1231,30 +1229,20 @@ Proof.
   rewrite Edetach.
   simpl.
   constructor.
-  rewrite -> flat_map_app, -> ! map_app.
+  apply Permutation_Forall_flat_map in IH.
+  rewrite ! flat_map_map, Permutation_flat_map_innerapp_split in IH.
+  rewrite IH, flat_map_app, ! map_app.
+  (* merge the two parts splitted by "partition" *)
   etransitivity.
-  2:{
-    rewrite -> Permutation_app_comm, <- app_assoc, <- map_app, <- flat_map_app.
-    apply Permutation_app_head.
-    match type of Epar with partition ?f ?l = (?a, ?b) => 
-      replace a with (fst (partition f l)) by (rewrite -> Epar; now simpl);
-      replace b with (snd (partition f l)) by (rewrite -> Epar; now simpl)
-    end.
-    rewrite <- Permutation_partition.
-    reflexivity.
-  }
-  (* TODO seems a local induction is needed? *)
-  clear -chn IH Enew_chn Eres.
-  revert new_chn forest IH Enew_chn Eres.
-  induction chn as [ | ch chn IH2 ]; intros.
-  all: simpl in Enew_chn, Eres |- *; subst.
-  - reflexivity.
-  - apply Forall_cons_iff in IH.
-    destruct IH as (HH & IH).
-    specialize (IH2 _ _ IH eq_refl eq_refl).
-    simpl.
-    rewrite -> flat_map_app, -> ! map_app, -> IH2, -> HH, -> map_app.
-    list.solve_Permutation.
+  2: apply Permutation_app_head, Permutation_app_swap.
+  rewrite Permutation_app_swap_app, app_assoc.
+  etransitivity.
+  2: apply Permutation_app_tail; rewrite <- map_app, <- flat_map_app; 
+    apply Permutation_map, Permutation_flat_map.
+  2: etransitivity; [ apply Permutation_partition | ]; rewrite Epar; reflexivity.
+  subst; apply Permutation_app.
+  - now rewrite ! flat_map_concat_map, ! map_map.
+  - now rewrite <- flat_map_concat_map, flat_map_flat_map.
 Qed.
 
 Corollary tc_detach_nodes_intact_pre tcs tc :
@@ -1281,17 +1269,16 @@ Proof.
   destruct (tc_detach_nodes tcs tc) as (pivot, forest) eqn:E.
   destruct forest as [ | tc0 ? ].
   - f_equal.
-    eapply eq_ind_r with (y:=pivot); [ apply tc_detach_nodes_intact_pre | ].
+    etransitivity; [ | apply tc_detach_nodes_intact_pre ].
     all: rewrite E; reflexivity.
   - pose proof (tc_detach_nodes_dom_incl tcs tc) as Htmp.
     pose proof (tc_detach_nodes_snd2fst_pre tcs tc) as Htmp2.
     rewrite E in Htmp, Htmp2.
     simpl in Htmp, Htmp2.
-    rewrite -> Forall_cons_iff in Htmp, Htmp2.
-    apply proj1 in Htmp, Htmp2.
+    apply Forall_cons_iff, proj1 in Htmp, Htmp2.
     rewrite <- trs_find_in_iff in Htmp.
     destruct Htmp2 as (sub & Hin%(in_map tr_rootid) & ->).
-    rewrite (tr_rootinfo_id_inj (prefixtr_rootinfo_same (tc_detach_nodes_fst_is_prefix _ _))) in Htmp.
+    rewrite tc_detach_nodes_fst_rootid_same in Htmp.
     firstorder.
 Qed.
 
@@ -1301,32 +1288,25 @@ Corollary tc_detach_nodes_dom_partition' tcs tc :
       map tr_rootinfo (snd (tc_detach_nodes tcs tc)) ++ 
       map tr_rootinfo (flat_map tr_flatten (flat_map tr_rootchn (snd (tc_detach_nodes tcs tc))))).
 Proof.
-  etransitivity; [ apply tc_detach_nodes_dom_partition with (tcs:=tcs) | ].
-  rewrite -> map_app.
-  apply Permutation_app_head. 
-  rewrite <- map_app.
-  now apply Permutation_map, tr_flatten_root_chn_split.
+  now rewrite tc_detach_nodes_dom_partition, -> map_app, 1 tr_flatten_root_chn_split, ! map_app.
 Qed.
 
-Corollary tc_detach_nodes_tid_nodup tcs tc 
-  (Hnodup : NoDup (map tr_rootid (tr_flatten tc))) :
-  NoDup (map tr_rootid (flat_map tr_flatten (snd (tc_detach_nodes tcs tc)))) /\
+Corollary tc_detach_nodes_tid_nodup tcs tc (Hnodup : tr_NoDupId tc) :
+  trs_NoDupId (snd (tc_detach_nodes tcs tc)) /\
   (forall t, 
     In t (map tr_rootid (tr_flatten (fst (tc_detach_nodes tcs tc)))) ->
     In t (map tr_rootid (flat_map tr_flatten (snd (tc_detach_nodes tcs tc)))) -> False) /\
-  NoDup (map tr_rootid (tr_flatten (fst (tc_detach_nodes tcs tc)))).
+  tr_NoDupId (fst (tc_detach_nodes tcs tc)).
 Proof.
   pose proof (tc_detach_nodes_dom_partition tcs tc) as Hperm%Permutation_rootinfo2rootid.
   pose proof (Permutation_NoDup Hperm Hnodup) as Htmp.
-  rewrite -> map_app, <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup in Htmp.
-  repeat setoid_rewrite -> base.elem_of_list_In in Htmp.
-  intuition.
+  now rewrite map_app, NoDup_app_ in Htmp.
 Qed.
 
 (* there will not be any tid in tcs that is also inside the pivot tree *)
 
 Lemma tc_detach_nodes_dom_excl tcs tc :
-  forall t (Htarg : isSome (find (has_same_id t) tcs) = true)
+  forall t (Htarg : isSome (trs_find_node t tcs) = true)
   res (Hin : In res (tr_flatten (fst (tc_detach_nodes tcs tc)))) (Et : tr_rootid res = t),
   res = (fst (tc_detach_nodes tcs tc)).
 Proof.

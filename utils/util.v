@@ -434,6 +434,14 @@ Fact flat_map_single : forall [A B : Type] (f : A -> list B) (x : A),
   f x = flat_map f (x :: nil).
 Proof. intros. simpl. now rewrite -> app_nil_r. Qed.
 
+Fact flat_map_map : forall [A B C : Type] (g : A -> list B) (f : B -> C) (l : list A),
+  flat_map (fun a => map f (g a)) l = map f (flat_map g l).
+Proof. intros. induction l as [ | ?? IH ]; simpl; auto. now rewrite IH, map_app. Qed.
+
+Fact flat_map_flat_map : forall [A B C : Type] (f : A -> list B) (g : B -> list C) (l : list A),
+  flat_map (fun a => flat_map g (f a)) l = flat_map g (flat_map f l).
+Proof. intros. induction l as [ | ?? IH ]; simpl; auto. now rewrite IH, flat_map_app. Qed.
+
 Fact map_ext_Forall2 : forall [A B : Type] (f : A -> B) (l1 l2 : list A),
   Forall2 (fun a1 a2 => f a1 = f a2) l1 l2 -> map f l1 = map f l2.
 Proof. intros. induction H; simpl; intuition. Qed.
