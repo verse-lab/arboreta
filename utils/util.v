@@ -463,7 +463,7 @@ Qed.
 Fact pair_equal_split [A B : Type] (a b : A) (c d : B) 
   (E : (a, c) = (b, d)) : a = b /\ c = d.
 Proof. intuition congruence. Qed.
-
+(*
 Definition filtermap [A B : Type] (f : A -> bool) (g : A -> B) :=
   fun (l : list A) => 
   let fix filtermap l :=
@@ -481,7 +481,7 @@ Proof.
     rewrite -> ! IH.
     now destruct (f x).
 Qed.
-
+*)
 Fact filter_all_true {A : Type} (f : A -> bool) (l : list A) 
   (H : forall x, In x l -> f x = true) : filter f l = l.
 Proof.
