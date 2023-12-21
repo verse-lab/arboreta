@@ -1424,135 +1424,77 @@ Proof.
   now apply tc_shape_inv_tc_detach_nodes_fst.
 Qed.
 
-End TC_Detach_Nodes.
-
-Section TC_Attach_Nodes.
-
-(* more abstracted version *)
-
-Lemma forest_recombine_pre tcs l
-  (Hnodup : NoDup (map tr_rootid tcs)) (Hnodup' : NoDup l) 
-  (Hdomincl : incl (map tr_rootid tcs) l) :
-  Permutation (map Some tcs) 
-    (filter isSome (map (fun t => find (has_same_id t) tcs) l)).
-Proof.
-  apply NoDup_Permutation.
-  - apply FinFun.Injective_map_NoDup.
-    1: congruence.
-    now apply NoDup_map_inv with (f:=tr_rootid).
-  - (* no much good way ... induction? *)
-    clear Hdomincl.
-    revert tcs Hnodup.
-    induction l as [ | t l IH ]; intros.
-    1: constructor.
-    apply NoDup_cons_iff in Hnodup'.
-    destruct Hnodup' as (Hnotin & Hnodup').
-    simpl.
-    destruct (find (has_same_id t) tcs) as [ res | ] eqn:E; simpl.
-    + constructor.
-      2: now apply IH.
-      intros HH.
-      apply filter_In, proj1, in_map_iff in HH.
-      destruct HH as (u & E' & Hin').
-      apply find_some, proj2, has_same_tid_true in E, E'.
-      congruence.
-    + now apply IH.
-  - intros ot.
-    split; intros Hin.
-    + rewrite -> in_map_iff in Hin.
-      destruct Hin as (sub & <- & Hin).
-      apply filter_In.
-      split; [ | auto ].
-      apply in_map_iff.
-      pose proof (in_map tr_rootid _ _ Hin) as Hin'.
-      pose proof (id_nodup_find_self _ Hnodup) as Hself.
-      rewrite -> List.Forall_forall in Hself.
-      specialize (Hself _ Hin).
-      eauto.
-    + apply filter_In in Hin.
-      destruct ot as [ res | ]; [ | intuition discriminate ].
-      apply proj1, in_map_iff in Hin.
-      destruct Hin as (t & Hin & _).
-      apply find_some in Hin.
-      now apply in_map.
-Qed.
-
-Corollary tc_detach_nodes_forest_recombine_pre tcs tc 
-  (Hnodup : NoDup (map tr_rootid (tr_flatten tc)))
-  (Hnodup' : NoDup (map tr_rootid tcs)) :
+Lemma tc_detach_nodes_forest_recombine_pre [tcs tc]
+  (Hnodup : tr_NoDupId tc) (Hnodup' : trs_roots_NoDupId tcs) :
   Permutation
     (map Some (snd (tc_detach_nodes tcs tc)))
-    (filter isSome (map
-      (fun t => find (has_same_id t) (snd (tc_detach_nodes tcs tc))) 
+    (filter (@isSome _) (map
+      (fun t => trs_find_node t (snd (tc_detach_nodes tcs tc))) 
         (map tr_rootid tcs))).
 Proof.
-  apply forest_recombine_pre.
+  apply trs_find_rearrangement.
   - pose proof (tc_detach_nodes_tid_nodup tcs tc Hnodup) as Hnodup_forest.
-    now apply proj1, tid_nodup_root_chn_split, proj1 in Hnodup_forest.
+    now apply proj1, id_nodup_root_chn_split, proj1 in Hnodup_forest.
   - assumption.
   - (* use dom incl *)
-    pose proof (tc_detach_nodes_dom_incl tcs tc) as Hdomincl.
-    rewrite -> List.Forall_forall in Hdomincl.
     hnf.
-    repeat setoid_rewrite -> in_map_iff.
-    setoid_rewrite <- trs_find_in_iff in Hdomincl.
-    setoid_rewrite -> in_map_iff in Hdomincl.
-    intros ? (sub & <- & Hin).
-    firstorder.
+    intros t (sub & <- & Hin)%in_map_iff.
+    apply trs_find_in_iff.
+    revert sub Hin.
+    apply Forall_forall, tc_detach_nodes_dom_incl.
 Qed.
 
 (* simulation *)
 
-Lemma forest_chn_recombine tcs l 
+Lemma forest_chn_recombine [tcs l]
   (Hperm : Permutation (map Some tcs) 
-    (filter isSome (map (fun t => find (has_same_id t) tcs) l))) :
+    (filter (@isSome _) (map (fun t => trs_find_node t tcs) l))) :
   Permutation (flat_map tr_rootchn tcs)
-    (flat_map (fun t => match find (has_same_id t) tcs with
+    (flat_map (fun t => match trs_find_node t tcs with
       | Some res => tr_rootchn res
       | None => nil
       end) l).
 Proof.
-  pose (f:=fun ot => match ot with Some tc => tr_rootchn tc | None => nil end).
+  pose (f:=fun ot : option treeclock => match ot with Some tc => tr_rootchn tc | None => nil end).
   apply Permutation_flat_map with (g:=f) in Hperm.
-  match type of Hperm with Permutation ?a _ => transitivity a end.
-  1:{
-    clear -thread_eqdec tcs.
+  etransitivity; [ | etransitivity ].
+  2: apply Hperm.
+  - clear -thread_eqdec tcs.
     induction tcs as [ | tc tcs IH ].
     1: reflexivity.
     simpl.
-    now apply Permutation_app_head.
-  }
-  match type of Hperm with Permutation _ ?a => transitivity a end.
-  2:{
-    clear -thread_eqdec l.
+    now rewrite IH.
+  - clear -thread_eqdec l.
     induction l as [ | x l IH ].
     1: reflexivity.
     simpl.
-    destruct (find (has_same_id x) tcs) eqn:E; simpl.
-    - now apply Permutation_app_head.
-    - assumption.
-  }
-  assumption.
+    destruct (trs_find_node x tcs) eqn:E; simpl.
+    + now rewrite IH.
+    + assumption.
 Qed.
 
 Corollary tc_detach_nodes_forest_recombine tcs tc 
-  (Hnodup : NoDup (map tr_rootid (tr_flatten tc)))
-  (Hnodup' : NoDup (map tr_rootid tcs)) :
+  (Hnodup : tr_NoDupId tc) (Hnodup' : trs_roots_NoDupId tcs) :
   Permutation
     (flat_map tr_rootchn (snd (tc_detach_nodes tcs tc)))
     (flat_map
       (fun t : thread =>
-      match find (has_same_id t) (snd (tc_detach_nodes tcs tc)) with
+      match trs_find_node t (snd (tc_detach_nodes tcs tc)) with
       | Some res => tr_rootchn res
       | None => nil
       end) (map tr_rootid tcs)).
 Proof.
-  pose proof (tc_detach_nodes_forest_recombine_pre _ _ Hnodup Hnodup') as Hperm.
+  pose proof (tc_detach_nodes_forest_recombine_pre Hnodup Hnodup') as Hperm.
   now apply forest_chn_recombine.
 Qed.
 
-(* a very special case for the overlay tree *)
+End TC_Detach_Nodes.
 
+Section TC_Attach_Nodes.
+
+(* a very special case for the overlay tree *)
+(* P can be considered as a function for tracking the right list of trees to be appended *)
+(* FIXME: is this a pattern, just like prefix? can we unify them? *)
 Inductive simple_overlaytc (P : thread -> list treeclock) : treeclock -> treeclock -> Prop :=
   simple_overlaytc_intro : forall ni chn chn' chn'',
     chn'' = P (info_tid ni) ->
@@ -1578,9 +1520,30 @@ Proof.
     congruence.
 Qed.
 
+Lemma simple_overlaytc_ind_2 (P : thread -> list treeclock)
+  (Q : treeclock -> treeclock -> Prop)
+  (Hind : forall (ni : nodeinfo) (chn1 chn2 : list treeclock),
+    map tr_rootinfo chn1 = map tr_rootinfo chn2 ->
+    Forall2 (simple_overlaytc P) chn1 chn2 -> 
+    Forall2 Q chn1 chn2 -> Q (Node ni chn1) (Node ni (chn2 ++ P (info_tid ni))))
+  (tr1 tr2 : treeclock) (H : simple_overlaytc P tr1 tr2) : Q tr1 tr2.
+Proof.
+  revert tr2 H.
+  induction tr1 as [ni chn1 IH] using tree_ind_2; intros.
+  destruct tr2 as [ni2 chn2].
+  apply simple_overlaytc_inv in H.
+  destruct H as (chn2_ & chn2_' & -> & -> & -> & Hcorr & Hinfosame).
+  eapply Hind; eauto.
+  clear -Hcorr IH.
+  induction Hcorr.
+  1: constructor.
+  rewrite Forall_cons_iff in IH.
+  constructor; firstorder.
+Qed.
+
 Lemma tc_attach_nodes_result forest tc :
   simple_overlaytc (fun t =>
-    match List.find (has_same_id t) forest with
+    match trs_find_node t forest with
     | Some res => tr_rootchn res
     | None => nil
     end) tc (tc_attach_nodes forest tc).
@@ -1589,85 +1552,54 @@ Proof.
   simpl.
   constructor.
   - auto.
-  - clear -IH.
-    induction chn as [ | ch chn ].
-    1: constructor.
-    apply List.Forall_cons_iff in IH.
-    destruct IH as (H & IH).
-    constructor; firstorder.
+  - now apply Forall2_swap, Forall2_mapself_l.
 Qed.
-(*
-Fact simple_overlaytc_rootinfo_same (P : thread -> list treeclock) tc tc'
-  (Hoverlay : simple_overlaytc P tc tc') : tr_rootinfo tc' = tr_rootinfo tc.
-Proof. destruct tc, tc', (simple_overlaytc_inv _ _ _ _ _ Hoverlay) as (? & ? & ?). simpl. intuition. Qed.
-*)
+
 Fact tc_attach_nodes_rootinfo_same forest tc : 
   tr_rootinfo (tc_attach_nodes forest tc) = tr_rootinfo tc.
 Proof. now destruct tc. Qed.
 
-Lemma simple_overlaytc_dom_info (P : thread -> list treeclock) tc : forall tc'
-  (Hoverlay : simple_overlaytc P tc tc'),
-  Permutation (map tr_rootinfo (tr_flatten tc'))
-  ((map tr_rootinfo (tr_flatten tc)) ++
-    (map tr_rootinfo (flat_map tr_flatten (flat_map P (map tr_rootid (tr_flatten tc)))))).
+Lemma simple_overlaytc_dom_info (P : thread -> list treeclock) [tc tc']
+  (Hoverlay : simple_overlaytc P tc tc') :
+  Permutation ((map tr_rootinfo (tr_flatten tc ++
+      flat_map tr_flatten (flat_map P (map tr_rootid (tr_flatten tc))))))
+    (map tr_rootinfo (tr_flatten tc')).
 Proof.
-  induction tc as [(u, clk, aclk) chn IH] using tree_ind_2; intros.
-  destruct tc' as [(u', clk', aclk') chn'].
-  apply simple_overlaytc_inv in Hoverlay.
-  simpl in Hoverlay.
-  destruct Hoverlay as (new_chn & ? & Htmp & -> & -> & Hcorr & Hinfosame).
-  injection Htmp as <-.
-  subst clk' aclk'.
+  induction Hoverlay as [ ni chn1 chn2 Hinfosame Hcorr IH ] using simple_overlaytc_ind_2.
   simpl.
   constructor.
   rewrite -> ! flat_map_app, -> ! map_app.
-  etransitivity.
-  1: apply Permutation_app_comm.
-  etransitivity.
-  2: apply Permutation_app_comm.
-  rewrite <- app_assoc.
+  apply Permutation_Forall2_flat_map in IH.
+  rewrite ! flat_map_map, Permutation_flat_map_innerapp_split, map_app in IH.
+  rewrite <- IH, <- app_assoc.
   apply Permutation_app_head.
-  clear u clk aclk.
-  induction Hcorr as [ | ch new_ch chn new_chn Hso Hcorr IH' ].
-  - now simpl.
-  - simpl in Hinfosame |- *.
-    apply Forall_cons_iff in IH.
-    destruct IH as (HH & IH).
-    specialize (IH' IH).
-    removehead IH'.
-    2: congruence.
-    repeat rewrite -> ? map_app, -> ? flat_map_app.
-    match goal with |- Permutation _ ((?a ++ ?b) ++ (?c ++ ?d)) => 
-      remember a as la; remember b as lb; remember c as lc; remember d as ld;
-      transitivity ((lc ++ la) ++ (lb ++ ld)) end.
-    2:{
-      rewrite -> ! app_assoc with (n:=ld).
-      apply Permutation_app_tail.
-      rewrite <- 2 app_assoc.
-      apply Permutation_app_rot.
-    }
-    apply HH in Hso.
-    now apply Permutation_app.
+  rewrite Permutation_app_comm.
+  apply Permutation_app_tail.
+  (* using induction to make things easier *)
+  clear.
+  induction chn1; simpl; auto.
+  repeat (rewrite map_app + rewrite flat_map_app).
+  now rewrite IHchn1.
 Qed.
 
 Corollary tc_attach_nodes_dom_info subtree_tc' tc 
   (* these two conditions are required the trees of the forest appear at most once in the result *)
-  (Hnodup : NoDup (map tr_rootid (tr_flatten tc)))
-  (Hnodup' : NoDup (map tr_rootid (tr_flatten subtree_tc'))) :
+  (* we have to use "subtree_tc'" here, since "tc_attach_nodes" works on a tree *)
+  (Hnodup : tr_NoDupId tc) (Hnodup' : tr_NoDupId subtree_tc') :
   Permutation (map tr_rootinfo (tr_flatten (tc_attach_nodes (snd (tc_detach_nodes (tr_flatten subtree_tc') tc)) subtree_tc')))
   ((map tr_rootinfo (tr_flatten subtree_tc')) ++
     (map tr_rootinfo (flat_map tr_flatten (flat_map tr_rootchn (snd (tc_detach_nodes (tr_flatten subtree_tc') tc)))))).
 Proof.
   pose proof (tc_attach_nodes_result (snd (tc_detach_nodes (tr_flatten subtree_tc') tc)) subtree_tc') as Hso.
   apply simple_overlaytc_dom_info in Hso.
-  etransitivity.
-  1: apply Hso.
+  rewrite map_app in Hso.
+  rewrite <- Hso.
   apply Permutation_app_head, Permutation_map, Permutation_flat_map.
   symmetry.
   now apply tc_detach_nodes_forest_recombine.
 Qed.
 
-(* TODO this is not needed for our current purpose. for now, just keep it *)
+(* this is not needed for our current purpose. for now, just keep it *)
 (*
 Lemma simple_overlaytc_nodup (P : thread -> list treeclock) 
   (Hnodup_small : forall t, List.NoDup (map tr_rootid (flat_map tr_flatten (P t))))

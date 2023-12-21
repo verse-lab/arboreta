@@ -1001,6 +1001,43 @@ Section Tree_Find.
     base.fmap tr_rootinfo (tr_getnode (tr_rootid sub) tr2) = Some (tr_rootinfo sub).
   Proof. eapply id_nodup_find_sublist'. 1: apply prefixtr_flatten_sublist, Hprefix. all: auto. Qed.
 
+  (* a lemma about rearrangement; using "map Some" and "filter isSome" since we have to skip the "None"s *)
+
+  Lemma trs_find_rearrangement trs l
+    (Hnodup : trs_roots_NoDupId trs) (Hnodup' : NoDup l) 
+    (Hdomincl : incl (map tr_rootid trs) l) :
+    Permutation (map Some trs) 
+      (filter (@isSome _) (map (fun t => trs_find_node t trs) l)).
+  Proof.
+    revert l Hnodup' Hdomincl.
+    induction trs as [ | tr trs IH ]; intros; simpl.
+    - rewrite filter_all_false; auto.
+      now intros ? (? & <- & ?)%in_map_iff.
+    - hnf in Hnodup, Hdomincl.
+      simpl in Hnodup, Hdomincl.
+      apply NoDup_cons_iff in Hnodup.
+      pose proof (Hdomincl _ (or_introl eq_refl)) as (pre & suf & ->)%in_split.
+      rewrite map_app, filter_app.
+      simpl.
+      rewrite has_same_id_refl; simpl.
+      apply Permutation_cons_app.
+      erewrite <- filter_app, <- map_app, -> (map_ext_Forall _ _ (l:=pre ++ suf)).
+      1: apply IH.
+      + tauto.
+      + now apply NoDup_remove_1 in Hnodup'.
+      + hnf.
+        setoid_rewrite in_app_iff in Hdomincl.
+        setoid_rewrite in_app_iff.
+        simpl in Hdomincl.
+        intros b Hin.
+        destruct (Hdomincl _ (or_intror Hin)) as [ ? | [ <- | ? ]]; tauto.
+      + apply NoDup_remove_2 in Hnodup'.
+        apply Forall_forall.
+        intros.
+        unfold has_same_id.
+        rewrite eqdec_must_right; congruence.
+  Qed.
+
 End Tree_Find.
 
 Section Tree_Locate_Update.

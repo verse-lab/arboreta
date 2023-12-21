@@ -241,15 +241,15 @@ Section Permutation_Additional_Lemmas.
     all: now apply Permutation_in.
   Qed.
 
+  Fact Permutation_Forall2_flat_map [A B : Type] (f g : A -> list B) [l1 l2 : list A]
+    (H : Forall2 (fun x y => Permutation (f x) (g y)) l1 l2) :
+    Permutation (flat_map f l1) (flat_map g l2).
+  Proof. induction H; auto. simpl. now rewrite H, IHForall2. Qed.
+
   Fact Permutation_Forall_flat_map [A B : Type] (f g : A -> list B) [l : list A]
     (H : Forall (fun x => Permutation (f x) (g x)) l) :
     Permutation (flat_map f l) (flat_map g l).
-  Proof.
-    induction l as [ | x l IH ]; simpl; auto.
-    rewrite -> Forall_cons_iff in H.
-    destruct H as (H1 & H2).
-    apply Permutation_app; auto.
-  Qed.
+  Proof. apply Permutation_Forall2_flat_map. induction H; auto. Qed.
 
   Fact Permutation_flat_map_innerapp_split [A B : Type] (f g : A -> list B) (l : list A) :
     Permutation (flat_map (fun x => f x ++ g x) l) (flat_map f l ++ flat_map g l).
@@ -331,6 +331,10 @@ Qed.
 
 Section Forall2_Additional_Lemmas. 
 
+  Fact Forall2_swap [A B : Type] [P : A -> B -> Prop] [l1 l2]
+    (H : Forall2 P l1 l2) : Forall2 (fun b a => P a b) l2 l1.
+  Proof. induction H; auto. Qed.
+
   Fact Forall2_forall_exists_l [A B : Type] [P : A -> B -> Prop] [l1 l2]
     (H : Forall2 P l1 l2) [x : A] (Hin : In x l1) :
     exists y, In y l2 /\ P x y.
@@ -344,12 +348,7 @@ Section Forall2_Additional_Lemmas.
   Fact Forall2_forall_exists_r [A B : Type] [P : A -> B -> Prop] [l1 l2]
     (H : Forall2 P l1 l2) [y : B] (Hin : In y l2) :
     exists x, In x l1 /\ P x y.
-  Proof.
-    induction H as [ | x0 y0 l1 l2 Hp H IH ].
-    - inversion Hin.
-    - simpl in Hin |- *.
-      destruct Hin as [ -> | Hin ]; firstorder.
-  Qed.
+  Proof. eapply Forall2_swap, Forall2_forall_exists_l in H; eauto. Qed.
 
   Fact Forall2_and [A B : Type] (P Q : A -> B -> Prop) l1 l2 :
     Forall2 P l1 l2 /\ Forall2 Q l1 l2 <-> Forall2 (fun a b => P a b /\ Q a b) l1 l2.
