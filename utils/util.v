@@ -199,6 +199,16 @@ Section NoDup_Additional_Lemmas.
 
 End NoDup_Additional_Lemmas.
 
+Lemma partition_filter [A : Type] (f : A -> bool) l :
+  partition f l = (filter f l, filter (fun a => negb (f a)) l).
+Proof.
+  induction l as [ | x l IH ].
+  - reflexivity.
+  - simpl.
+    rewrite -> IH.
+    now destruct (f x).
+Qed.
+
 Section Permutation_Additional_Lemmas.
 
   Fact Permutation_partition [A : Type] (f : A -> bool) l :
@@ -215,17 +225,13 @@ Section Permutation_Additional_Lemmas.
         now constructor.
   Qed.
 
-  Lemma Permutation_split_combine [A : Type] (f : A -> bool) (l : list A) :
+  Corollary Permutation_split_combine [A : Type] (f : A -> bool) (l : list A) :
     Permutation l (filter f l ++ filter (fun a => negb (f a)) l).
   Proof.
-    induction l as [ | a l IH ]; auto.
-    simpl.
-    destruct (f a) eqn:E; simpl.
-    - now apply perm_skip.
-    - etransitivity. 
-      1: apply perm_skip, IH.
-      now apply Permutation_middle.
-  Qed.  
+    etransitivity; [ apply Permutation_partition with (f:=f) | ].
+    rewrite partition_filter.
+    reflexivity.
+  Qed. 
 
   Fact Permutation_in_mutual [A : Type] [l l' : list A] (H : Permutation l l') :
     forall x, In x l <-> In x l'.
@@ -266,16 +272,6 @@ Proof.
   - auto.
   - simpl.
     now rewrite -> IH.
-Qed.
-
-Lemma partition_filter [A : Type] (f : A -> bool) l :
-  partition f l = (filter f l, filter (fun a => negb (f a)) l).
-Proof.
-  induction l as [ | x l IH ].
-  - reflexivity.
-  - simpl.
-    rewrite -> IH.
-    now destruct (f x).
 Qed.
 
 Lemma partition_ext_Forall [A : Type] (f g : A -> bool) l 

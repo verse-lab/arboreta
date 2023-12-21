@@ -698,6 +698,13 @@ Section NoDup_Indices_Theory.
   Definition trs_NoDupId trs := Eval unfold trs_roots_NoDupId in trs_roots_NoDupId (flat_map tr_flatten trs).
   Definition tr_NoDupId tr := Eval unfold trs_roots_NoDupId in trs_roots_NoDupId (tr_flatten tr).
 
+  Fact id_nodup_rootinfo_nodup [trs] (H : trs_roots_NoDupId trs) : NoDup (map tr_rootinfo trs).
+  Proof.
+    unfold trs_roots_NoDupId, tr_rootid in H.
+    rewrite <- map_map in H.
+    eapply NoDup_map_inv; eauto.
+  Qed.
+
   Lemma id_nodup_trs_each [trs] (H : trs_NoDupId trs)
     [tr] (Hin : In tr trs) : tr_NoDupId tr.
   Proof.

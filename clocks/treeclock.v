@@ -1306,47 +1306,26 @@ Qed.
 (* there will not be any tid in tcs that is also inside the pivot tree *)
 
 Lemma tc_detach_nodes_dom_excl tcs tc :
-  forall t (Htarg : isSome (trs_find_node t tcs) = true)
-  res (Hin : In res (tr_flatten (fst (tc_detach_nodes tcs tc)))) (Et : tr_rootid res = t),
-  res = (fst (tc_detach_nodes tcs tc)).
-Proof.
-  induction tc as [ni chn IH] using tree_ind_2; intros.
-  pose proof (tc_detach_nodes_eta ni chn tcs) as (new_chn & forest & forest' & new_chn' & _ & _ & Enew_chn & Eres & Eres' & Enew_chn' & Edetach).
-  rewrite Edetach in Hin |- *.
-  simpl in Hin |- *.
-  destruct Hin as [ | Hin ].
-  1: congruence.
-  (* now contradiction part *)
-  rewrite -> List.Forall_forall in IH.
-  apply in_flat_map in Hin.
-  destruct Hin as (new_ch & Hin_ch & Hin).
-  subst new_chn' new_chn.
-  apply filter_In in Hin_ch.
-  destruct Hin_ch as (Hin_ch & Htidnotin).
-  apply in_map_iff in Hin_ch.
-  destruct Hin_ch as (ch & <- & Hin_ch).
-  subst t.
-  eapply IH in Hin; eauto.
-  subst res.
-  now rewrite Htarg in Htidnotin.
-Qed.
-
-(* FIXME: use this alternative version to replace/optimize the original version? *)
-Corollary tc_detach_nodes_dom_excl' tcs tc t (Htarg : isSome (find (has_same_id t) tcs) = true) :
+  forall t (Htarg : isSome (trs_find_node t tcs) = true),
   ~ In t (map tr_rootid (flat_map tr_flatten (tr_rootchn (fst (tc_detach_nodes tcs tc))))).
 Proof.
-  destruct (fst (tc_detach_nodes tcs tc)) as [ni chn] eqn:E.
+  induction tc as [ni chn IH] using tree_ind_2'; intros.
+  pose proof (tc_detach_nodes_eta ni chn tcs) as (new_chn & forest & forest' & new_chn' & _ & _ & Enew_chn & Eres & Eres' & Enew_chn' & Edetach).
+  subst new_chn' new_chn.
+  rewrite Edetach.
   simpl.
-  intros (ch & Hin_ch & (res & Eid & H)%in_map_iff)%map_flat_map_In.
-  apply tc_detach_nodes_dom_excl with (res:=res) (tc:=tc) in Htarg; try assumption.
-  2: rewrite E; apply subtr_trans with (tr':=ch); [ assumption | apply subtr_chn; now simpl ].
-  (* contradiction *)
-  apply self_not_in_tr_flatten_chn with (tr:=Node ni chn), in_flat_map.
-  rewrite Htarg, E in H.
-  eauto.
+  intros (sub & <- & (? & ((ch & <- & Hin)%in_map_iff & Hb%negb_true_iff)%filter_In & Hsub)%in_flat_map)%in_map_iff.
+  rewrite tc_detach_nodes_fst_rootid_same in Hb.
+  eapply IH; eauto.
+  rewrite (tree_recons (fst _)), tc_detach_nodes_fst_rootinfo_same in Hsub.
+  simpl in Hsub.
+  destruct Hsub as [ <- | ].
+  - unfold tr_rootid in *.
+    simpl in Htarg; congruence.
+  - now apply in_map.
 Qed.
 
-Corollary tc_detach_nodes_dom_excl'' tcs tc t (Htarg : isSome (find (has_same_id t) tcs) = true) :
+Corollary tc_detach_nodes_dom_excl_snd tcs tc t (Htarg : isSome (trs_find_node t tcs) = true) :
   ~ In t (map tr_rootid (flat_map tr_flatten (flat_map tr_rootchn (snd (tc_detach_nodes tcs tc))))).
 Proof.
   intros (ch & (sub & Hpick & Hin_ch)%in_flat_map & Hin_sub)%map_flat_map_In.
@@ -1354,102 +1333,73 @@ Proof.
   rewrite -> List.Forall_forall in Htmp.
   specialize (Htmp _ Hpick).
   destruct Htmp as (sub' & Hin_sub' & ->).
-  eapply tc_detach_nodes_dom_excl'; [ apply Htarg | ].
+  eapply tc_detach_nodes_dom_excl; [ apply Htarg | ].
   eapply map_flat_map_In_conv; eauto.
 Qed.
 
-(* only mutual in for now *)
-(* FIXME: it may be possible that we can prove such iff directly? *)
 Corollary tc_detach_nodes_dom_incl_iff tcs tc 
-  (* FIXME: the "Hnotin" may not be compatible with the monotone join operation. consider move this constraint in the future *)
-  (Hnotin : find (has_same_id (tr_rootid tc)) tcs = None) :
+  (* FIXME: the "Hnotin" may not be compatible with the monotone copy operation. consider move this constraint in the future *)
+  (Hnotin : trs_find_node (tr_rootid tc) tcs = None) :
   forall ni,
-    In ni (map tr_rootinfo (filter (fun sub => find (has_same_id (tr_rootid sub)) tcs) (tr_flatten tc))) <-> 
+    In ni (filter (fun ni => isSome (trs_find_node (info_id ni) tcs)) (map tr_rootinfo (tr_flatten tc))) <->
     In ni (map tr_rootinfo (snd (tc_detach_nodes tcs tc))).
 Proof.
+  (* purely analytic proof *)
   intros.
   pose proof (tc_detach_nodes_dom_partition' tcs tc) as Hperm.
-  rewrite <- ! map_app in Hperm.
-  (* ... have to use map_filter_comm *)
-  pose proof (map_filter_comm tr_rootinfo (fun ni => find (has_same_id (info_tid ni)) tcs) (tr_flatten tc)) as Htmp.
-  simpl in Htmp.
-  unfold tr_rootid.
-  rewrite <- Htmp, -> filter_In.
-  clear Htmp.
-  erewrite -> Permutation_in_mutual at 1; [ | apply Hperm ].
-  rewrite -> ! map_app, -> ! in_app_iff.
-  split; intros H.
-  - destruct H as (H & Htarg).
-    (* TODO why this Hlocal? *)
-    assert (forall ni0 tcs0, ~ In (info_tid ni0) (map tr_rootid tcs0) -> ~ In ni0 (map tr_rootinfo tcs0)) as Hlocal.
-    {
-      intros.
-      intros (sub & <- & Hq)%in_map_iff.
-      apply in_map with (f:=tr_rootid) in Hq.
-      unfold tr_rootid in Hq at 1.
-      congruence.
-    } 
-    pose proof (tc_detach_nodes_dom_excl' _ tc _ Htarg) as H'%Hlocal.
-    pose proof (tc_detach_nodes_dom_excl'' _ tc _ Htarg) as H''%Hlocal.
-    destruct (fst (tc_detach_nodes tcs tc)) as [ni0 chn] eqn:E.
-    simpl in *.
-    assert (ni <> ni0).
-    {
-      pose proof (tc_detach_nodes_fst_rootinfo_same tcs tc) as Einfo.
-      rewrite -> E in Einfo.
-      unfold tr_rootid in Hnotin.
-      rewrite <- Einfo in Hnotin.
-      simpl in Hnotin.
-      intros <-.
-      now rewrite Hnotin in Htarg.
-    }
-    eqsolve.
-  - split; [ tauto | ].
+  pose proof (Permutation_in_mutual Hperm) as Hinin.
+  do 2 setoid_rewrite in_app_iff in Hinin.
+  split.
+  - intros (Hin%Hinin & Hb)%filter_In.
+    destruct Hin as [ Hin | [ Hin | Hin ] ].
+    + rewrite (tree_recons (fst _)) in Hin.
+      simpl in Hin.
+      rewrite tc_detach_nodes_fst_rootinfo_same in Hin.
+      destruct Hin as [ <- | Hin ].
+      * now setoid_rewrite Hnotin in Hb.
+      * apply tc_detach_nodes_dom_excl with (tc:=tc) in Hb.
+        apply (in_map info_tid) in Hin.
+        now rewrite map_map in Hin.
+    + assumption.
+    + apply tc_detach_nodes_dom_excl_snd with (tc:=tc) in Hb.
+      apply (in_map info_id) in Hin.
+      now rewrite map_map in Hin.
+  - intros H.
+    apply filter_In.
+    split; [ firstorder | ].
     apply in_map_iff in H.
     destruct H as (sub & <- & H).
-    pose proof (tc_detach_nodes_dom_incl tcs tc) as Htmp.
-    rewrite -> List.Forall_forall in Htmp.
-    apply Htmp.
-    eauto.
+    revert sub H.
+    apply Forall_forall, tc_detach_nodes_dom_incl.
 Qed.
 
-Corollary tc_detach_nodes_dom_partition'' tcs tc (Hnotin : find (has_same_id (tr_rootid tc)) tcs = None) 
-  (Hnodup : List.NoDup (map tr_rootid (tr_flatten tc))) :
+(* a critical partitioning result *)
+
+Corollary tc_detach_nodes_dom_partition'' tcs tc (Hnotin : trs_find_node (tr_rootid tc) tcs = None) 
+  (Hnodup : tr_NoDupId tc) :
   Permutation
     (map tr_rootinfo (tr_flatten (fst (tc_detach_nodes tcs tc))) ++
-     map tr_rootinfo (flat_map tr_flatten (flat_map tr_rootchn
-            (snd (tc_detach_nodes tcs tc)))))
-    (map tr_rootinfo (filter (fun sub => 
-      negb (find (has_same_id (tr_rootid sub)) tcs)) (tr_flatten tc))) /\
+     map tr_rootinfo (flat_map tr_flatten (flat_map tr_rootchn (snd (tc_detach_nodes tcs tc)))))
+    (map tr_rootinfo (filter (fun sub => negb (isSome (trs_find_node (tr_rootid sub) tcs))) (tr_flatten tc))) /\
   Permutation
     (map tr_rootinfo (snd (tc_detach_nodes tcs tc)))
-    (map tr_rootinfo (filter (fun sub => find (has_same_id (tr_rootid sub)) tcs) (tr_flatten tc))).
+    (map tr_rootinfo (filter (fun sub => isSome (trs_find_node (tr_rootid sub) tcs)) (tr_flatten tc))).
 Proof.
+  pose proof (tc_detach_nodes_dom_partition' tcs tc) as Hperm.
+  rewrite Permutation_app_swap_app in Hperm.
+  pose proof (Permutation_split_combine (fun sub => isSome (trs_find_node (tr_rootid sub) tcs)) (tr_flatten tc)) as Hperm_par%(Permutation_map tr_rootinfo).
+  rewrite map_app in Hperm_par.
   apply base.and_wlog_l.
-  - intros Hperm'.
-    eapply Permutation_app_inv_l.
-    etransitivity.
-    2: rewrite <- map_app; apply Permutation_map, Permutation_split_combine.
-    etransitivity.
-    2: symmetry; apply tc_detach_nodes_dom_partition' with (tcs:=tcs).
-    etransitivity.
-    2: apply Permutation_app_swap_app.
-    now apply Permutation_app_tail.
-  - unfold tr_rootid in Hnodup.
-    rewrite <- map_map with (f:=tr_rootinfo) in Hnodup.
-    apply NoDup_map_inv in Hnodup.
-    apply NoDup_Permutation.
-    + eapply Permutation_NoDup in Hnodup.
-      2: apply tc_detach_nodes_dom_partition' with (tcs:=tcs).
-      now rewrite ! NoDup_app_ in Hnodup.
-    + (* ... have to use map_filter_comm *)
-      pose proof (map_filter_comm tr_rootinfo (fun ni => find (has_same_id (info_tid ni)) tcs) (tr_flatten tc)) as Htmp.
-      simpl in Htmp.
-      unfold tr_rootid.
-      rewrite <- Htmp.
-      now apply NoDup_filter.
-    + intros.
-      now rewrite -> tc_detach_nodes_dom_incl_iff.
+  - intros H.
+    rewrite Hperm_par, H in Hperm.
+    apply Permutation_app_inv_l in Hperm.
+    now rewrite Hperm.
+  - apply id_nodup_rootinfo_nodup in Hnodup.
+    apply Permutation_NoDup, NoDup_app_ in Hperm, Hperm_par; try assumption.
+    apply NoDup_Permutation; try tauto.
+    intros.
+    rewrite <- tc_detach_nodes_dom_incl_iff; try assumption.
+    now rewrite map_filter_comm.
 Qed.
 
 Corollary tc_shape_inv_tc_detach_nodes_fst tcs tc 
@@ -1465,7 +1415,7 @@ Corollary tc_shape_inv_tc_detach_nodes_snd tcs tc
   Forall tc_shape_inv (snd (tc_detach_nodes tcs tc)).
 Proof.
   pose proof (tc_detach_nodes_snd2fst tcs tc) as Hto.
-  pose proof (tc_shape_inv_sub _ Hshape) as Hshape_sub.
+  pose proof (tc_shape_inv_sub Hshape) as Hshape_sub.
   rewrite -> List.Forall_forall in Hto |- *.
   intros sub' Hin'.
   specialize (Hto sub' Hin').
