@@ -393,7 +393,11 @@ Section Forall2_Additional_Lemmas.
     - induction H; simpl; congruence.
   Qed.
 
-End Forall2_Additional_Lemmas. 
+  Fact map_ext_Forall2 : forall [A B : Type] (f : A -> B) (l1 l2 : list A),
+    Forall2 (fun a1 a2 => f a1 = f a2) l1 l2 -> map f l1 = map f l2.
+  Proof. intros. induction H; simpl; intuition. Qed.
+
+End Forall2_Additional_Lemmas.
 
 (* FIXME: move this somewhere else *)
 Corollary sublist_map_l_recover [A B : Type] (f : A -> B) [l1 l2]
@@ -406,40 +410,40 @@ Proof.
   eauto.
 Qed.
 
-(* a simple swap of map and flat_map over In *)
+Section Flatmap_Additional_Lemmas.
 
-Fact map_flat_map_In [A B C : Type] (f : B -> C) (g : A -> list B) (l : list A) :
-  forall x, In x (map f (flat_map g l)) <-> (exists y, In y l /\ In x (map f (g y))).
-Proof. 
-  intros x.
-  repeat setoid_rewrite -> in_map_iff.
-  setoid_rewrite -> in_flat_map.
-  firstorder congruence.
-Qed.
+  (* a simple swap of map and flat_map over In *)
 
-Fact map_flat_map_In_conv [A B C : Type] (f : B -> C) (g : A -> list B) (l : list A) 
-  (x : C) (y : A) (Hin : In y l) (Hin2 : In x (map f (g y))) : In x (map f (flat_map g l)).
-Proof. apply map_flat_map_In. eauto. Qed.
+  Fact map_flat_map_In [A B C : Type] (f : B -> C) (g : A -> list B) (l : list A) :
+    forall x, In x (map f (flat_map g l)) <-> (exists y, In y l /\ In x (map f (g y))).
+  Proof. 
+    intros x.
+    repeat setoid_rewrite -> in_map_iff.
+    setoid_rewrite -> in_flat_map.
+    firstorder congruence.
+  Qed.
 
-Fact in_flat_map_conv : forall [A B : Type] (f : A -> list B) (l : list A) (x : A) (y : B),
-  In x l -> In y (f x) -> In y (flat_map f l).
-Proof. intros. apply in_flat_map. eauto. Qed.
+  Fact map_flat_map_In_conv [A B C : Type] (f : B -> C) (g : A -> list B) (l : list A) 
+    (x : C) (y : A) (Hin : In y l) (Hin2 : In x (map f (g y))) : In x (map f (flat_map g l)).
+  Proof. apply map_flat_map_In. eauto. Qed.
 
-Fact flat_map_single : forall [A B : Type] (f : A -> list B) (x : A),
-  f x = flat_map f (x :: nil).
-Proof. intros. simpl. now rewrite -> app_nil_r. Qed.
+  Fact in_flat_map_conv : forall [A B : Type] (f : A -> list B) (l : list A) (x : A) (y : B),
+    In x l -> In y (f x) -> In y (flat_map f l).
+  Proof. intros. apply in_flat_map. eauto. Qed.
 
-Fact flat_map_map : forall [A B C : Type] (g : A -> list B) (f : B -> C) (l : list A),
-  flat_map (fun a => map f (g a)) l = map f (flat_map g l).
-Proof. intros. induction l as [ | ?? IH ]; simpl; auto. now rewrite IH, map_app. Qed.
+  Fact flat_map_single : forall [A B : Type] (f : A -> list B) (x : A),
+    f x = flat_map f (x :: nil).
+  Proof. intros. simpl. now rewrite -> app_nil_r. Qed.
 
-Fact flat_map_flat_map : forall [A B C : Type] (f : A -> list B) (g : B -> list C) (l : list A),
-  flat_map (fun a => flat_map g (f a)) l = flat_map g (flat_map f l).
-Proof. intros. induction l as [ | ?? IH ]; simpl; auto. now rewrite IH, flat_map_app. Qed.
+  Fact flat_map_map : forall [A B C : Type] (g : A -> list B) (f : B -> C) (l : list A),
+    flat_map (fun a => map f (g a)) l = map f (flat_map g l).
+  Proof. intros. induction l as [ | ?? IH ]; simpl; auto. now rewrite IH, map_app. Qed.
 
-Fact map_ext_Forall2 : forall [A B : Type] (f : A -> B) (l1 l2 : list A),
-  Forall2 (fun a1 a2 => f a1 = f a2) l1 l2 -> map f l1 = map f l2.
-Proof. intros. induction H; simpl; intuition. Qed.
+  Fact flat_map_flat_map : forall [A B C : Type] (f : A -> list B) (g : B -> list C) (l : list A),
+    flat_map (fun a => flat_map g (f a)) l = flat_map g (flat_map f l).
+  Proof. intros. induction l as [ | ?? IH ]; simpl; auto. now rewrite IH, flat_map_app. Qed.
+
+End Flatmap_Additional_Lemmas.
 
 (* TODO did not find a good union operation for this *)
 
@@ -587,29 +591,6 @@ Fact Forall_impl_impl {A : Type} (P Q : A -> Prop) (l : list A) (H : Forall (fun
   (H0 : Forall P l) : Forall Q l.
 Proof. induction l as [ | x l IH ]; auto. rewrite -> Forall_cons_iff in *. intuition. Qed.
 
-(* TODO is this present in stdlib? *)
-
-Fact firstn_skipn_onemore {A : Type} (l : list A) (i : nat) (x : A) (suf : list A)
-  (H : skipn i l = x :: suf) :
-  firstn (S i) l = firstn i l ++ (x :: nil) /\ skipn (S i) l = suf.
-Proof.
-  assert (i < length l)%nat as Hlt.
-  { 
-    destruct (Nat.leb (length l) i) eqn:E; [ apply Nat.leb_le in E | now apply Nat.leb_gt in E ].
-    apply skipn_all2 in E; congruence.
-  }
-  assert (length (firstn i l) = i) as Hlen by (apply firstn_length_le; lia).
-  rewrite <- firstn_skipn with (n:=i) (l:=l) at 1 3.
-  rewrite -> H.
-  split.
-  - rewrite <- Hlen, <- Nat.add_1_r at 1. 
-    now rewrite -> firstn_app_2.
-  - rewrite <- Hlen at 1.
-    rewrite -> skipn_app, -> skipn_all2 at 1; try lia.
-    replace (S _ - _) with 1 by lia.
-    now simpl.
-Qed.
-
 Lemma list_ind_3 : forall (A : Type) (P : list A -> Prop),
   P nil ->
   (forall n, (forall l, length l = n -> P l) -> forall l, length l = S n -> P l) ->
@@ -627,7 +608,7 @@ Proof.
 Qed.
 
 (* another way to prove rev_ind *)
-
+(*
 Lemma list_ind_2 : forall (A : Type) (P : list A -> Prop),
   P nil ->
   (forall (a : A) (l : list A), P l -> P (l ++ (a :: nil))) ->
@@ -641,7 +622,7 @@ Proof.
   injection H2 as <-.
   auto.
 Qed.
-
+*)
 Fact Permutation_upto_pick m n (H : m < n) :
   Permutation (seq 0 n) (m :: ((seq 0 m) ++ (seq (S m) (n - (S m))))).
 Proof.
@@ -655,32 +636,86 @@ Qed.
 Fact in_pre_suf [A : Type] [pre suf : list A] (sub : A) : In sub (pre ++ sub :: suf).
 Proof. rewrite -> in_app_iff. simpl In. tauto. Qed.
 
-(* a little fact ... TODO why this is not in stdlib? *)
-Fact nth_error_some_inrange {A : Type} (i : nat) (al : list A) a : 
-  nth_error al i = Some a -> (i < length al)%nat.
-Proof.
-  revert i a. 
-  induction al as [ | a' al IH ]; intros; simpl in *.
-  - destruct i; now simpl in H.
-  - destruct i; try lia. 
-    simpl in H. 
-    apply IH in H. 
-    lia.
-Qed.
+Section List_Slice_Index_Additional_Lemmas.
 
-Fact firstn_last {A : Type} (l : list A) (i : nat) (H : S i <= length l) :
-  list.last (firstn (S i) l) = nth_error l i.
-Proof.
-  revert i H.
-  induction l as [ | x l IH ]; intros; simpl in *.
-  - now destruct i.
-  - destruct i as [ | i ]; simpl; auto.
-    apply le_S_n in H.
-    rewrite <- IH; auto.
-    destruct l; simpl in *.
-    1: inversion H.
-    reflexivity.
-Qed.
+  (* FIXME: these proofs are long and weird ... *)
+
+  Fact firstn_skipn_onemore {A : Type} (l : list A) (i : nat) (x : A) (suf : list A)
+    (H : skipn i l = x :: suf) :
+    firstn (S i) l = firstn i l ++ (x :: nil) /\ skipn (S i) l = suf.
+  Proof.
+    assert (i < length l)%nat as Hlt.
+    { 
+      destruct (Nat.leb (length l) i) eqn:E; [ apply Nat.leb_le in E | now apply Nat.leb_gt in E ].
+      apply skipn_all2 in E; congruence.
+    }
+    assert (length (firstn i l) = i) as Hlen by (apply firstn_length_le; lia).
+    rewrite <- firstn_skipn with (n:=i) (l:=l) at 1 3.
+    rewrite -> H.
+    split.
+    - rewrite <- Hlen, <- Nat.add_1_r at 1. 
+      now rewrite -> firstn_app_2.
+    - rewrite <- Hlen at 1.
+      rewrite -> skipn_app, -> skipn_all2 at 1; try lia.
+      replace (S _ - _) with 1 by lia.
+      now simpl.
+  Qed.
+
+  Fact nth_error_some_inrange {A : Type} (i : nat) (al : list A) a : 
+    nth_error al i = Some a -> (i < length al)%nat.
+  Proof.
+    revert i a. 
+    induction al as [ | a' al IH ]; intros; simpl in *.
+    - destruct i; now simpl in H.
+    - destruct i; try lia. 
+      simpl in H. 
+      apply IH in H. 
+      lia.
+  Qed.
+
+  Fact nth_error_some_inrange_le {A : Type} [i : nat] [al : list A] [a]
+    (H : nth_error al i = Some a) : (i <= length al)%nat.
+  Proof. apply nth_error_some_inrange in H. now apply Nat.lt_le_incl. Qed.
+
+  Fact firstn_last {A : Type} (l : list A) (i : nat) (H : S i <= length l) :
+    list.last (firstn (S i) l) = nth_error l i.
+  Proof.
+    revert i H.
+    induction l as [ | x l IH ]; intros; simpl in *.
+    - now destruct i.
+    - destruct i as [ | i ]; simpl; auto.
+      apply le_S_n in H.
+      rewrite <- IH; auto.
+      destruct l; simpl in *.
+      1: inversion H.
+      reflexivity.
+  Qed.
+
+  Fact nth_error_mixin : forall [A : Type] (l : list A) (n : nat) [a : A],
+    nth_error l n = Some a ->
+    n <= length l /\ length (firstn n l) = n /\
+    l = firstn n l ++ a :: skipn (S n) l /\ skipn n l = a :: skipn (S n) l.
+  Proof.
+    intros.
+    pose proof (nth_error_some_inrange_le H) as Hle.
+    split; auto.
+    split; [ rewrite firstn_length_le; auto | ].
+    pose proof (firstn_skipn n l) as E.
+    rewrite <- E at 1.
+    rewrite app_inv_head_iff.
+    pose proof (fun (P : Prop) (H : P) => conj H H) as Htmp.
+    apply Htmp.
+    apply nth_error_split in H.
+    destruct H as (pre & suf & Echn & Elen).
+    rewrite <- E in Echn.
+    apply list.app_inj_1 in Echn.
+    2: rewrite Elen, firstn_length_le; auto.
+    rewrite (proj2 Echn).
+    f_equal.
+    now apply proj2, firstn_skipn_onemore in Echn.
+  Qed.
+
+End List_Slice_Index_Additional_Lemmas.
 
 Fact list_rev_destruct [A : Type] (l : list A) : {l = nil} + {exists l' x, l = l' ++ x :: nil}.
 Proof.
