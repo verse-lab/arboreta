@@ -1501,7 +1501,7 @@ Inductive simple_overlaytc (P : thread -> list treeclock) : treeclock -> treeclo
     Forall2 (simple_overlaytc P) chn chn' ->
     simple_overlaytc P (Node ni chn) (Node ni (chn' ++ chn'')).
 
-Fact simple_overlaytc_inv (P : thread -> list treeclock) ni1 ni2 chn1 chn2 
+Fact simple_overlaytc_inv [P ni1 ni2 chn1 chn2]
   (Hso: simple_overlaytc P (Node ni1 chn1) (Node ni2 chn2)) :
   exists prefix_chn suffix_chn, ni1 = ni2 /\ chn2 = prefix_chn ++ suffix_chn /\
     suffix_chn = P (info_tid ni1) /\ Forall2 (simple_overlaytc P) chn1 prefix_chn /\
@@ -1555,6 +1555,10 @@ Proof.
   - now apply Forall2_swap, Forall2_mapself_l.
 Qed.
 
+Fact simple_overlaytc_rootinfo_same [P tc tc']
+  (Hoverlay : simple_overlaytc P tc tc') : tr_rootinfo tc' = tr_rootinfo tc.
+Proof. destruct tc, tc', (simple_overlaytc_inv Hoverlay) as (? & ? & ?). simpl. intuition. Qed.
+
 Fact tc_attach_nodes_rootinfo_same forest tc : 
   tr_rootinfo (tc_attach_nodes forest tc) = tr_rootinfo tc.
 Proof. now destruct tc. Qed.
@@ -1582,7 +1586,7 @@ Proof.
   now rewrite IHchn1.
 Qed.
 
-Corollary tc_attach_nodes_dom_info subtree_tc' tc 
+Corollary tc_attach_nodes_dom_info [subtree_tc' tc]
   (* these two conditions are required the trees of the forest appear at most once in the result *)
   (* we have to use "subtree_tc'" here, since "tc_attach_nodes" works on a tree *)
   (Hnodup : tr_NoDupId tc) (Hnodup' : tr_NoDupId subtree_tc') :
@@ -1599,7 +1603,7 @@ Proof.
   now apply tc_detach_nodes_forest_recombine.
 Qed.
 
-(* this is not needed for our current purpose. for now, just keep it *)
+(* this is not needed for proving "tc_attach_detached_nodes_tid_nodup", which is easier to prove directly. for now, just keep this *)
 (*
 Lemma simple_overlaytc_nodup (P : thread -> list treeclock) 
   (Hnodup_small : forall t, List.NoDup (map tr_rootid (flat_map tr_flatten (P t))))
@@ -1640,120 +1644,94 @@ Qed.
 *)
 
 Lemma tc_shape_inv_simple_overlaytc_pre (P : thread -> list treeclock) (Q : thread -> nat)
+  (* Q: retrieves the clock of a given thread *)
   (Hcomple : forall t, exists aclk, tc_shape_inv (Node (mkInfo t (Q t) aclk) (P t)))
   tc (Hshape : tc_shape_inv tc)
   (* needed for aclk upperbound *)
   (Hclk_lt : Foralltr (fun tc' => Q (tr_rootid tc') <= tc_rootclk tc') tc)
   (* needed for aclk sorted *)
-  (Haclk_lt : Foralltr (fun tc' => let: Node ni chn := tc' in
-    Forall (fun tc' => Q (info_tid ni) <= tc_rootaclk tc') chn) tc)
-  : forall tc' (Hoverlay : simple_overlaytc P tc tc'),
+  (Haclk_lt : Foralltr (fun tc' =>
+    Forall (fun tc0 => Q (tr_rootid tc') <= tc_rootaclk tc0) (tr_rootchn tc')) tc) 
+  tc' (Hoverlay : simple_overlaytc P tc tc') :
   Foralltr tc_chn_aclk_ub tc' /\ Foralltr tc_chn_aclk_decsorted tc'.
 Proof.
-  induction tc as [(u, clk, aclk) chn IH] using tree_ind_2; intros.
-  destruct tc' as [(u', clk', aclk') chn'].
-  apply simple_overlaytc_inv in Hoverlay.
-  simpl in Hoverlay.
-  destruct Hoverlay as (new_chn & ? & Htmp & -> & -> & Hcorr & Hinfosame).
-  injection Htmp as <-.
-  subst clk' aclk'.
-  rewrite -> List.Forall_forall in IH.
-  pose proof (Forall2_forall_exists_r _ _ _ Hcorr) as Hcorr_inr.
-  (* prepare *)
-  pose proof (Hcomple u) as (aclk' & Hshape_sub).
-  pose proof (tc_shape_inv_chn _ Hshape) as Hshape_chn.
-  simpl in Hshape_chn.
-  rewrite -> tc_shape_inv_conj_iff, -> ! Foralltr_cons_iff in Hshape_sub, Hshape.
-  rewrite -> Foralltr_cons_iff in Haclk_lt, Hclk_lt.
-  destruct Hshape_sub as (_ & (Ha & Ha') & (Hb & Hb')), 
-    Hshape as (_ & (Ha'' & _) & (Hb'' & _)), 
-    Haclk_lt as (Eaclk_lt & Haclk_lt), Hclk_lt as (Eclk_lt & Hclk_lt).
-  simpl in Ha, Hb, Eaclk_lt, Eclk_lt, Ha'', Hb''.
-
-  rewrite -> List.Forall_forall in Hshape_chn, Hclk_lt, Haclk_lt.
-
-  (* TODO repetition elimination *)
-  split.
-  all: rewrite -> Foralltr_cons_iff, -> List.Forall_app.
-  - split; [ | split ].
-    + simpl.
-      apply List.Forall_app.
-      split.
-      * unfold tc_rootaclk.
-        hnf in Ha''.
-        change (fun tc' => _) with (fun tc' => (fun ni => info_aclk ni <= clk) (tr_rootinfo tc')) in Ha'' |- *.
-        rewrite <- Forall_map in Ha'' |- *.
-        now rewrite <- Hinfosame.
-      * eapply List.Forall_impl.
-        2: apply Ha.
-        simpl.
+  induction Hoverlay as [ ni chn1 chn2 Hinfosame Hcorr IH ] using simple_overlaytc_ind_2.
+  apply Foralltr_and.
+  constructor.
+  - (* various preparations ... *)
+    destruct (Hcomple (info_tid ni)) as (aclk & (Ha & Hb%Foralltr_self & Hc%Foralltr_self)%tc_shape_inv_conj_iff).
+    apply Foralltr_self in Hclk_lt.
+    simpl in Hclk_lt.
+    apply (f_equal (map info_aclk)) in Hinfosame.
+    rewrite 2 map_map in Hinfosame.
+    fold (tc_rootaclk) in Hinfosame.
+    split; hnf; simpl.
+    1: apply aclk_upperbound in Hshape.
+    2: apply aclk_decsorted in Hshape.
+    all: apply Foralltr_self in Hshape; hnf in Hshape, Hb, Hc; simpl in Hshape, Hb, Hc.
+    + apply Forall_app; split.
+      * rewrite <- Forall_map with (f:=tc_rootaclk) (P:=fun n => n <= info_clk ni) in Hshape |- *.
+        congruence.
+      * revert Hb.
+        apply Forall_impl; intros. 
+        etransitivity; eauto.
+    + rewrite map_app.
+      apply StronglySorted_app; auto.
+      * congruence.
+      * (* there is a bar: all aclk in prefix >= bar, and all aclk in suffix <= bar *)
+        apply Foralltr_self in Haclk_lt.
+        simpl in Haclk_lt.
+        rewrite <- Forall_map with (f:=tc_rootaclk) (P:=fun n => Q (info_id ni) <= n), -> Hinfosame, -> Forall_forall in Haclk_lt.
+        rewrite <- Forall_map with (f:=tc_rootaclk) (P:=fun n => n <= Q (info_tid ni)), -> Forall_forall in Hb.
+        intros x y Hx Hy.
+        specialize (Haclk_lt _ Hx); specialize (Hb _ Hy).
+        change info_id with info_tid in Haclk_lt. (* TODO this is bad! *)
         lia.
-    + rewrite -> List.Forall_forall.
-      intros new_ch Hin_newch.
-      pose proof (Hcorr_inr _ Hin_newch) as (ch & Hin_ch & Hso).
-      (* now specialize (IH _ Hin_ch (Hshape_chn _ Hin_ch) (Haclk_bounded _ Hin_ch) _ Hso). *)
-      eapply IH; eauto.
-    + assumption.
-  - split; [ | split ].
-    + hnf.
-      unfold tc_rootaclk.
-      simpl.
-      rewrite <- map_map, -> map_app, <- Hinfosame, <- map_app, -> map_map.
-      fold tc_rootaclk.
-      rewrite -> map_app.
-      apply StronglySorted_app.
-      * assumption.
-      * assumption.
-      * hnf in Ha, Ha'', Eaclk_lt.
-        change (fun tc' => _) with (fun tc' => (fun a => a <= clk) (tc_rootaclk tc')) in Ha''.
-        change (fun tc' => _) with (fun tc' => (fun a => a <= Q u) (tc_rootaclk tc')) in Ha.
-        change (fun tc' => _) with (fun tc' => (fun a => Q u <= a) (tc_rootaclk tc')) in Eaclk_lt.
-        rewrite <- Forall_map, -> List.Forall_forall in Ha, Ha'', Eaclk_lt.
-        firstorder lia.
-    + rewrite -> List.Forall_forall.
-      intros new_ch Hin_newch.
-      pose proof (Hcorr_inr _ Hin_newch) as (ch & Hin_ch & Hso).
-      eapply IH; eauto.
-    + assumption.
+  - erewrite list.Forall_iff with (Q:=fun x => _ x /\ _ x).
+    2: intros; rewrite Foralltr_and at 1; reflexivity.
+    apply Forall_app; split.
+    + (* using IH structurally *)
+      (* FIXME: from the proofs below, this seems like pretty much a proof pattern! *)
+      eapply list.Forall2_Forall_r.
+      1: apply IH.
+      apply tc_shape_inv_chn in Hshape.
+      apply Foralltr_chn in Hclk_lt, Haclk_lt.
+      pose proof (Forall_and (Forall_and Hshape Hclk_lt) Haclk_lt) as HH.
+      simpl in HH.
+      revert HH; apply Forall_impl.
+      intuition.
+    + destruct (Hcomple (info_tid ni)) as (aclk & (_ & Hb%Foralltr_chn & Hc%Foralltr_chn)%tc_shape_inv_conj_iff).
+      now apply Forall_and.
 Qed.
+
+(* if pf respects some tree, then the result of attach should also respect that tree *)
+(* later, will use "tc_shape_inv_prepend_child" in combination *)
 
 Lemma tc_ge_with_subdmono_simple_overlaytc (P : thread -> list treeclock) (Q : thread -> nat) tc_larger
   (Hdmono_sub : forall t, exists aclk, Foralltr (dmono_single tc_larger) (Node (mkInfo t (Q t) aclk) (P t)))
   tc (Hge : tc_ge tc_larger tc)
   (* needed for using dmono on (P t) *)
   (Hclk_le : Foralltr (fun tc' => Q (tr_rootid tc') <= tc_rootclk tc') tc)
-  : forall tc' (Hoverlay : simple_overlaytc P tc tc'),
+  tc' (Hoverlay : simple_overlaytc P tc tc') :
   tc_ge tc_larger tc'.
 Proof.
-  induction tc as [(u, clk, aclk) chn IH] using tree_ind_2; intros.
-  destruct tc' as [(u', clk', aclk') chn'].
-  apply simple_overlaytc_inv in Hoverlay.
-  simpl in Hoverlay.
-  destruct Hoverlay as (new_chn & ? & Htmp & -> & -> & Hcorr & Hinfosame).
-  injection Htmp as <-.
-  subst clk' aclk'.
-  rewrite -> List.Forall_forall in IH.
-  pose proof (Forall2_forall_exists_r _ _ _ Hcorr) as Hcorr_inr.
-  specialize (Hdmono_sub u).
-  destruct Hdmono_sub as (aclk' & Hdmono_sub).
-  unfold tc_ge in Hge |- *.
-  rewrite -> Foralltr_cons_iff in Hclk_le, Hdmono_sub, Hge |- *.
-  destruct Hge as (Ege & Hge), Hclk_le as (Eclk_le & Hclk_le), 
-    Hdmono_sub as (Hdmono_sub & _).
-  rewrite -> List.Forall_forall in Hge, Hclk_le.
-  hnf in Hdmono_sub.
-  simpl in Eclk_le, Hdmono_sub, Ege.
-  removehead Hdmono_sub.
-  2: lia.
-  split; auto.
-  apply List.Forall_app.
-  split.
-  2: now apply Foralltr_cons_iff in Hdmono_sub.
-  rewrite -> List.Forall_forall.
-  intros new_ch Hin_newch.
-  pose proof (Hcorr_inr _ Hin_newch) as (ch & Hin_ch & Hso).
-  specialize (IH _ Hin_ch (Hge _ Hin_ch) (Hclk_le _ Hin_ch) _ Hso).
-  now apply IH.
+  induction Hoverlay as [ ni chn1 chn2 Hinfosame Hcorr IH ] using simple_overlaytc_ind_2.
+  constructor.
+  - now apply Foralltr_self in Hge.
+  - apply Forall_app; split.
+    + eapply list.Forall2_Forall_r.
+      1: apply IH.
+      apply Foralltr_chn in Hge, Hclk_le.
+      pose proof (Forall_and Hge Hclk_le) as HH.
+      simpl in HH.
+      revert HH; apply Forall_impl.
+      intuition.
+    + apply Foralltr_self in Hge, Hclk_le.
+      simpl in Hge, Hclk_le.
+      pose proof (Hdmono_sub (info_tid ni)) as (aclk & HH%Foralltr_self).
+      hnf in HH.
+      specialize (HH (Nat.le_trans _ _ _ Hclk_le Hge)).
+      now apply Foralltr_chn in HH.
 Qed.
 
 Corollary dmono_simple_overlaytc_pre (P : thread -> list treeclock) (Q : thread -> nat) tc_larger
@@ -1761,35 +1739,26 @@ Corollary dmono_simple_overlaytc_pre (P : thread -> list treeclock) (Q : thread 
   tc (Hdmono : Foralltr (dmono_single tc_larger) tc)
   (* needed for using dmono on (P t) *)
   (Hclk_le : Foralltr (fun tc' => Q (tr_rootid tc') <= tc_rootclk tc') tc)
-  : forall tc' (Hoverlay : simple_overlaytc P tc tc'),
+  tc' (Hoverlay : simple_overlaytc P tc tc') :
   Foralltr (dmono_single tc_larger) tc'.
 Proof.
-  induction tc as [(u, clk, aclk) chn IH] using tree_ind_2; intros.
-  destruct tc' as [(u', clk', aclk') chn'].
-  pose proof Hoverlay as Hoverlay_backup.
-  apply simple_overlaytc_inv in Hoverlay.
-  simpl in Hoverlay.
-  destruct Hoverlay as (new_chn & ? & Htmp & -> & -> & Hcorr & Hinfosame).
-  injection Htmp as <-.
-  subst clk' aclk'.
-  rewrite -> List.Forall_forall in IH.
-  pose proof (Forall2_forall_exists_r _ _ _ Hcorr) as Hcorr_inr.
+  induction Hoverlay as [ ni chn1 chn2 Hinfosame Hcorr IH ] using simple_overlaytc_ind_2.
   constructor.
   - intros Hle.
-    eapply tc_ge_with_subdmono_simple_overlaytc with (P:=P) (Q:=Q).
-    4: apply Hoverlay_backup.
-    all: try assumption.
-    apply Foralltr_self in Hdmono.
-    intuition.
-  - apply List.Forall_app.
-    split.
-    + rewrite -> Foralltr_cons_iff in Hdmono, Hclk_le.
-      destruct Hdmono as (_ & Hdmono_chn), Hclk_le as (_ & Hclk_le).
-      rewrite -> List.Forall_forall in Hdmono_chn, Hclk_le |- *.
-      firstorder.
-    + specialize (Hdmono_sub u).
-      destruct Hdmono_sub as (aclk' & Hdmono_sub).
-      now apply Foralltr_cons_iff in Hdmono_sub.
+    eapply tc_ge_with_subdmono_simple_overlaytc; eauto.
+    + apply Foralltr_self in Hdmono.
+      simpl in Hle.
+      now apply Hdmono.
+    + now constructor.
+  - apply Forall_app; split.
+    + eapply list.Forall2_Forall_r.
+      1: apply IH.
+      apply Foralltr_chn in Hdmono, Hclk_le.
+      pose proof (Forall_and Hdmono Hclk_le) as HH.
+      simpl in HH.
+      revert HH; apply Forall_impl.
+      intuition.
+    + now pose proof (Hdmono_sub (info_tid ni)) as (aclk & HH%Foralltr_chn).
 Qed.
 
 Lemma imono_simple_overlaytc_pre (P : thread -> list treeclock) (Q : thread -> nat) tc_larger
@@ -1797,57 +1766,37 @@ Lemma imono_simple_overlaytc_pre (P : thread -> list treeclock) (Q : thread -> n
   (Himono_sub : forall t, exists aclk, Foralltr (imono_single tc_larger) (Node (mkInfo t (Q t) aclk) (P t)))
   tc (Himono : Foralltr (imono_single tc_larger) tc)
   (Hclk_le : Foralltr (fun tc' => Q (tr_rootid tc') <= tc_rootclk tc') tc)
-  : forall tc' (Hoverlay : simple_overlaytc P tc tc'),
+  tc' (Hoverlay : simple_overlaytc P tc tc') :
   Foralltr (imono_single tc_larger) tc'.
 Proof.
-  induction tc as [(u, clk, aclk) chn IH] using tree_ind_2; intros.
-  destruct tc' as [(u', clk', aclk') chn'].
-  apply simple_overlaytc_inv in Hoverlay.
-  simpl in Hoverlay.
-  destruct Hoverlay as (new_chn & ? & Htmp & -> & -> & Hcorr & Hinfosame).
-  injection Htmp as <-.
-  subst clk' aclk'.
-  rewrite -> List.Forall_forall in IH.
-  pose proof (Forall2_forall_exists_r _ _ _ Hcorr) as Hcorr_inr.
-  pose proof (Himono_sub u) as (aclk' & Himono_sub').
-  rewrite -> Foralltr_cons_iff in Himono, Hclk_le, Himono_sub' |- *.
-  destruct Himono as (Himono & Himono_chn), Hclk_le as (Eclk_le & Hclk_le), 
-    Himono_sub' as (Himono_sub' & Himono_subchn).
-  simpl in Eclk_le.
-  split.
-  - apply List.Forall_app.
-    split.
-    2: assumption.
-    hnf in Himono |- *.
-    rewrite -> List.Forall_forall in Himono, Hclk_le |- *.
-    intros [(v, clk_v, aclk_v) chn_v] Hin_newch.
-    intros Hle.
-    pose proof (Hcorr_inr _ Hin_newch) as (ch & Hin_ch & Hso).
-    eapply tc_ge_with_subdmono_simple_overlaytc with (P:=P) (Q:=Q).
-    4: apply Hso.
-    all: try assumption.
-    + (* TODO this inversion may be as a tactic ... *)
-      destruct ch as [(v', clk_v', aclk_v') ?].
-      apply simple_overlaytc_inv in Hso.
-      simpl in Hso.
-      destruct Hso as (_ & _ & Htmp & _ & _ & _ & _).
-      injection Htmp as ->.
-      subst clk_v' aclk_v'.
-      specialize (Himono _ Hin_ch).
-      intuition.
-    + intuition.
-  - apply List.Forall_app.
-    split.
-    + rewrite -> List.Forall_forall in Himono_chn, Hclk_le |- *.
-      firstorder.
-    + assumption.
+  induction Hoverlay as [ ni chn1 chn2 Hinfosame Hcorr IH ] using simple_overlaytc_ind_2.
+  (* FIXME: this seems to require a dependent version of "Foralltr_Forall_chn_comm". how to achieve that? *)
+  rewrite Foralltr_cons_iff in Himono, Hclk_le |- *.
+  unfold imono_single in Himono |- * at 1.
+  rewrite <- list.Forall_and in Himono |- *.
+  simpl in Himono |- *.
+  apply Forall_app; split.
+  - (* this is slightly different proof route, compared with above *)
+    eapply list.Forall2_Forall_r.
+    1: apply Forall2_and; split; [ apply IH | apply Hcorr ].
+    pose proof (Forall_and Himono (proj2 Hclk_le)) as HH.
+    simpl in HH.
+    revert HH; apply Forall_impl.
+    intuition.
+    eapply tc_ge_with_subdmono_simple_overlaytc; eauto.
+    match goal with HH : simple_overlaytc _ ?a ?b |- _ => 
+      enough (tc_rootaclk a = tc_rootaclk b) as Htmp by (rewrite Htmp in *; intuition); 
+      unfold tc_rootaclk; 
+      now rewrite (simple_overlaytc_rootinfo_same HH) end.
+  - pose proof (Himono_sub (info_tid ni)) as (aclk & HH%Foralltr_cons_iff).
+    now apply list.Forall_and.
 Qed.
 
 Corollary tc_respect_simple_overlaytc_pre (P : thread -> list treeclock) (Q : thread -> nat) tc_larger
   (Hrespect_sub : forall t, exists aclk, tc_respect (Node (mkInfo t (Q t) aclk) (P t)) tc_larger)
   tc (Hrespect : tc_respect tc tc_larger)
   (Hclk_le : Foralltr (fun tc' => Q (tr_rootid tc') <= tc_rootclk tc') tc)
-  : forall tc' (Hoverlay : simple_overlaytc P tc tc'),
+  tc' (Hoverlay : simple_overlaytc P tc tc') :
   tc_respect tc' tc_larger.
 Proof.
   constructor.
@@ -1866,34 +1815,25 @@ Proof.
     + now apply imono.
 Qed.
 
-Lemma tc_attach_detached_nodes_tid_nodup tc tc'
-  (Hnodup : NoDup (map tr_rootid (tr_flatten tc))) (Hnodup' : NoDup (map tr_rootid (tr_flatten tc'))) :
-  NoDup (map tr_rootid (tr_flatten (tc_attach_nodes (snd (tc_detach_nodes (tr_flatten tc') tc)) tc'))).
+Lemma tc_attach_detached_nodes_id_nodup tc tc'
+  (Hnodup : tr_NoDupId tc) (Hnodup' : tr_NoDupId tc') :
+  tr_NoDupId (tc_attach_nodes (snd (tc_detach_nodes (tr_flatten tc') tc)) tc').
 Proof.
-  (* TODO still needs some preparation when using tc_attach_nodes_dom_info *)
-  pose proof (tc_attach_nodes_dom_info _ _ Hnodup Hnodup') as Hperm.
+  pose proof (tc_attach_nodes_dom_info Hnodup Hnodup') as Hperm.
   rewrite <- map_app in Hperm.
   apply Permutation_rootinfo2rootid in Hperm.
   eapply Permutation_NoDup. 
   1: symmetry; apply Hperm. 
   rewrite -> map_app.
-  rewrite <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup.
-  repeat setoid_rewrite -> base.elem_of_list_In.
+  apply NoDup_app_.
   split; [ assumption | split ].
-  2: apply tid_nodup_root_chn_split, tc_detach_nodes_tid_nodup; assumption.
+  2: apply id_nodup_root_chn_split, tc_detach_nodes_tid_nodup; assumption.
   (* use domain exclusion *)
-  (* FIXME: extract this out? *)
-  intros t H (ch & (sub & Hpick & Hin_ch)%in_flat_map & Hin_sub)%map_flat_map_In.
-  pose proof (tc_detach_nodes_snd2fst (tr_flatten tc') tc) as Htmp.
-  rewrite -> List.Forall_forall in Htmp.
-  specialize (Htmp _ Hpick).
-  destruct Htmp as (sub' & Hin_sub' & ->).
-  eapply tc_detach_nodes_dom_excl'; [ apply trs_find_in_iff, H | ].
-  eapply map_flat_map_In_conv; eauto.
+  intros ??.
+  now apply tc_detach_nodes_dom_excl_snd, trs_find_in_iff.
 Qed.
 
 (* now, put everything together *)
-(* TODO revise the following two proofs *)
 
 Lemma tc_attach_nodes_tc_shape_inv tc tc' 
   (Hshape : tc_shape_inv tc) (Hshape' : tc_shape_inv tc') 
