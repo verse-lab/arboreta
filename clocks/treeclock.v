@@ -147,6 +147,7 @@ Fact tc_getclk_perm_congr_pre [tcs1 tcs2] (Hnodup1 : trs_roots_NoDupId tcs1)
 Proof.
   intros.
   etransitivity.
+  (* FIXME: the combination use of "Basics.compose" and "option.option_fmap_compose" might be extracted as a tactic? *)
   all: rewrite (option.option_fmap_ext tc_rootclk (Basics.compose snd tc_rootinfo_partial)); auto.
   rewrite ! option.option_fmap_compose.
   f_equal.
@@ -280,6 +281,15 @@ Record tc_respect (tc tc' : treeclock) : Prop := {
 
 Global Arguments dmono [_ _] _.
 Global Arguments imono [_ _] _.
+
+Fact tc_ge_root_aclk_useless [u clk aclk aclk'] [chn : list treeclock] [tc_larger]
+  (Hge : tc_ge tc_larger (Node (mkInfo u clk aclk) chn)) :
+  tc_ge tc_larger (Node (mkInfo u clk aclk') chn).
+Proof.
+  constructor.
+  - now apply Foralltr_self in Hge.
+  - now apply Foralltr_chn in Hge.
+Qed.
 
 Fact tc_respect_nochn_trivial ni tc' : tc_respect (Node ni nil) tc'.
 Proof.
@@ -432,6 +442,24 @@ Qed.
 Fact tc_respect_chn [tc tc'] (H : tc_respect tc tc') :
   Forall (fun ch => tc_respect ch tc') (tr_rootchn tc).
 Proof. now apply Foralltr_chn_selves, tc_respect_sub. Qed.
+
+Fact tc_respect_root_aclk_useless [u clk aclk aclk'] [chn : list treeclock] [tc_larger]
+  (Hrespect : tc_respect (Node (mkInfo u clk aclk) chn) tc_larger) :
+  tc_respect (Node (mkInfo u clk aclk') chn) tc_larger.
+Proof.
+  constructor.
+  - apply dmono in Hrespect.
+    constructor.
+    + apply Foralltr_self in Hrespect.
+      hnf in Hrespect |- *.
+      simpl in Hrespect |- *.
+      intros; eapply tc_ge_root_aclk_useless; eauto.
+    + now apply Foralltr_chn in Hrespect.
+  - apply imono in Hrespect.
+    constructor.
+    + now apply Foralltr_self in Hrespect.
+    + now apply Foralltr_chn in Hrespect.
+Qed.
 
 Lemma dmono_prefix_preserve [tc tc' : treeclock] (Hprefix : prefixtr tc' tc) :
   forall [tc_larger] (Hdmono : Foralltr (dmono_single tc_larger) tc),
@@ -1001,8 +1029,8 @@ Proof.
   now apply tc_get_updated_nodes_join_shape_complement.
 Qed.
 
-Corollary tc_get_updated_nodes_join_adequacy tc' (Hshape: tc_shape_inv tc')
-  tc (Hrespect: tc_respect tc' tc)
+Corollary tc_get_updated_nodes_join_adequacy [tc'] (Hshape: tc_shape_inv tc')
+  [tc] (Hrespect: tc_respect tc' tc)
   (Hroot_clk_le : tc_getclk (tr_rootid tc') tc < tc_rootclk tc') t :
   tc_getclk t tc < tc_getclk t tc' <->
   isSome (tr_getnode t (tc_get_updated_nodes_join tc tc')) = true.
@@ -1010,6 +1038,18 @@ Proof.
   split; intros H.
   - now apply tc_get_updated_nodes_join_complete.
   - now apply tc_get_updated_nodes_join_sound.
+Qed.
+
+(* a sufficient condition, which will be useful in very later *)
+Corollary tc_get_updated_nodes_root_notin [tc'] (Hshape: tc_shape_inv tc')
+  [tc] (Hrespect: tc_respect tc' tc)
+  (Hroot_clk_lt : tc_getclk (tr_rootid tc') tc < tc_rootclk tc')
+  (Hroot_clk_le : tc_getclk (tr_rootid tc) tc' <= tc_rootclk tc) :
+  ~ In (tr_rootid tc)
+    (map tr_rootid (tr_flatten (tc_get_updated_nodes_join tc tc'))).
+Proof.
+  replace (tc_rootclk tc) with (tc_getclk (tr_rootid tc) tc) in Hroot_clk_le by (unfold tc_getclk; now rewrite tr_getnode_self).
+  rewrite <- Nat.nlt_ge, -> (tc_get_updated_nodes_join_adequacy Hshape Hrespect), <- tr_getnode_in_iff in Hroot_clk_le; auto.
 Qed.
 
 End TC_Get_Updated_Nodes_Join.
@@ -2307,12 +2347,19 @@ Qed.
 
 Section TC_Join_Partial_And_Join.
 
+(* not quite reusable, so make it a tactic instead of a lemma *)
 Local Tactic Notation "saturate" constr(tc) constr(tc') hyp(Etc') :=
   destruct (tc_detach_nodes (tr_flatten tc') tc) as (pivot, forest) eqn:Edetach;
   destruct (tc_attach_nodes forest tc') as [ni chn_w] eqn:Eattach;
   pose proof (tc_attach_nodes_rootinfo_same forest tc') as Eni;
   epose proof (tc_detach_nodes_fst_rootinfo_same _ _) as Eni_z;
-  rewrite -> Eattach, -> Etc' in Eni;
+  rewrite -> Eattach in Eni;
+  match goal with
+  | Eprefix : tc' = tc_get_updated_nodes_join _ _ |- _ =>
+    rewrite -> Eprefix, -> (prefixtr_rootinfo_same (tc_get_updated_nodes_join_is_prefix _ _)) in Eni
+  | _ => idtac
+  end;
+  rewrite -> Etc' in Eni;
   rewrite -> Edetach in Eni_z;
   destruct pivot as [ni_z chn_z] eqn:Epivot;
   simpl in Eni, Eni_z;
@@ -2320,10 +2367,8 @@ Local Tactic Notation "saturate" constr(tc) constr(tc') hyp(Etc') :=
 
 Section TC_Join_Partial.
 
-  Variables (tc tc' : treeclock).
-
   (* a direct result; the dom of partial join ~= the dom of pivot + the dom of attach *)
-  Lemma tc_join_partial_dom_info :
+  Lemma tc_join_partial_dom_info tc tc' :
     Permutation (map tr_rootinfo (tr_flatten (tc_join_partial tc tc')))
       (map tr_rootinfo (tr_flatten (fst (tc_detach_nodes (tr_flatten tc') tc))) ++
         map tr_rootinfo (tr_flatten 
@@ -2341,8 +2386,8 @@ Section TC_Join_Partial.
     list.solve_Permutation.
   Qed.
 
+  Context [tc tc' : treeclock].
   Hypotheses (Hnodup : tr_NoDupId tc) (Hnodup' : tr_NoDupId tc').
-  Collection collection_nodup := Hnodup Hnodup'.
 
   (* so much manipulation below (e.g., rewrite, change, unfold ...)! *)
 
@@ -2354,7 +2399,7 @@ Section TC_Join_Partial.
         map tc_rootinfo_partial (flat_map tr_flatten (flat_map tr_rootchn
                 (snd (tc_detach_nodes (tr_flatten tc') tc))))).
   Proof.
-    pose proof tc_join_partial_dom_info as Hperm.
+    pose proof (tc_join_partial_dom_info tc tc') as Hperm.
     pose proof (tc_attach_nodes_dom_info Hnodup Hnodup') as Hperm'.
     rewrite <- map_app in Hperm, Hperm'.
     apply Permutation_rootinfo2partialinfo in Hperm, Hperm'.
@@ -2389,7 +2434,7 @@ Section TC_Join_Partial.
     now destruct (trs_find_node _ _).
   Qed.
 
-  Corollary tc_join_partial_tid_nodup : tr_NoDupId (tc_join_partial tc tc').
+  Corollary tc_join_partial_id_nodup : tr_NoDupId (tc_join_partial tc tc').
   Proof.
     pose proof tc_join_partial_dom_partial_info' as Hperm.
     rewrite <- map_app in Hperm.
@@ -2410,7 +2455,7 @@ Section TC_Join_Partial.
   Proof.
     pose proof tc_join_partial_dom_partial_info' as Hperm.
     rewrite <- map_app in Hperm.
-    pose proof (tc_getclk_perm_congr_pre tc_join_partial_tid_nodup Hperm t) as Htmp.
+    pose proof (tc_getclk_perm_congr_pre tc_join_partial_id_nodup Hperm t) as Htmp.
     change (trs_find_node t (tr_flatten (tc_join_partial tc tc'))) with (tr_getnode t (tc_join_partial tc tc')) in Htmp.
     unfold trs_find_node in Htmp at 1.
     rewrite -> find_app in Htmp.
@@ -2443,6 +2488,11 @@ Section TC_Join.
   Hypotheses (Hshape : tc_shape_inv tc) (Hshape' : tc_shape_inv tc')
     (Hrespect : tc_respect tc' tc).
 
+  Local Tactic Notation "tc_join_initial_judge" constr(clk_u') constr(u') :=
+    destruct (clk_u' <=? tc_getclk u' tc) eqn:Eclk_lt;
+    [ apply Nat.leb_le in Eclk_lt; rewrite tc_join_trivial by assumption |
+      apply Nat.leb_gt in Eclk_lt; rewrite tc_join_go by assumption ].
+
   (* this is fundamental! the root of tc will not be updated *)
   Hypothesis (Hroot_clk_le : tc_getclk (tr_rootid tc) tc' <= tc_rootclk tc).
 
@@ -2450,66 +2500,35 @@ Section TC_Join.
     tc_shape_inv (tc_join tc tc').
   Proof.
     destruct tc' as [(u', clk_u', aclk_u') chn'] eqn:Etc'.
-    unfold tc_join.
-    cbn delta [tr_rootinfo] beta iota.
-    destruct (clk_u' <=? tc_getclk u' tc) eqn:Eclk_lt.
-    1: assumption.
-    apply Nat.leb_gt in Eclk_lt.
-    pose proof (tc_join_go tc tc') as Ejoin. (* get partial *)
-    rewrite -> Etc' in Ejoin at 1 2.
-    simpl in Ejoin.
-    specialize (Ejoin Eclk_lt).
-    rewrite <- ! Etc'.
+    tc_join_initial_judge clk_u' u'; auto.
+    unfold tc_join_partial.
+    rewrite <- ! Etc' in *.
     remember (tc_get_updated_nodes_join tc tc') as prefix_tc' eqn:Eprefix.
-    destruct (tc_detach_nodes (tr_flatten prefix_tc') tc) as (pivot, forest) eqn:Edetach.
-    destruct (tc_attach_nodes forest prefix_tc') as [ni chn_w] eqn:Eattach.
-    pose proof (tc_attach_nodes_rootinfo_same forest prefix_tc') as Eni.
-    epose proof (tc_detach_nodes_fst_rootinfo_same _ _) as Eni_z.
-    rewrite -> Eattach, -> Eprefix, -> (prefixtr_rootinfo_same (tc_get_updated_nodes_join_is_prefix _ _)), 
-      -> Etc' in Eni.
-    rewrite -> Edetach in Eni_z.
-    destruct pivot as [ni_z chn_z] eqn:Epivot.
-    simpl in Eni, Eni_z.
-    subst ni ni_z.
-
+    saturate tc prefix_tc' Etc'.
     (* use prepend child *)
     apply tc_shape_inv_prepend_child.
     - pose proof (tc_shape_inv_tc_detach_nodes_fst (tr_flatten prefix_tc') tc Hshape) as H.
       now rewrite -> Edetach in H.
     - apply tc_shape_inv_root_aclk_useless with (aclk:=aclk_u').
-      pose proof (tc_attach_nodes_tc_shape_inv _ _ Hshape Hshape' Eclk_lt Hrespect) as H.
+      rewrite <- Eattach.
       subst.
-      rewrite -> Edetach in H.
-      cbn delta [snd] beta iota in H.
-      now rewrite -> Eattach in H.
-    - (* manipulate *)
-      pose proof (tc_join_partial_tid_nodup tc (tc_get_updated_nodes_join tc tc') (tid_nodup _ Hshape)) as Htmp.
-      pose proof (tid_nodup_prefix_preserve _ _ (tc_get_updated_nodes_join_is_prefix tc tc')) as Htmp2.
-      rewrite -> Etc' in Htmp2 at 1.
-      specialize (Htmp2 (tid_nodup _ Hshape')).
-      pose proof (tc_get_updated_nodes_join_adequacy _ Hshape' _ Hrespect) as Htmp3.
-      simpl tc_rootclk in Htmp3.
-      simpl tr_rootid in Htmp3.
-      specialize (Htmp3 Eclk_lt (tr_rootid tc)).
-      apply Nat.nlt_ge in Hroot_clk_le.
-      unfold tc_getclk in Htmp3 at 1.
-      rewrite -> tc_getnode_self in Htmp3.
-      rewrite -> Htmp3, <- tr_getnode_in_iff, <- Etc' in Hroot_clk_le.
-      specialize (Htmp Htmp2 Hroot_clk_le).
+      eapply eq_ind_r with (y:=forest) (x:=snd _).
+      1: now apply tc_attach_nodes_tc_shape_inv.
+      now rewrite Edetach.
+    - pose proof (tc_join_partial_id_nodup (tid_nodup Hshape) 
+        (id_nodup_prefix_preserve (tc_get_updated_nodes_join_is_prefix _ _) (tid_nodup Hshape')) 
+        (tc_get_updated_nodes_root_notin Hshape' Hrespect ltac:(now subst tc') Hroot_clk_le)) as Htmp.
       unfold tc_join_partial in Htmp.
       now rewrite <- Eprefix, -> Edetach, -> Eattach in Htmp.
     - now simpl.
-    - simpl.
+    - destruct chn_z; [ lia | ].
+      simpl.
       pose proof (tc_shape_inv_tc_detach_nodes_fst (tr_flatten prefix_tc') tc Hshape) as H.
       apply aclk_upperbound, Foralltr_self in H.
       rewrite -> Edetach in H.
-      destruct tc as [(?, clk_z, ?) ?].
-      simpl in H |- *.
-      hnf in H.
-      rewrite -> List.Forall_forall in H.
-      destruct chn_z as [ | ch ? ]; simpl.
-      1: lia.
-      now specialize (H _ (or_introl eq_refl)).
+      apply Forall_inv in H.
+      simpl in H.
+      lia.
   Qed.
 
   Lemma tc_join_pointwise_max_pre
@@ -2517,69 +2536,46 @@ Section TC_Join.
     tc_getclk t (tc_join tc tc') = Nat.max (tc_getclk t tc) (tc_getclk t tc').
   Proof.
     pose proof (tc_join_go tc tc' Hroot_clk_lt) as ->.
-    (* manipulate; TODO repeating above? *)
-    pose proof (tc_get_updated_nodes_join_is_prefix tc tc') as Hprefix.
-    pose proof (tc_join_partial_getclk tc (tc_get_updated_nodes_join tc tc') (tid_nodup _ Hshape)) as Htmp.
-    pose proof (tid_nodup_prefix_preserve _ _ Hprefix) as Htmp2.
-    specialize (Htmp2 (tid_nodup _ Hshape')).
-    pose proof (tc_get_updated_nodes_join_adequacy _ Hshape' _ Hrespect Hroot_clk_lt) as Htmp3.
-    pose proof Htmp3 as Htmp3'.
-    specialize (Htmp3' (tr_rootid tc)).
-    apply Nat.nlt_ge in Hroot_clk_le.
-    unfold tc_getclk in Htmp3' at 1.
-    rewrite -> tc_getnode_self in Htmp3'.
-    rewrite -> Htmp3', <- tr_getnode_in_iff in Hroot_clk_le.
-    specialize (Htmp Htmp2 Hroot_clk_le).
-
+    pose proof (tc_join_partial_getclk (tid_nodup Hshape) 
+      (id_nodup_prefix_preserve (tc_get_updated_nodes_join_is_prefix _ _) (tid_nodup Hshape')) 
+      (tc_get_updated_nodes_root_notin Hshape' Hrespect Hroot_clk_lt Hroot_clk_le)) as Htmp.
     rewrite -> Htmp.
-    destruct (tr_getnode t (tc_get_updated_nodes_join tc tc')) as [ res | ] eqn:Eres.
-    - match type of Eres with ?a = _ => assert (a) as Eres' by now rewrite Eres end.
-      rewrite <- Htmp3 in Eres'.
-      pose proof Eres as (Eres2 & <-)%trs_find_has_id.
-      apply in_map with (f:=tr_rootinfo), (prefixtr_flatten_info_incl Hprefix), in_map_iff in Eres2.
-      destruct Eres2 as (res2 & Einfo & Hres2).
-      (* TODO extract this unifying process? *)
-      pose proof (id_nodup_find_self _ (tid_nodup _ Hshape')) as HH%Foralltr_Forall_subtree.
-      eapply Foralltr_subtr in HH.
-      2: apply Hres2.
-      rewrite -> (tr_rootinfo_id_inj Einfo) in HH.
-      replace (tc_rootclk res) with (tc_getclk (tr_rootid res) tc').
-      2: unfold tc_getclk, tr_getnode, tc_rootclk; now rewrite -> HH, -> Einfo.
-      lia.
-    - match type of Eres with ?a = _ => assert (~ a) as Eres' by now rewrite Eres end.
-      rewrite <- Htmp3 in Eres'.
-      apply Nat.nlt_ge in Eres'.
+    destruct (tr_getnode t _) as [ res | ] eqn:Eres.
+    - pose proof Eres as Eres'%(f_equal (@isSome _))%tc_get_updated_nodes_join_sound; auto.
+      enough (tc_getclk t tc' = tc_rootclk res) by lia.
+      pose proof Eres as Eres''%(f_equal (base.fmap tr_rootinfo))
+        %(id_nodup_find_prefix (tc_get_updated_nodes_join_is_prefix _ _) (tid_nodup Hshape')).
+      rewrite tc_getclk_as_fmap.
+      change tc_rootclk with (Basics.compose info_clk tr_rootinfo).
+      now rewrite option.option_fmap_compose, Eres''.
+    - pose proof Eres as Eres'%(f_equal (@isSome _))%not_true_iff_false.
+      rewrite <- tc_get_updated_nodes_join_adequacy in Eres'; auto.
       lia.
   Qed.
 
+  (* this shows that tree clock is indeed a logical clock! *)
   Corollary tc_join_pointwise_max t :
     tc_getclk t (tc_join tc tc') = Nat.max (tc_getclk t tc) (tc_getclk t tc').
   Proof.
     destruct tc' as [(u', clk_u', aclk_u') chn'] eqn:Etc'.
-    destruct (clk_u' <=? tc_getclk u' tc) eqn:Eclk_lt.
-    - unfold tc_join.
-      simpl.
-      rewrite -> Eclk_lt.
-      apply Nat.leb_le in Eclk_lt.
-      (* by respect *)
+    tc_join_initial_judge clk_u' u'.
+    - (* by respect *)
       rewrite <- Etc', -> max_l.
       1: reflexivity.
       apply tc_ge_all_getclk_ge.
       apply dmono, Foralltr_self in Hrespect.
-      simpl in Hrespect.
-      subst tc'.
       intuition.
-    - apply Nat.leb_gt in Eclk_lt.
+    - rewrite <- tc_join_go; auto.
       rewrite <- Etc' in *.
-      replace clk_u' with (tc_rootclk tc') in Eclk_lt by now rewrite -> Etc'.
-      replace u' with (tr_rootid tc') in Eclk_lt by now rewrite -> Etc'.
-      now apply tc_join_pointwise_max_pre.
+      apply tc_join_pointwise_max_pre.
+      now subst tc'.
   Qed.
 
   Corollary tc_join_respected tc''
     (Hrespect1 : tc_respect tc'' tc) (Hrespect2 : tc_respect tc'' tc') :
     tc_respect tc'' (tc_join tc tc').
   Proof.
+    (* directly by pointwise_max_preserve property *)
     eapply tc_respect_pointwise_max_preserve.
     4: apply Hrespect1.
     4: apply Hrespect2.
@@ -2594,57 +2590,33 @@ Section TC_Join.
     tc_respect (tc_join tc tc') tc''.
   Proof.
     destruct tc' as [(u', clk_u', aclk_u') chn'] eqn:Etc'.
-    unfold tc_join.
-    cbn delta [tr_rootinfo] beta iota.
-    destruct (clk_u' <=? tc_getclk u' tc) eqn:Eclk_lt.
-    1: assumption.
-    apply Nat.leb_gt in Eclk_lt.
-    rewrite <- ! Etc'.
+    tc_join_initial_judge clk_u' u'; try assumption.
+    unfold tc_join_partial.
+    rewrite <- ! Etc' in *.
     remember (tc_get_updated_nodes_join tc tc') as prefix_tc' eqn:Eprefix.
-    destruct (tc_detach_nodes (tr_flatten prefix_tc') tc) as (pivot, forest) eqn:Edetach.
-    destruct (tc_attach_nodes forest prefix_tc') as [ni chn_w] eqn:Eattach.
-    pose proof (tc_attach_nodes_rootinfo_same forest prefix_tc') as Eni.
-    epose proof (tc_detach_nodes_fst_rootinfo_same _ _) as Eni_z.
-    rewrite -> Eattach, -> Eprefix, -> (prefixtr_rootinfo_same (tc_get_updated_nodes_join_is_prefix _ _)), 
-      -> Etc' in Eni.
-    rewrite -> Edetach in Eni_z.
-    destruct pivot as [ni_z chn_z] eqn:Epivot.
-    simpl in Eni, Eni_z.
-    subst ni ni_z.
-    (* prepare *)
+    saturate tc prefix_tc' Etc'.
+    (* prepare more *)
+    (* FIXME: extract this proof into a lemma like "tc_respect_prepend_child" ... ? *)
     pose proof (tc_detach_nodes_fst_is_prefix (tr_flatten prefix_tc') tc) as Hprefix_pivot.
     rewrite -> Edetach in Hprefix_pivot.
     simpl in Hprefix_pivot.
-    pose proof (tc_respect_prefix_preserve _ _ Hprefix_pivot _ Hrespect1) as Hrespect_pivot.
-    pose proof (tc_attach_nodes_respect _ _ Hshape Hshape' Eclk_lt Hrespect _ Hrespect1 Hrespect2) as Hrespect_attach.
-    rewrite <- Etc', <- Eprefix, -> Edetach in Hrespect_attach.
+    pose proof (tc_respect_prefix_preserve Hprefix_pivot Hrespect1) as Hrespect_pivot.
+    pose proof (tc_attach_nodes_respect Hshape Hshape' ltac:(now subst tc') Hrespect _ Hrespect1 Hrespect2) as Hrespect_attach.
+    rewrite <- Eprefix, -> Edetach in Hrespect_attach.
     simpl in Hrespect_attach.
     rewrite -> Eattach in Hrespect_attach.
     constructor.
     - constructor.
       + (* impossible by assumption *)
-        simpl.
         destruct tc as [(?, ?, ?) ?].
         hnf in Hroot_clk_lt' |- *.
         simpl in Hroot_clk_lt' |- *.
         lia.
       + constructor.
-        * (* the difference of aclk is troublesome ... *)
-          apply dmono in Hrespect_attach.
-          rewrite -> Foralltr_cons_iff in Hrespect_attach |- *.
-          split; [ | intuition ].
-          apply proj1 in Hrespect_attach.
-          hnf in Hrespect_attach |- *.
-          simpl in Hrespect_attach |- *.
-          unfold tc_ge in Hrespect_attach |- *.
-          now rewrite -> Foralltr_cons_iff in Hrespect_attach |- *.
-        * eapply List.Forall_impl.
-          2: apply tc_respect_chn in Hrespect_pivot; apply Hrespect_pivot.
-          simpl.
-          intros.
-          now apply dmono.
+        * eapply tc_respect_root_aclk_useless; eauto.
+        * now apply dmono, Foralltr_chn in Hrespect_pivot.
     - constructor.
-      + unfold imono_single.
+      + hnf.
         destruct tc as [(z, clk_z, aclk_z) chn_z'].
         simpl.
         constructor.
@@ -2653,15 +2625,8 @@ Section TC_Join.
           lia.
         * now apply imono, Foralltr_cons_iff, proj1 in Hrespect_pivot.
       + constructor.
-        * (* the difference of aclk is troublesome ... *)
-          apply imono in Hrespect_attach.
-          rewrite -> Foralltr_cons_iff in Hrespect_attach |- *.
-          split; intuition.
-        * eapply List.Forall_impl.
-          2: apply tc_respect_chn in Hrespect_pivot; apply Hrespect_pivot.
-          simpl.
-          intros.
-          now apply imono.
+        * eapply tc_respect_root_aclk_useless; eauto.
+        * now apply imono, Foralltr_chn in Hrespect_pivot.
   Qed.
 
 End TC_Join.
