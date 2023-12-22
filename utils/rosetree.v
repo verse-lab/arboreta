@@ -867,6 +867,25 @@ Section Tree_Find.
     In t (map tr_rootid (tr_flatten tr)) <-> isSome (tr_getnode t tr) = true.
   Proof. apply trs_find_in_iff. Qed.
 
+  Fact trs_find_some [t trs res] (H : trs_find_node t trs = Some res) :
+    In t (map tr_rootid trs).
+  Proof. now apply (f_equal (@isSome _)), trs_find_in_iff in H. Qed.
+
+  Fact tr_getnode_some [t tr res] (H : tr_getnode t tr = Some res) :
+    In t (map tr_rootid (tr_flatten tr)).
+  Proof. now apply trs_find_some in H. Qed.
+
+  Fact trs_find_none [t trs] (H : trs_find_node t trs = None) :
+    ~ In t (map tr_rootid trs).
+  Proof.
+    apply (f_equal (@isSome _)), not_true_iff_false in H.
+    now rewrite <- trs_find_in_iff in H.
+  Qed.
+
+  Fact tr_getnode_none [t tr] (H : tr_getnode t tr = None) :
+    ~ In t (map tr_rootid (tr_flatten tr)).
+  Proof. now apply trs_find_none in H. Qed.
+
   Fact tr_getnode_res_Foralltr (P : tree -> Prop) [t tr res]
     (Hp : Foralltr P tr) (Hres : tr_getnode t tr = Some res) : 
     P res /\ tr_rootid res = t.

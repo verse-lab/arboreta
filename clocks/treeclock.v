@@ -141,7 +141,7 @@ Fact tc_getclk_as_fmap t tc : tc_getclk t tc =
   match base.fmap tc_rootclk (tr_getnode t tc) with Some res => res | None => 0 end.
 Proof. unfold tc_getclk. now destruct (tr_getnode t tc). Qed.
 
-Fact tc_getclk_perm_congr_pre tcs1 tcs2 (Hnodup1 : trs_roots_NoDupId tcs1)
+Fact tc_getclk_perm_congr_pre [tcs1 tcs2] (Hnodup1 : trs_roots_NoDupId tcs1)
   (Hperm : Permutation (map tc_rootinfo_partial tcs1) (map tc_rootinfo_partial tcs2)) :
   forall t, base.fmap tc_rootclk (trs_find_node t tcs1) = base.fmap tc_rootclk (trs_find_node t tcs2).
 Proof.
@@ -2261,8 +2261,9 @@ Fact tc_join_trivial tc tc' (H : tc_rootclk tc' <= tc_getclk (tr_rootid tc') tc)
   tc_join tc tc' = tc.
 Proof.
   unfold tc_join.
-  destruct tc' as [(z', clk_z', ?) ?], tc as [(z, clk_z, ?) ?]. 
-  simpl in H |- *.
+  destruct tc' as [(z', clk_z', ?) ?], tc as [(z, clk_z, ?) ?].
+  cbn delta [tr_rootinfo] zeta iota beta.
+  simpl in H.
   apply Nat.leb_le in H.
   now rewrite H.
 Qed.
@@ -2276,7 +2277,7 @@ Proof.
   simpl in H, Hroot_clk_le |- *; subst z.
   unfold tc_getclk, tr_getnode in Hroot_clk_le |- *. 
   simpl in Hroot_clk_le |- *.
-  now destruct (eqdec z' z').
+  now rewrite eqdec_must_left in Hroot_clk_le |- *.
 Qed.
 
 Fact tc_join_go tc tc' 
@@ -2304,11 +2305,24 @@ Proof.
   now rewrite -> Edetach.
 Qed.
 
+Section TC_Join_Partial_And_Join.
+
+Local Tactic Notation "saturate" constr(tc) constr(tc') hyp(Etc') :=
+  destruct (tc_detach_nodes (tr_flatten tc') tc) as (pivot, forest) eqn:Edetach;
+  destruct (tc_attach_nodes forest tc') as [ni chn_w] eqn:Eattach;
+  pose proof (tc_attach_nodes_rootinfo_same forest tc') as Eni;
+  epose proof (tc_detach_nodes_fst_rootinfo_same _ _) as Eni_z;
+  rewrite -> Eattach, -> Etc' in Eni;
+  rewrite -> Edetach in Eni_z;
+  destruct pivot as [ni_z chn_z] eqn:Epivot;
+  simpl in Eni, Eni_z;
+  subst ni ni_z.
+
 Section TC_Join_Partial.
 
   Variables (tc tc' : treeclock).
 
-  (* a direct result *)
+  (* a direct result; the dom of partial join ~= the dom of pivot + the dom of attach *)
   Lemma tc_join_partial_dom_info :
     Permutation (map tr_rootinfo (tr_flatten (tc_join_partial tc tc')))
       (map tr_rootinfo (tr_flatten (fst (tc_detach_nodes (tr_flatten tc') tc))) ++
@@ -2320,46 +2334,17 @@ Section TC_Join_Partial.
     destruct tc' as [(u', clk_u', aclk_u') chn'] eqn:Etc'.
     unfold tc_join_partial.
     rewrite <- ! Etc'.
-    destruct (tc_detach_nodes (tr_flatten tc') tc) as (pivot, forest) eqn:Edetach.
-    destruct (tc_attach_nodes forest tc') as [ni chn_w] eqn:Eattach.
-    pose proof (tc_attach_nodes_rootinfo_same forest tc') as Eni.
-    epose proof (tc_detach_nodes_fst_rootinfo_same _ _) as Eni_z.
-    rewrite -> Eattach, -> Etc' in Eni.
-    rewrite -> Edetach in Eni_z.
-    destruct pivot as [ni_z chn_z] eqn:Epivot.
-    simpl in Eni, Eni_z.
-    subst ni ni_z.
+    saturate tc tc' Etc'.
     simpl.
-    constructor.
-    rewrite -> Eattach.
+    rewrite Eattach, map_app.
     simpl.
-    rewrite -> map_app.
-    etransitivity. (* FIXME: perm solver *)
-    2: apply Permutation_middle.
-    constructor.
-    now apply Permutation_app_comm.
+    list.solve_Permutation.
   Qed.
 
-  Corollary tc_join_partial_dom_tid :
-    Permutation (map tr_rootid (tr_flatten (tc_join_partial tc tc')))
-      (map tr_rootid (tr_flatten (fst (tc_detach_nodes (tr_flatten tc') tc))) ++
-        map tr_rootid (tr_flatten (tc_attach_nodes 
-          (snd (tc_detach_nodes (tr_flatten tc') tc)) tc'))).
-  Proof.
-    pose proof tc_join_partial_dom_info as Hperm.
-    rewrite <- map_app in Hperm.
-    apply Permutation_rootinfo2rootid in Hperm.
-    etransitivity; [ apply Hperm | ].
-    rewrite -> map_app.
-    apply Permutation_app_head.
-    destruct (tc_attach_nodes _ _) as [(?, ?, ?) ?].
-    now simpl.
-  Qed.
-
-  Hypotheses (Hnodup : List.NoDup (map tr_rootid (tr_flatten tc))) (Hnodup' : List.NoDup (map tr_rootid (tr_flatten tc'))).
+  Hypotheses (Hnodup : tr_NoDupId tc) (Hnodup' : tr_NoDupId tc').
   Collection collection_nodup := Hnodup Hnodup'.
 
-  (* TODO there may be some repetition below ... *)
+  (* so much manipulation below (e.g., rewrite, change, unfold ...)! *)
 
   (* a refined result *)
   Lemma tc_join_partial_dom_partial_info :
@@ -2370,70 +2355,53 @@ Section TC_Join_Partial.
                 (snd (tc_detach_nodes (tr_flatten tc') tc))))).
   Proof.
     pose proof tc_join_partial_dom_info as Hperm.
-    pose proof (tc_attach_nodes_dom_info _ _ Hnodup Hnodup') as Hperm'.
+    pose proof (tc_attach_nodes_dom_info Hnodup Hnodup') as Hperm'.
     rewrite <- map_app in Hperm, Hperm'.
     apply Permutation_rootinfo2partialinfo in Hperm, Hperm'.
-    etransitivity; [ apply Hperm | ].
-    rewrite -> map_app.
-    apply Permutation_app_head.
-    rewrite -> map_app in Hperm'.
-    destruct (tc_attach_nodes (snd (tc_detach_nodes (tr_flatten tc') tc)) tc') as [(?, ?, ?) ?].
-    etransitivity; [ apply Hperm' | ].
-    reflexivity.
+    rewrite Hperm, map_app.
+    destruct (tc_attach_nodes _ tc') as [(?, ?, ?) ?].
+    now rewrite Hperm', map_app.
   Qed.
 
-  Corollary tc_join_partial_dom_tid' :
+  Corollary tc_join_partial_dom_tid :
     Permutation (map tr_rootid (tr_flatten (tc_join_partial tc tc')))
       (map tr_rootid (tr_flatten (fst (tc_detach_nodes (tr_flatten tc') tc))) ++
         map tr_rootid (tr_flatten tc') ++
         map tr_rootid (flat_map tr_flatten (flat_map tr_rootchn
                 (snd (tc_detach_nodes (tr_flatten tc') tc))))).
-  Proof.
-    pose proof (tc_attach_nodes_dom_info _ _ Hnodup Hnodup') as Hperm.
-    rewrite <- map_app in Hperm.
-    apply Permutation_rootinfo2rootid in Hperm.
-    rewrite -> map_app in Hperm.
-    etransitivity; [ apply tc_join_partial_dom_tid; auto | ].
-    now apply Permutation_app_head.
-  Qed.
+  Proof. rewrite <- ! map_app. apply Permutation_partialinfo2roottid. now rewrite ! map_app, tc_join_partial_dom_partial_info. Qed.
 
-  (* Hypothesis (Hnotin : find (has_same_id (tr_rootid tc)) (tr_flatten tc') = None). *)
   Hypothesis (Hnotin : ~ In (tr_rootid tc) (map tr_rootid (tr_flatten tc'))).
 
   Corollary tc_join_partial_dom_partial_info' :
     Permutation (map tc_rootinfo_partial (tr_flatten (tc_join_partial tc tc')))
-      (map tc_rootinfo_partial (filter (fun sub => 
-              negb (find (has_same_id (tr_rootid sub)) (tr_flatten tc'))) (tr_flatten tc)) ++
-        map tc_rootinfo_partial (tr_flatten tc')).
+      (map tc_rootinfo_partial (tr_flatten tc') ++
+        map tc_rootinfo_partial (filter (fun sub => 
+              negb (isSome (trs_find_node (tr_rootid sub) (tr_flatten tc')))) (tr_flatten tc))).
   Proof.
-    etransitivity; [ apply tc_join_partial_dom_partial_info | ].
-    etransitivity; [ apply Permutation_app_swap_app | ].
-    etransitivity; [ | apply Permutation_app_comm ].
+    rewrite tc_join_partial_dom_partial_info, Permutation_app_swap_app.
     apply Permutation_app_head.
     rewrite <- map_app.
     apply Permutation_rootinfo2partialinfo.
     rewrite -> map_app.
     apply tc_detach_nodes_dom_partition''; try assumption.
     rewrite -> trs_find_in_iff in Hnotin.
-    now destruct (find _ _); unfold is_true in Hnotin.
+    now destruct (trs_find_node _ _).
   Qed.
 
-  Corollary tc_join_partial_tid_nodup :
-    List.NoDup (map tr_rootid (tr_flatten (tc_join_partial tc tc'))).
+  Corollary tc_join_partial_tid_nodup : tr_NoDupId (tc_join_partial tc tc').
   Proof.
     pose proof tc_join_partial_dom_partial_info' as Hperm.
     rewrite <- map_app in Hperm.
     eapply Permutation_NoDup; [ symmetry; apply Permutation_partialinfo2roottid, Hperm | ].
-    rewrite -> map_app.
-    rewrite <- base.NoDup_ListNoDup, -> list.NoDup_app, -> ! base.NoDup_ListNoDup.
-    repeat setoid_rewrite -> base.elem_of_list_In.
-    (* ... have to use map_filter_comm *)
-    pose proof (map_filter_comm tr_rootid (fun t => negb (find (has_same_id t) (tr_flatten tc'))) (tr_flatten tc)) as Htmp.
+    rewrite map_app, NoDup_app_.
+    (* have to use "map_filter_comm" in the reverse way; FIXME: any better unification approach? *)
+    pose proof (map_filter_comm tr_rootid (fun t => negb (isSome (trs_find_node t (tr_flatten tc')))) (tr_flatten tc)) as Htmp.
     simpl in Htmp.
     rewrite <- ! Htmp.
     clear Htmp.
-    split; [ now apply NoDup_filter | split; try assumption ].
-    intros t (Hin & E)%filter_In Hin'%trs_find_in_iff.
+    split; [ assumption | split; [ | now apply NoDup_filter ] ].
+    intros t Hin'%trs_find_in_iff (Hin & E)%filter_In.
     now rewrite -> Hin' in E.
   Qed.
 
@@ -2441,37 +2409,30 @@ Section TC_Join_Partial.
     tc_getclk t (tc_join_partial tc tc') = match tr_getnode t tc' with Some res => tc_rootclk res | None => tc_getclk t tc end.
   Proof.
     pose proof tc_join_partial_dom_partial_info' as Hperm.
-    rewrite -> Permutation_app_comm, <- map_app in Hperm.
-    pose proof (tc_getclk_perm_congr_pre _ _ tc_join_partial_tid_nodup Hperm t) as Htmp.
+    rewrite <- map_app in Hperm.
+    pose proof (tc_getclk_perm_congr_pre tc_join_partial_tid_nodup Hperm t) as Htmp.
+    change (trs_find_node t (tr_flatten (tc_join_partial tc tc'))) with (tr_getnode t (tc_join_partial tc tc')) in Htmp.
+    unfold trs_find_node in Htmp at 1.
     rewrite -> find_app in Htmp.
-    fold (tr_getnode t (tc_join_partial tc tc')) in Htmp.
     rewrite -> tc_getclk_as_fmap, -> Htmp.
     fold (tr_getnode t tc').
-    destruct (tr_getnode t tc') as [ res | ] eqn:Eres; simpl.
-    1: reflexivity.
-    unfold tc_getclk.
+    destruct (tr_getnode t tc') as [ res | ] eqn:Eres; simpl; auto.
+    apply tr_getnode_none in Eres.
     destruct (find _ _) as [ res' | ] eqn:Eres' in |- *; simpl.
-    - apply find_some in Eres'.
-      rewrite -> has_same_id_true, -> filter_In, -> negb_true_iff in Eres'.
-      destruct Eres' as ((Hres' & _) & ->).
-      unfold tr_getnode.
-      pose proof (id_nodup_find_self _ Hnodup) as Htmp2%Foralltr_Forall_subtree.
-      eapply Foralltr_subtr in Htmp2.
-      2: apply Hres'.
-      now rewrite -> Htmp2.
-    - destruct (tr_getnode t tc) as [ res'' | ] eqn:Eres''.
-      2: reflexivity.
-      apply find_some in Eres''.
-      rewrite -> has_same_id_true in Eres''.
-      destruct Eres'' as (Eres'' & ->).
-      apply find_none with (x:=res'') in Eres'.
-      2:{
-        rewrite -> filter_In, -> negb_true_iff.
-        split; try assumption.
-        unfold tr_getnode in Eres.
-        now rewrite Eres.
-      }
-      now rewrite has_same_tid_false in Eres'.
+    - apply trs_find_has_id in Eres'.
+      destruct Eres' as (Hin'%filter_In%proj1 & <-).
+      rewrite tc_getclk_as_fmap, id_nodup_find_self_subtr; auto.
+    - apply trs_find_none in Eres'.
+      (* have to use "map_filter_comm" in the reverse way *)
+      pose proof (map_filter_comm tr_rootid (fun t => negb (isSome (trs_find_node t (tr_flatten tc')))) (tr_flatten tc)) as Htmp'.
+      simpl in Htmp'.
+      rewrite <- Htmp' in Eres'.
+      clear Htmp.
+      rewrite filter_In, negb_true_iff, <- not_true_iff_false, <- trs_find_in_iff in Eres'.
+      unfold tc_getclk.
+      destruct (tr_getnode t tc) as [ res'' | ] eqn:Eres''; auto.
+      apply tr_getnode_some in Eres''.
+      intuition.
   Qed.
 
 End TC_Join_Partial.
