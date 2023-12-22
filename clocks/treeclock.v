@@ -2013,7 +2013,7 @@ Lemma tc_detach_attach_distr1_fst tc forest nd
 Proof.
   induction tc as [ni chn IH] using tree_ind_2; intros.
   simpl.
-  remember (match find (has_same_id (info_tid ni)) forest with Some u => tr_rootchn u | None => nil end) as old_chn eqn:Eold_chn.
+  remember (match trs_find_node (info_tid ni) forest with Some u => tr_rootchn u | None => nil end) as old_chn eqn:Eold_chn.
   remember (map (tc_attach_nodes forest) chn) as app_chn eqn:Eapp_chn.
   rewrite map_app, split_app.
   destruct (List.split (map (tc_detach_nodes (nd :: nil)) app_chn)) as (new_chn1, res1) eqn:Esplit1, 
@@ -2048,7 +2048,7 @@ Proof.
     intros ? (ch & <- & Hin)%in_map_iff.
     apply negb_true_iff, not_true_is_false.
     intros HH.
-    rewrite -> has_same_tid_true in HH.
+    rewrite -> has_same_id_true in HH.
     apply Hnotin.
     right.
     eapply map_flat_map_In_conv; eauto.
@@ -2059,7 +2059,7 @@ Proof.
   - (* ? *)
     clear -forest.
     induction forest as [ | tc' forest IH ]; simpl; auto.
-    erewrite -> tc_rootinfo_has_same_tid_congr with (x:=(fst (tc_detach_nodes (nd :: nil) tc'))).
+    erewrite -> tr_rootinfo_has_same_id_congr with (x:=(fst (tc_detach_nodes (nd :: nil) tc'))).
     2: apply tc_detach_nodes_fst_rootinfo_same.
     destruct (has_same_id (info_tid ni) tc') eqn:E.
     + destruct tc' as [ ni' chn' ].
@@ -2086,12 +2086,12 @@ Lemma tc_detach_attach_distr1_snd tc forest nd
   Permutation
   (snd (tc_detach_nodes (nd :: nil) (tc_attach_nodes forest tc)))
   (flat_map snd (map (fun tc' => tc_detach_nodes (nd :: nil) 
-    (match find (has_same_id (tr_rootid tc')) forest with 
+    (match trs_find_node (tr_rootid tc') forest with 
       | Some u => u | None => Node (mkInfo (tr_rootid tc') 0%nat 0%nat) nil end)) (tr_flatten tc))).
 Proof.
   induction tc as [ni chn IH] using tree_ind_2; intros.
   simpl.
-  remember (match find (has_same_id (info_tid ni)) forest with Some u => tr_rootchn u | None => nil end) as old_chn eqn:Eold_chn.
+  remember (match trs_find_node (info_tid ni) forest with Some u => tr_rootchn u | None => nil end) as old_chn eqn:Eold_chn.
   remember (map (tc_attach_nodes forest) chn) as app_chn eqn:Eapp_chn.
   rewrite map_app, split_app.
   destruct (List.split (map (tc_detach_nodes (nd :: nil)) app_chn)) as (new_chn1, res1) eqn:Esplit1, 
@@ -2141,7 +2141,7 @@ Proof.
     intros ? (ch & <- & Hin)%in_map_iff.
     apply not_true_is_false.
     intros HH.
-    rewrite -> has_same_tid_true in HH.
+    rewrite -> has_same_id_true in HH.
     apply Hnotin.
     right.
     eapply map_flat_map_In_conv; eauto.
@@ -2164,7 +2164,8 @@ Proof.
   etransitivity; [ | apply Permutation_app_comm ].
   apply Permutation_app_head.
 
-  destruct (find (has_same_id (info_tid ni)) forest) as [ [ ni' chn' ] | ] eqn:E.
+  change info_id with info_tid.
+  destruct (trs_find_node (info_tid ni) forest) as [ [ ni' chn' ] | ] eqn:E.
   2: now simpl.
   clear -chn'.
   cbn delta [tr_rootchn] beta iota.
@@ -2199,7 +2200,7 @@ Proof.
   match goal with |- _ (flat_map snd (map ?ff _)) _ =>
     rewrite -> map_ext_Forall with (l:=forest) (f:=(tc_detach_nodes (nd :: nil))) (g:=ff) end.
   2:{
-    pose proof (id_nodup_find_self _ Hnodup_forest) as Htmp.
+    pose proof (id_nodup_find_self Hnodup_forest) as Htmp.
     rewrite -> Forall_forall in Htmp |- *.
     intros x Hin.
     specialize (Htmp _ Hin).
@@ -2207,14 +2208,14 @@ Proof.
   }
   etransitivity.
   1: apply Permutation_flat_map, Permutation_map, 
-    Permutation_split_combine with (f:=fun tc' => find (has_same_id (tr_rootid tc')) forest).
+    Permutation_split_combine with (f:=fun tc' => isSome (trs_find_node (tr_rootid tc') forest)).
   rewrite -> map_app, -> flat_map_app.
   match goal with |- _ (?aa ++ ?bb) _ => replace bb with (@nil treeclock) end.
   2:{
     rewrite -> flat_map_concat_map.
     apply eq_sym, concat_nil_Forall, Forall_map, Forall_map, Forall_forall.
     intros x (Hin & HH%negb_true_iff)%filter_In.
-    destruct (find _ _) eqn:E in |- *.
+    destruct (trs_find_node _ _) eqn:E in |- *.
     1: rewrite E in HH; discriminate.
     rewrite -> tc_detach_nodes_intact; try reflexivity.
     auto.
@@ -2222,13 +2223,13 @@ Proof.
   rewrite app_nil_r.
   (* ... *)
   pose proof (map_map tr_rootid (fun t => tc_detach_nodes (nd :: nil)
-    match find (has_same_id t) forest with Some u => u | None => Node (mkInfo t 0%nat 0%nat) nil end)) as Htmp.
+    match trs_find_node t forest with Some u => u | None => Node (mkInfo t 0%nat 0%nat) nil end)) as Htmp.
   simpl in Htmp.
   rewrite <- ! Htmp.
   clear Htmp.
   apply Permutation_flat_map, Permutation_map.
   (* ... have to use map_filter_comm *)
-  pose proof (map_filter_comm tr_rootid (fun t => (find (has_same_id t) forest)) (tr_flatten tc)) as Htmp.
+  pose proof (map_filter_comm tr_rootid (fun t => isSome (trs_find_node t forest)) (tr_flatten tc)) as Htmp.
   simpl in Htmp.
   rewrite <- ! Htmp.
   clear Htmp.
@@ -2239,7 +2240,7 @@ Proof.
   rewrite filter_In.
   rewrite -> Forall_forall in Hdomincl.
   split.
-  - match goal with |- context[find ?a ?b] => destruct (find a b) as [ res | ] eqn:Eres end.
+  - match goal with |- context[trs_find_node ?a ?b] => destruct (trs_find_node a b) as [ res | ] eqn:Eres end.
     2: intros (? & ?); discriminate.
     intros (Hin & _).
     apply trs_find_in_iff.
@@ -2451,7 +2452,7 @@ Section TC_Join_Partial.
     unfold tc_getclk.
     destruct (find _ _) as [ res' | ] eqn:Eres' in |- *; simpl.
     - apply find_some in Eres'.
-      rewrite -> has_same_tid_true, -> filter_In, -> negb_true_iff in Eres'.
+      rewrite -> has_same_id_true, -> filter_In, -> negb_true_iff in Eres'.
       destruct Eres' as ((Hres' & _) & ->).
       unfold tr_getnode.
       pose proof (id_nodup_find_self _ Hnodup) as Htmp2%Foralltr_Forall_subtree.
@@ -2461,7 +2462,7 @@ Section TC_Join_Partial.
     - destruct (tr_getnode t tc) as [ res'' | ] eqn:Eres''.
       2: reflexivity.
       apply find_some in Eres''.
-      rewrite -> has_same_tid_true in Eres''.
+      rewrite -> has_same_id_true in Eres''.
       destruct Eres'' as (Eres'' & ->).
       apply find_none with (x:=res'') in Eres'.
       2:{
