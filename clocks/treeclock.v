@@ -513,6 +513,16 @@ Global Arguments tid_nodup [_] _.
 Global Arguments aclk_upperbound [_] _.
 Global Arguments aclk_decsorted [_] _.
 
+Fact tc_shape_inv_nil ni : tc_shape_inv (Node ni nil).
+Proof.
+  constructor.
+  - hnf; simpl; constructor; auto using NoDup_nil.
+  - constructor; auto.
+    hnf; simpl; auto.
+  - constructor; auto.
+    hnf; simpl; constructor.
+Qed.
+
 Fact tc_shape_inv_conj_iff tc : 
   tc_shape_inv tc <-> 
     (List.NoDup (map tr_rootid (tr_flatten tc))
@@ -894,6 +904,25 @@ Proof.
     + now apply tc_respect_chn in Hrespect.
 Qed.
 
+Corollary tc_get_updated_nodes_join_shape' [tc tc'] (Hshape: tc_shape_inv tc')
+  (Hrespect: tc_respect tc' tc) 
+  (Hroot_clk_le : tc_getclk (tr_rootid tc') tc < tc_rootclk tc') :
+  Foralltr (fun tc' => tc_getclk (tr_rootid tc') tc < tc_rootclk tc') 
+    (tc_get_updated_nodes_join tc tc').
+Proof.
+  apply Foralltr_cons_iff'.
+  split.
+  - unfold tr_rootid, tc_rootclk.
+    erewrite 1 prefixtr_rootinfo_same.
+    2: apply tc_get_updated_nodes_join_is_prefix.
+    auto.
+  - apply Foralltr_Forall_chn_comm.
+    pose proof (tc_get_updated_nodes_join_shape Hshape Hrespect) as H.
+    revert H.
+    apply Foralltr_impl.
+    intros ?; now rewrite list.Forall_and.
+Qed.
+
 (* by analysis, rather by induction *)
 Corollary tc_get_updated_nodes_join_sound [tc'] (Hshape: tc_shape_inv tc')
   [tc] (Hrespect: tc_respect tc' tc)
@@ -901,25 +930,14 @@ Corollary tc_get_updated_nodes_join_sound [tc'] (Hshape: tc_shape_inv tc')
   forall t, isSome (tr_getnode t (tc_get_updated_nodes_join tc tc')) = true ->
     tc_getclk t tc < tc_getclk t tc'.
 Proof.
-  pose proof (tc_get_updated_nodes_join_shape Hshape Hrespect) as H.
   intros t (sub & <- & Hin)%tr_getnode_in_iff%in_map_iff.
   rewrite -> (tc_getclk_as_fmap _ tc').
   change tc_rootclk with (Basics.compose info_clk tr_rootinfo).
   rewrite option.option_fmap_compose, (id_nodup_find_prefix' (tc_get_updated_nodes_join_is_prefix tc _) (tid_nodup Hshape) Hin).
   simpl.
-  fold (tc_rootclk sub).
   pattern sub.
   eapply Foralltr_subtr; eauto.
-  apply Foralltr_cons_iff'.
-  split.
-  - unfold tr_rootid, tc_rootclk.
-    erewrite 1 prefixtr_rootinfo_same.
-    2: apply tc_get_updated_nodes_join_is_prefix.
-    auto.
-  - eapply Foralltr_Forall_chn_comm, Foralltr_impl.
-    2: apply H.
-    simpl.
-    now setoid_rewrite list.Forall_and.
+  now apply tc_get_updated_nodes_join_shape'.
 Qed.
 
 (* the complement part; constraining the nodes not on the prefix *)
@@ -1120,6 +1138,22 @@ Proof.
   intros ? (sub & Hin & ->).
   pose proof (tc_detach_nodes_fst_is_prefix tcs sub).
   eauto.
+Qed.
+
+Corollary tc_detach_nodes_snd_find_unify [tcs tc]
+  (Hnodup : tr_NoDupId tc)
+  [t res] (E : trs_find_node t (snd (tc_detach_nodes tcs tc)) = Some res) :
+  base.fmap tr_rootinfo (tr_getnode t tc) = Some (tr_rootinfo res).
+Proof.
+  apply trs_find_has_id in E.
+  destruct E as (Hin & <-).
+  pose proof (tc_detach_nodes_snd_is_subprefix tcs tc) as Hsnd2pf.
+  rewrite -> List.Forall_forall in Hsnd2pf.
+  specialize (Hsnd2pf _ Hin).
+  destruct Hsnd2pf as (sub & Hin_sub & E).
+  rewrite (prefixtr_rootid_same E).
+  rewrite id_nodup_find_self_subtr; auto.
+  now rewrite (prefixtr_rootinfo_same E).
 Qed.
 
 Corollary tc_detach_nodes_fst_rootinfo_same tcs tc : 
@@ -1414,14 +1448,26 @@ Corollary tc_shape_inv_tc_detach_nodes_snd tcs tc
   (Hshape : tc_shape_inv tc) :
   Forall tc_shape_inv (snd (tc_detach_nodes tcs tc)).
 Proof.
-  pose proof (tc_detach_nodes_snd2fst tcs tc) as Hto.
-  pose proof (tc_shape_inv_sub Hshape) as Hshape_sub.
-  rewrite -> List.Forall_forall in Hto |- *.
-  intros sub' Hin'.
-  specialize (Hto sub' Hin').
-  destruct Hto as (sub & Hin & ->).
-  eapply Foralltr_subtr in Hshape_sub; [ | apply Hin ].
-  now apply tc_shape_inv_tc_detach_nodes_fst.
+  pose proof (tc_detach_nodes_snd_is_subprefix tcs tc) as Hto.
+  revert Hto.
+  apply Forall_impl.
+  intros ? (sub & Hsub & Hpf).
+  eapply tc_shape_inv_prefix_preserve, Foralltr_subtr; eauto.
+  now apply tc_shape_inv_sub.
+Qed.
+
+Corollary tc_respect_tc_detach_nodes_snd [tc tc_larger]
+  (Hrespect : tc_respect tc tc_larger) tcs :
+  Forall (fun tc' => tc_respect tc' tc_larger) (snd (tc_detach_nodes tcs tc)).
+Proof.
+  pose proof (tc_detach_nodes_snd_is_subprefix tcs tc) as Hto.
+  revert Hto.
+  apply Forall_impl.
+  intros ? (sub & Hsub & Hpf).
+  apply (tc_respect_prefix_preserve Hpf). 
+  pattern sub.
+  eapply Foralltr_subtr; eauto.
+  now apply tc_respect_sub.
 Qed.
 
 Lemma tc_detach_nodes_forest_recombine_pre [tcs tc]
@@ -1835,7 +1881,20 @@ Qed.
 
 (* now, put everything together *)
 
-Lemma tc_attach_nodes_tc_shape_inv tc tc' 
+Local Tactic Notation "saturate" constr(tc) constr(tc') ident(Hso) hyp(Hshape') hyp(Hrespect) hyp(Hroot_clk_lt) :=
+  match goal with |- context[tc_attach_nodes ?tcs ?tc] =>
+    pose proof (tc_attach_nodes_result tcs tc) as Hso end;
+  remember (tc_get_updated_nodes_join tc tc') as prefix_tc' eqn:Eprefix;
+  destruct (tc_detach_nodes (tr_flatten prefix_tc') tc) as (pivot, forest) eqn:Edetach;
+  simpl in Hso |- *;
+  pose proof (tc_get_updated_nodes_join_shape Hshape' Hrespect) as Hsq;
+  pose proof (tc_get_updated_nodes_join_shape' Hshape' Hrespect Hroot_clk_lt) as Hsq';
+  pose proof (tc_get_updated_nodes_join_is_prefix tc tc') as Hprefix;
+  rewrite <- Eprefix in Hprefix, Hsq;
+  pose proof (tc_shape_inv_prefix_preserve Hprefix Hshape') as Hshape_pf;
+  assert (forest = snd (tc_detach_nodes (tr_flatten prefix_tc') tc)) as Eforest by now rewrite -> Edetach.
+
+Lemma tc_attach_nodes_tc_shape_inv [tc tc']
   (Hshape : tc_shape_inv tc) (Hshape' : tc_shape_inv tc') 
   (Hroot_clk_le : tc_getclk (tr_rootid tc') tc < tc_rootclk tc')
   (Hrespect : tc_respect tc' tc) :
@@ -1843,89 +1902,42 @@ Lemma tc_attach_nodes_tc_shape_inv tc tc'
     (snd (tc_detach_nodes (tr_flatten (tc_get_updated_nodes_join tc tc')) tc)) 
     (tc_get_updated_nodes_join tc tc')).
 Proof.
-  pose proof (tc_attach_nodes_result 
-    (snd (tc_detach_nodes (tr_flatten (tc_get_updated_nodes_join tc tc')) tc))
-    (tc_get_updated_nodes_join tc tc')) as Hso.
-  remember (tc_get_updated_nodes_join tc tc') as prefix_tc' eqn:Eprefix.
-  destruct (tc_detach_nodes (tr_flatten prefix_tc') tc) as (pivot, forest) eqn:Edetach.
-  simpl in Hso |- *.
-  pose proof Hso as Hnodup.
-  pose proof (tc_get_updated_nodes_join_is_prefix tc tc') as Hprefix.
-  rewrite <- Eprefix in Hprefix.
-  pose proof (tc_shape_inv_prefix_preserve _ _ Hprefix Hshape') as Hshape_pf.
-  assert (forest = snd (tc_detach_nodes (tr_flatten prefix_tc') tc)) as Eforest by now rewrite -> Edetach.
-
-  pose proof Hso as Hother.
-  eapply tc_shape_inv_simple_overlaytc_pre with (Q:=fun t => tc_getclk t tc) in Hother.
-  2:{
-    intros t.
-    destruct (find (has_same_id t) forest) as [ [(t', clk, aclk) chn] | ] eqn:E.
-    2:{
-      exists 0.
-      constructor.
-      all: simpl.
-      2-3: rewrite -> Foralltr_cons_iff.
-      2-3: split; [ | constructor ].
-      2-3: simpl.
-      2-3: constructor.
-      now repeat constructor.
-    }
-    simpl.
-    apply find_some in E.
-    rewrite -> has_same_tid_true in E.
-    simpl in E.
-    destruct E as (Hin & <-).
-    (* unify getclk t tc and clk ... slightly troublesome *)
-    pose proof (tc_detach_nodes_snd_is_subprefix (tr_flatten prefix_tc') tc) as Hsnd2pf.
-    pose proof (tc_shape_inv_tc_detach_nodes_snd (tr_flatten prefix_tc') tc Hshape) as Hshape_forest.
-    rewrite <- Eforest, -> List.Forall_forall in Hsnd2pf, Hshape_forest.
-    specialize (Hsnd2pf _ Hin).
-    specialize (Hshape_forest _ Hin).
-    destruct Hsnd2pf as (sub & Hin_sub & E).
-    pose proof (prefixtr_rootinfo_same E) as Einfo.
-    pose proof (id_nodup_find_self_sub tr_rootinfo _ (tid_nodup _ Hshape) _ Hin_sub) as Hres.
-    apply option.fmap_Some in Hres.
-    destruct Hres as (res & Hres & Einfo').
-    unfold tr_rootid in Hres.
-    rewrite <- Einfo in Hres.
-    simpl in Hres.
-    assert (tc_getclk t tc = clk) as <-.
-    {
-      unfold tc_getclk, tc_rootclk.
-      now rewrite -> Hres, <- Einfo', <- Einfo.
-    }
-    eauto.
-  }
-  2:{
-    pose proof (tc_shape_inv_prefix_preserve _ _ (tc_get_updated_nodes_join_is_prefix tc tc') Hshape').
-    congruence.
-  }
-  2:{
-    pose proof (tc_get_updated_nodes_join_shape _ Hshape' _ Hrespect Hroot_clk_le).
-    subst prefix_tc'.
-    eapply Foralltr_impl.
-    2: apply (proj1 H).
-    simpl.
-    lia.
-  }
-  2:{
-    pose proof (tc_get_updated_nodes_join_shape _ Hshape' _ Hrespect Hroot_clk_le).
-    subst prefix_tc'.
-    eapply Foralltr_impl.
-    2: apply (proj2 H).
-    intros [? ?].
-    apply List.Forall_impl.
-    lia.
-  }
-
+  saturate tc tc' Hso Hshape' Hrespect Hroot_clk_le.
   apply tc_shape_inv_conj_iff.
-  split; [ | assumption ].
-  subst forest.
-  apply tc_attach_detached_nodes_tid_nodup. 
-  all: now apply tid_nodup.
+  split.
+  - subst.
+    apply tc_attach_detached_nodes_id_nodup.
+    all: now apply tid_nodup.
+  - eapply tc_shape_inv_simple_overlaytc_pre with (Q:=fun t => tc_getclk t tc); eauto.
+    + intros t.
+      simpl.
+      destruct (trs_find_node t forest) as [ res | ] eqn:E.
+      2: exists 0; now apply tc_shape_inv_nil.
+      pose proof E as (Hin & <-)%trs_find_has_id.
+      subst forest.
+      (* do unify *)
+      apply tc_detach_nodes_snd_find_unify in E.
+      2: now apply tid_nodup.
+      exists (tc_rootaclk res).
+      pose proof (tc_shape_inv_tc_detach_nodes_snd (tr_flatten prefix_tc') tc Hshape) as Hshape_forest.
+      enough (tc_shape_inv res) as HH.
+      2: clear E; revert res Hin; now apply Forall_forall.
+      rewrite tc_getclk_as_fmap.
+      change tc_rootclk with (Basics.compose info_clk tr_rootinfo).
+      rewrite option.option_fmap_compose, E.
+      destruct res as [(?, ?, ?) ?]; simpl in *; auto.
+    + subst prefix_tc'.
+      revert Hsq'.
+      apply Foralltr_impl; lia.
+    + (* basically repeating the proof of "tc_get_updated_nodes_join_shape'" *)
+      eapply Foralltr_impl.
+      2: apply Hsq.
+      intros ?.
+      apply Forall_impl.
+      lia.
 Qed.
 
-Lemma tc_attach_nodes_respect tc tc' 
+Lemma tc_attach_nodes_respect [tc tc']
   (Hshape : tc_shape_inv tc) (Hshape' : tc_shape_inv tc') 
   (Hroot_clk_le : tc_getclk (tr_rootid tc') tc < tc_rootclk tc')
   (Hrespect : tc_respect tc' tc) tc_larger 
@@ -1935,66 +1947,36 @@ Lemma tc_attach_nodes_respect tc tc'
     (snd (tc_detach_nodes (tr_flatten (tc_get_updated_nodes_join tc tc')) tc)) 
     (tc_get_updated_nodes_join tc tc')) tc_larger.
 Proof.
-  pose proof (tc_attach_nodes_result 
-    (snd (tc_detach_nodes (tr_flatten (tc_get_updated_nodes_join tc tc')) tc))
-    (tc_get_updated_nodes_join tc tc')) as Hso.
-  remember (tc_get_updated_nodes_join tc tc') as prefix_tc' eqn:Eprefix.
-  destruct (tc_detach_nodes (tr_flatten prefix_tc') tc) as (pivot, forest) eqn:Edetach.
-  simpl in Hso |- *.
-  pose proof (tc_get_updated_nodes_join_is_prefix tc tc') as Hprefix.
-  assert (forest = snd (tc_detach_nodes (tr_flatten prefix_tc') tc)) as Eforest by now rewrite -> Edetach.
-  rewrite <- Eprefix in Hprefix.
+  saturate tc tc' Hso Hshape' Hrespect Hroot_clk_le.
   revert Hso.
   apply tc_respect_simple_overlaytc_pre with (Q:=fun t => tc_getclk t tc).
   - intros t.
-    destruct (find (has_same_id t) forest) as [ [(t', clk, aclk) chn] | ] eqn:E.
-    2:{
-      exists 0.
-      now apply tc_respect_nochn_trivial.
-    }
-    simpl.
-    apply find_some in E.
-    rewrite -> has_same_tid_true in E.
-    simpl in E.
-    destruct E as (Hin & <-).
-    (* unify getclk t tc and clk ... slightly troublesome *)
-    (* FIXME: revise? *)
-    pose proof (tc_detach_nodes_snd_is_subprefix (tr_flatten prefix_tc') tc) as Hsnd2pf.
-    pose proof (tc_shape_inv_tc_detach_nodes_snd (tr_flatten prefix_tc') tc Hshape) as Hshape_forest.
-    rewrite <- Eforest, -> List.Forall_forall in Hsnd2pf, Hshape_forest.
-    specialize (Hsnd2pf _ Hin).
-    specialize (Hshape_forest _ Hin).
-    destruct Hsnd2pf as (sub & Hin_sub & E).
-    pose proof (prefixtr_rootinfo_same E) as Einfo.
-    pose proof (id_nodup_find_self_sub tr_rootinfo _ (tid_nodup _ Hshape) _ Hin_sub) as Hres.
-    apply option.fmap_Some in Hres.
-    destruct Hres as (res & Hres & Einfo').
-    unfold tr_rootid in Hres.
-    rewrite <- Einfo in Hres.
-    simpl in Hres.
-    assert (tc_getclk t tc = clk) as <-.
-    {
-      unfold tc_getclk, tc_rootclk.
-      now rewrite -> Hres, <- Einfo', <- Einfo.
-    }
-    exists aclk.
-    pose proof (tc_respect_sub _ _ Hrespect1) as Hrespect_sub.
-    rewrite -> Foralltr_Forall_subtree, -> List.Forall_forall in Hrespect_sub.
-    specialize (Hrespect_sub _ Hin_sub).
-    eapply tc_respect_prefix_preserve; eauto.
+    destruct (trs_find_node t forest) as [ res | ] eqn:E.
+    2: exists 0; now apply tc_respect_nochn_trivial.
+    pose proof E as (Hin & <-)%trs_find_has_id.
+    subst forest.
+    (* do unify *)
+    (* FIXME: proof repeating ... any good way to work around? *)
+    apply tc_detach_nodes_snd_find_unify in E.
+    2: now apply tid_nodup.
+    exists (tc_rootaclk res).
+    pose proof (tc_respect_tc_detach_nodes_snd Hrespect1 (tr_flatten prefix_tc')) as Hshape_forest.
+    enough (tc_respect res tc_larger) as HH.
+    2: clear E; revert res Hin; now apply Forall_forall.
+    rewrite tc_getclk_as_fmap.
+    change tc_rootclk with (Basics.compose info_clk tr_rootinfo).
+    rewrite option.option_fmap_compose, E.
+    destruct res as [(?, ?, ?) ?]; simpl in *; auto.
   - eapply tc_respect_prefix_preserve; eauto.
-  - pose proof (tc_get_updated_nodes_join_shape _ Hshape' _ Hrespect Hroot_clk_le).
-    subst prefix_tc'.
-    eapply Foralltr_impl.
-    2: apply (proj1 H).
-    simpl.
-    lia.
+  - subst prefix_tc'.
+    revert Hsq'.
+    apply Foralltr_impl; lia.
 Qed.
 
 (* should also be "tcs_congr", but keep the word "forest" anyway *)
 Lemma tc_attach_nodes_forest_congr forest1 forest2 tc
-  (H : Foralltr (fun tc' => List.find (has_same_id (tr_rootid tc')) forest1 = 
-    List.find (has_same_id (tr_rootid tc')) forest2) tc) :
+  (H : Foralltr (fun tc' => trs_find_node (tr_rootid tc') forest1 = 
+    trs_find_node (tr_rootid tc') forest2) tc) :
   tc_attach_nodes forest1 tc = tc_attach_nodes forest2 tc.
 Proof.
   induction tc as [ni chn IH] using tree_ind_2; intros.
@@ -2005,6 +1987,7 @@ Proof.
   2: apply IH.
   erewrite -> map_ext_Forall.
   2: apply H.
+  change info_tid with info_id. (* TODO this is bad! *)
   now rewrite Hroot.
 Qed.
 
@@ -2015,8 +1998,8 @@ Proof.
   apply tc_attach_nodes_forest_congr, Foralltr_Forall_subtree, Forall_forall.
   intros sub' Hin.
   simpl.
-  destruct (has_same_id (tr_rootid sub') sub) eqn:E; try reflexivity.
-  rewrite -> has_same_tid_true in E.
+  unfold has_same_id.
+  rewrite eqdec_must_right; auto.
   apply in_map with (f:=tr_rootid) in Hin.
   congruence.
 Qed.
