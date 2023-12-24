@@ -1,6 +1,7 @@
 From Coq Require Import List Bool Lia PeanoNat Sorting RelationClasses Permutation.
 From Coq Require ssreflect.
-From arboreta.utils Require Export util libtac rosetree.
+From arboreta.utils Require Import util.
+From arboreta.utils Require Export rosetree.
 Import ssreflect.SsrSyntax.
 
 From stdpp Require list.
@@ -915,8 +916,8 @@ Proof.
   induction tc' as [(u', clk_u', aclk_u') chn' IH] using tree_ind_2; intros.
   tc_get_updated_nodes_join_unfold.
   simpl.
-  pose proof (tc_get_updated_nodes_join_aux_result_regular tc u' clk_u' aclk_u' chn') as Htmp.
-  do 2 (removehead Htmp; [ | assumption ]).
+  pose proof (tc_get_updated_nodes_join_aux_result_regular tc u' clk_u' aclk_u' chn'
+    ltac:(assumption) ltac:(assumption)) as Htmp.
   destruct Htmp as (chn_u'' & Hsub & -> & H & _ & _).
   constructor.
   - simpl.
