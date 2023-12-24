@@ -25,7 +25,7 @@ Context {A : Type}.
 
 (* A rosetree is a node with some information of type A, and some rosetrees as children. *)
 
-Inductive tree : Type := Node (ni : A) (chn : list tree).
+Inductive tree : Type := Node (a : A) (chn : list tree).
 
 Definition tr_rootinfo tr := let 'Node ni _ := tr in ni.
 
@@ -61,7 +61,7 @@ Section Tree_Height.
   (* One can prove an enhanced induction principle using a step-indexing like argument. *)
 
   Lemma tr_ind_bounded_height (P : tree -> Prop)
-    (Hind : forall (ni : A) (chn : list tree), Forall P chn -> P (Node ni chn)) n : 
+    (Hind : forall (a : A) (chn : list tree), Forall P chn -> P (Node a chn)) n : 
     forall (tr : tree) (Hh : tr_height tr <= n), P tr.
   Proof.
     induction n as [ n IH ] using Wf_nat.lt_wf_ind; intros.
@@ -78,7 +78,7 @@ Section Tree_Height.
   Qed.
 
   Lemma tree_ind_2 (P : tree -> Prop)
-    (Hind : forall (ni : A) (chn : list tree), Forall P chn -> P (Node ni chn)) : 
+    (Hind : forall (a : A) (chn : list tree), Forall P chn -> P (Node a chn)) : 
     forall (tr : tree), P tr.
   Proof.
     intros tr.
@@ -89,7 +89,7 @@ Section Tree_Height.
 
   (* sometimes can avoid the pervasive usage of Forall_forall *)
   Corollary tree_ind_2' (P : tree -> Prop)
-    (Hind : forall (ni : A) (chn : list tree), (forall ch, In ch chn -> P ch) -> P (Node ni chn)) : 
+    (Hind : forall (a : A) (chn : list tree), (forall ch, In ch chn -> P ch) -> P (Node a chn)) : 
     forall (tr : tree), P tr.
   Proof. apply tree_ind_2. intros. apply Hind. now rewrite Forall_forall in H. Qed.
 
@@ -225,6 +225,99 @@ Section Core_Auxiliary_Functions.
       simpl in *.
       destruct (nth_error chn x) eqn:E; try discriminate.
       now apply IH.
+  Qed.
+
+  Fixpoint tr_pos_valid_depth (tr : tree) (pos : list nat) : nat :=
+    match pos with
+    | nil => 0
+    | x :: pos' => 
+      match nth_error (tr_rootchn tr) x with
+      | Some ch => S (tr_pos_valid_depth ch pos')
+      | None => 0
+      end
+    end.
+
+  Definition tr_pos_valid_part tr pos := firstn (tr_pos_valid_depth tr pos) pos.
+  Global Arguments tr_pos_valid_part _ !_ /.
+
+  Fact tr_pos_valid_depth_le tr pos : tr_pos_valid_depth tr pos <= length pos.
+  Proof.
+    revert tr.
+    induction pos as [ | x pos IH ]; intros [ni chn]; simpl.
+    - constructor.
+    - destruct (nth_error chn x) as [ ch | ] eqn:E.
+      + apply le_n_S, IH.
+      + apply Nat.le_0_l.
+  Qed.
+
+  Fact tr_pos_valid_depth_maximal tr pos :
+    exists chn, base.fmap tr_rootchn (tr_locate tr (tr_pos_valid_part tr pos)) = Some chn /\
+      (tr_pos_valid_depth tr pos < length pos ->
+        length chn <= nth (tr_pos_valid_depth tr pos) pos 0).
+  Proof.
+    revert tr.
+    induction pos as [ | x pos IH ]; intros [ni chn]; simpl.
+    - exists chn.
+      split; [ reflexivity | intros H; inversion H ].
+    - destruct (nth_error chn x) as [ ch | ] eqn:E.
+      + simpl; rewrite E.
+        specialize (IH ch).
+        destruct IH as (chn' & E' & H).
+        exists chn'.
+        split; [ assumption | intros HH%le_S_n; now apply H ].
+      + simpl.
+        exists chn.
+        split; [ reflexivity | intros _; now apply nth_error_None ].
+  Qed.
+
+  Corollary tr_pos_valid_depth_valid tr pos :
+    isSome (tr_locate tr (tr_pos_valid_part tr pos)) = true.
+  Proof. destruct (tr_pos_valid_depth_maximal tr pos) as (? & E & _). now destruct (tr_locate _ _). Qed.
+
+  Fact tr_pos_valid_depth_lt tr pos : 
+    tr_locate tr pos = None <-> tr_pos_valid_depth tr pos < length pos.
+  Proof.
+    revert tr.
+    induction pos as [ | x pos IH ]; intros [ni chn]; simpl.
+    - split; intros H; inversion H.
+    - destruct (nth_error chn x) as [ ch | ] eqn:E.
+      + now rewrite IH, <- Nat.succ_lt_mono.
+      + split; intros; auto.
+        apply le_n_S, Nat.le_0_l.
+  Qed.
+
+  Corollary tr_pos_valid_depth_eq tr pos :
+    isSome (tr_locate tr pos) = true <-> tr_pos_valid_depth tr pos = length pos.
+  Proof.
+    pose proof (tr_pos_valid_depth_le tr pos) as Hle.
+    rewrite isSome_true_not_None, tr_pos_valid_depth_lt.
+    lia.
+  Qed.
+
+  Corollary tr_pos_valid_part_eq tr pos :
+    isSome (tr_locate tr pos) = true <-> tr_pos_valid_part tr pos = pos.
+  Proof.
+    unfold tr_pos_valid_part.
+    rewrite tr_pos_valid_depth_eq, <- firstn_all2_iff.
+    pose proof (tr_pos_valid_depth_le tr pos) as Hle.
+    lia.
+  Qed.
+
+  (* FIXME: generalize this property? *)
+  Fact tr_pos_valid_part_removelast [tr pos] (H : tr_locate tr pos = None) :
+    tr_pos_valid_part tr (removelast pos) = tr_pos_valid_part tr pos.
+  Proof.
+    revert tr H.
+    induction pos as [ | x pos IH ]; intros [ni chn]; simpl.
+    - intros; discriminate.
+    - unfold tr_pos_valid_part in *.
+      destruct (nth_error chn x) as [ ch | ] eqn:E.
+      + simpl.
+        intros.
+        rewrite <- (IH _ H); auto.
+        destruct pos; [ discriminate | simpl; now rewrite E ].
+      + intros _.
+        destruct pos; [ reflexivity | simpl; now rewrite E ].
   Qed.
 
   Fixpoint tr_locate_update (tr : tree) (pos : list nat) (sub : tree) : tree :=
@@ -408,11 +501,11 @@ Section Forall_Tree_Theory.
       subtree inside the tree satisfies some predicate. *)
 
   Inductive Foralltr (P : tree -> Prop) : tree -> Prop :=
-    Foralltr_intro : forall ni chn, 
-      P (Node ni chn) -> Forall (Foralltr P) chn -> Foralltr P (Node ni chn). 
+    Foralltr_intro : forall a chn, 
+      P (Node a chn) -> Forall (Foralltr P) chn -> Foralltr P (Node a chn). 
 
-  Fact Foralltr_cons_iff P ni chn :
-    Foralltr P (Node ni chn) <-> (P (Node ni chn) /\ Forall (Foralltr P) chn).
+  Fact Foralltr_cons_iff P a chn :
+    Foralltr P (Node a chn) <-> (P (Node a chn) /\ Forall (Foralltr P) chn).
   Proof.
     split; intros.
     - now inversion H.
@@ -514,20 +607,20 @@ End Forall_Tree_Theory.
 Section Tree_Prefix_Theory.
 
   Inductive prefixtr : tree -> tree -> Prop :=
-    prefixtr_intro : forall ni chn chn_sub prefix_chn, 
+    prefixtr_intro : forall a chn chn_sub prefix_chn, 
       list.sublist chn_sub chn ->
       Forall2 prefixtr prefix_chn chn_sub ->
-      prefixtr (Node ni prefix_chn) (Node ni chn).
+      prefixtr (Node a prefix_chn) (Node a chn).
 
   Fact prefixtr_inv [ni1 ni2 chn1 chn2] (Hprefix: prefixtr (Node ni1 chn1) (Node ni2 chn2)) :
     ni1 = ni2 /\ exists chn2_sub, list.sublist chn2_sub chn2 /\ Forall2 prefixtr chn1 chn2_sub.
   Proof. inversion Hprefix; subst. firstorder. Qed.
 
   Lemma prefixtr_ind_2 (P : tree -> tree -> Prop)
-    (Hind : forall (ni : A) (chn1 chn2_sub chn2 : list tree), 
+    (Hind : forall (a : A) (chn1 chn2_sub chn2 : list tree), 
       list.sublist chn2_sub chn2 ->
       Forall2 prefixtr chn1 chn2_sub -> 
-      Forall2 P chn1 chn2_sub -> P (Node ni chn1) (Node ni chn2))
+      Forall2 P chn1 chn2_sub -> P (Node a chn1) (Node a chn2))
     (tr1 tr2 : tree) (H : prefixtr tr1 tr2) : P tr1 tr2.
   Proof.
     revert tr2 H.
@@ -595,7 +688,7 @@ Section Tree_Prefix_Theory.
     eapply Forall2_mapself_l, sublist_Forall; eauto.
   Qed.
 
-  Fact prefixtr_nil_l ni chn : prefixtr (Node ni nil) (Node ni chn).
+  Fact prefixtr_nil_l a chn : prefixtr (Node a nil) (Node a chn).
   Proof.
     econstructor.
     2: reflexivity.
@@ -1067,7 +1160,512 @@ End Tree_Locate_Update.
 
 Section Reversed_Preorder_Traversal_Theory.
 
-(* TODO *)
+  (* vertical split *)
+  (* two modes: full or leaf *)
+  Fixpoint tr_vsplitr (full : bool) tr (l : list nat) : tree :=
+    match l with
+    | nil => Node (tr_rootinfo tr) (if full then tr_rootchn tr else nil)
+    | x :: l' =>
+      match nth_error (tr_rootchn tr) x with
+      | Some ch => Node (tr_rootinfo tr) (tr_vsplitr full ch l' :: skipn (S x) (tr_rootchn tr))
+      | None => Node (tr_rootinfo tr) nil
+      end
+    end.
+
+  (* compute both the positions and thread ids at the same time *)
+  (* FIXME: the stack has its entry/exit point at the tail position, which brings some trouble. any way to fix it? *)
+  Fixpoint tr_trav_waitlist tr (l : list nat) : (list (list nat)) * (list tree) :=
+    match l with
+    | nil => (nil, nil)
+    | x :: l' =>
+      match nth_error (tr_rootchn tr) x with
+      | Some ch => 
+        let (res1, res2) := (tr_trav_waitlist ch l') in
+        ((map (fun i => i :: nil) (seq 0 x)) ++ (map (fun l0 => x :: l0) res1), (firstn x (tr_rootchn tr)) ++ res2)
+      | None => 
+        ((map (fun i => i :: nil) (seq 0 (length (tr_rootchn tr)))), (tr_rootchn tr))
+      end
+    end.
+
+  Definition pos_succ (l : list nat) :=
+    match rev l with
+    | nil => nil
+    | x :: l' => rev ((S x) :: l')
+    end.
+
+  Definition post_iter_visited_prefix tr pos : tree :=
+    tr_vsplitr false tr pos.
+
+  Definition pre_iter_visited_prefix tr pos : tree :=
+    tr_vsplitr (isSome (tr_locate tr (pos_succ pos))) tr (pos_succ pos).
+
+  Fact pos_succ_nil : pos_succ nil = nil. Proof eq_refl. 
+
+  Fact pos_succ_last l x : 
+    pos_succ (l ++ x :: nil) = l ++ (S x) :: nil.
+  Proof. unfold pos_succ. rewrite ! rev_app_distr. simpl. now rewrite rev_involutive. Qed.
+
+  Fact pos_succ_cons x y l : 
+    pos_succ (x :: y :: l) = x :: pos_succ (y :: l).
+  Proof. 
+    assert (y :: l <> nil) as (l' & y' & E)%exists_last by auto.
+    rewrite -> ! E, -> ! app_comm_cons, -> ! pos_succ_last, -> app_comm_cons.
+    reflexivity.
+  Qed.
+
+  Fact tr_trav_waitlist_align tr l : 
+    length (fst (tr_trav_waitlist tr l)) = length (snd (tr_trav_waitlist tr l)).
+  Proof.
+    revert tr.
+    induction l as [ | x l IH ]; intros; simpl; try reflexivity.
+    destruct tr as [ni chn]; simpl. 
+    destruct (nth_error chn x) as [ ch | ] eqn:E; simpl.
+    - destruct (tr_trav_waitlist ch l) as (res1, res2) eqn:EE; simpl.
+      specialize (IH ch).
+      rewrite -> EE in IH.
+      simpl in IH.
+      autorewrite with list.
+      rewrite -> firstn_length_le; try lia.
+      now apply nth_error_some_inrange_le in E.
+    - now autorewrite with list.
+  Qed.
+
+  Fact tr_trav_waitlist_length_lt_tr_size tr l : 
+    length (snd (tr_trav_waitlist tr l)) < tr_size tr.
+  Proof.
+    revert tr.
+    induction l as [ | x l IH ]; intros [ni chn]; intros; simpl; try lia.
+    destruct (nth_error chn x) as [ ch | ] eqn:E; simpl.
+    - destruct (tr_trav_waitlist ch l) as (res1, res2) eqn:EE; simpl.
+      specialize (IH ch).
+      rewrite EE in IH.
+      simpl in IH.
+      rewrite <- firstn_skipn with (n:=x) (l:=chn) at 2.
+      rewrite flat_map_app, ! app_length.
+      match goal with |- (_ + ?a < S (_ + ?b))%nat => enough (a < S b)%nat end.
+      + pose proof (trs_size_le_full (firstn x chn)).
+        lia.
+      + apply nth_error_mixin in E.
+        destruct E as (_ & _ & _ & ->).
+        simpl.
+        rewrite app_length.
+        unfold tr_size in IH.
+        lia.
+    - pose proof (trs_size_le_full chn).
+      lia.
+  Qed.
+
+  Fact tr_trav_waitlist_pos_notnil tr l : 
+    Forall (fun l' => l' <> nil) (fst (tr_trav_waitlist tr l)).
+  Proof.
+    destruct l as [ | x l ], tr as [ni chn]; simpl; auto.
+    destruct (nth_error chn x) as [ ch | ] eqn:E; simpl.
+    - destruct (tr_trav_waitlist ch l) as (res1, res2) eqn:EE; simpl.
+      rewrite Forall_app, ! Forall_map.
+      split; now apply list.Forall_true.
+    - rewrite Forall_map.
+      now apply list.Forall_true.
+  Qed.
+
+  (* "tr_trav_waitlist" enjoys a good property over list append *)
+  Lemma tr_trav_waitlist_pos_app [pos1] : forall [tr sub] (H : tr_locate tr pos1 = Some sub) pos2,
+    tr_trav_waitlist tr (pos1 ++ pos2) = 
+      (fst (tr_trav_waitlist tr pos1) ++ (map (fun pos => pos1 ++ pos) (fst (tr_trav_waitlist sub pos2))), 
+        snd (tr_trav_waitlist tr pos1) ++ snd (tr_trav_waitlist sub pos2)).
+  Proof.
+    induction pos1 as [ | x pos1 IH ]; intros [ni chn]; intros; simpl in *.
+    - injection H as <-.
+      rewrite -> map_id_eq.
+      now destruct (tr_trav_waitlist _ _).
+    - destruct (nth_error chn x) eqn:E; try discriminate.
+      rewrite -> (IH _ _ H pos2).
+      do 2 destruct (tr_trav_waitlist _ _).
+      simpl.
+      rewrite -> ! map_app, -> map_map, <- ! app_assoc.
+      reflexivity.
+  Qed.
+
+  Lemma tr_vsplitr_full_all0pos [l] (H : Forall (fun x => x = 0) l) :
+    forall tr, tr_vsplitr true tr l = tr.
+  Proof.
+    induction H as [ | x l -> H IH ]; intros [ni chn]; auto.
+    simpl.
+    destruct chn as [ | ch chn ]; auto.
+    now rewrite IH.
+  Qed.
+
+  Lemma tr_vsplitr_all0pos_atleaf [l] : forall [tr] (H : Forall (fun x => x = 0) (tr_pos_valid_part tr l)) 
+    (Hleaf : base.fmap tr_rootchn (tr_locate tr (tr_pos_valid_part tr l)) = Some nil) full,
+    tr_vsplitr full tr l = tr.
+  Proof.
+    induction l as [ | x l IH ]; intros [ni chn]; intros; simpl in *.
+    - injection Hleaf as ->.
+      now destruct full.
+    - destruct (nth_error chn x) as [ ch | ] eqn:E; simpl in *.
+      + rewrite E in Hleaf.
+        apply Forall_cons_iff in H.
+        destruct H as (-> & H).
+        erewrite IH; eauto.
+        destruct chn; try discriminate.
+        now injection E as ->.
+      + injection Hleaf as ->.
+        now destruct full.
+  Qed.
+
+  (* give the most precise characterization *)
+  Lemma tr_trav_waitlist_nil [l] : forall [tr] (Hnil : fst (tr_trav_waitlist tr l) = nil),
+    Forall (fun x => x = 0) (tr_pos_valid_part tr l) /\
+    (tr_locate tr l = None -> base.fmap tr_rootchn (tr_locate tr (tr_pos_valid_part tr l)) = Some nil).
+  Proof.
+    induction l as [ | x l IH ]; intros [ni chn]; intros; simpl in Hnil |- *.
+    - split; [ apply Forall_nil | intros [=] ].
+    - destruct (nth_error chn x) as [ ch | ] eqn:E.
+      + simpl.
+        destruct (tr_trav_waitlist _ _) eqn:Ew in Hnil.
+        simpl in Hnil.
+        apply app_eq_nil in Hnil.
+        destruct Hnil as (E1%map_eq_nil & ->%map_eq_nil).
+        assert (x = 0%nat) as -> by (now destruct x).
+        rewrite E.
+        specialize (IH ch ltac:(rewrite Ew; reflexivity)).
+        split; [ constructor; [ reflexivity | ] | ]; tauto.
+      + simpl in Hnil |- *.
+        destruct chn; try discriminate.
+        auto.
+  Qed.
+
+  Corollary tr_vsplitr_full_trav_term [l tr] (Hnil : fst (tr_trav_waitlist tr l) = nil) :
+    tr_vsplitr true tr l = tr.
+  Proof.
+    (* analytic ... though by induction might be easier? *)
+    apply tr_trav_waitlist_nil in Hnil.
+    destruct Hnil as (Hall0 & Hq).
+    pose proof (tr_pos_valid_depth_maximal tr l) as (chn' & E & Hlt).
+    rewrite E in Hq.
+    destruct (tr_locate tr _) as [ [a chn] | ] eqn:Esub in E; try discriminate.
+    injection E as <-.
+    destruct (isSome (tr_locate tr l)) eqn:E.
+    - pose proof E as E'%tr_pos_valid_depth_eq.
+      rewrite tr_pos_valid_part_eq in E.
+      rewrite E in *.
+      eapply tr_vsplitr_full_all0pos; eauto.
+    - apply isSome_false_is_None in E.
+      specialize (Hq E).
+      injection Hq as ->.
+      apply tr_vsplitr_all0pos_atleaf; auto.
+      now rewrite Esub.
+  Qed.
+
+  Lemma tr_vsplitr_leaf_validpart_congr l : forall tr,
+    tr_vsplitr false tr l = tr_vsplitr false tr (tr_pos_valid_part tr l).
+  Proof.
+    induction l as [ | x l IH ]; intros [ni chn]; intros; simpl.
+    - reflexivity.
+    - destruct (nth_error chn x) as [ ch | ] eqn:E.
+      + simpl.
+        rewrite IH, E; auto.
+      + reflexivity.
+  Qed.
+
+  Corollary tr_vsplitr_leaf_lastover [l tr] (H : tr_locate tr l = None) :
+    tr_vsplitr false tr l = tr_vsplitr false tr (removelast l).
+  Proof.
+    apply tr_pos_valid_part_removelast in H.
+    rewrite tr_vsplitr_leaf_validpart_congr.
+    now rewrite tr_vsplitr_leaf_validpart_congr with (l:=removelast l), H.
+  Qed.
+
+  Lemma tr_vsplitr_leaf2full [l] : forall [tr] 
+    (H : base.fmap tr_rootchn (tr_locate tr l) = Some nil \/ tr_locate tr l = None), 
+    tr_vsplitr false tr l = tr_vsplitr true tr l.
+  Proof.
+    induction l as [ | x l IH ]; intros [ni chn]; intros; simpl in H |- *.
+    - now destruct H as [ [=->] | ]; try discriminate.
+    - destruct (nth_error chn x) as [ ch | ] eqn:E0; simpl.
+      + now erewrite -> IH; eauto.
+      + reflexivity.
+  Qed.
+
+  (* may use this to trace on the original tree (i.e., tr) *)
+
+  Lemma tr_vsplitr_is_prefix full l : forall tr, 
+    prefixtr (tr_vsplitr full tr l) tr.
+  Proof.
+    induction l as [ | x l IH ]; intros [ni chn]; simpl.
+    - destruct full.
+      + reflexivity.
+      + apply prefixtr_nil_l.
+    - destruct (nth_error chn x) as [ ch | ] eqn:E.
+      2: apply prefixtr_nil_l.
+      apply nth_error_mixin in E.
+      apply prefixtr_intro with (chn_sub:=ch :: skipn (S x) chn).
+      + rewrite <- (firstn_skipn x chn) at 2.
+        destruct E as (_ & _ & _ & <-).
+        now apply list.sublist_inserts_l.
+      + constructor.
+        * apply IH.
+        * reflexivity.
+  Qed.
+
+  Fact tr_vsplitr_locate [l] :
+    forall [tr sub] full (H : tr_locate tr l = Some sub),
+      tr_locate (tr_vsplitr full tr l) (List.repeat 0%nat (length l)) = 
+      Some (tr_vsplitr full sub nil).
+  Proof.
+    induction l as [ | x l IH ]; intros [ni chn]; intros; simpl in H |- *.
+    1: injection H as <-; reflexivity.
+    destruct (nth_error chn x) as [ ch | ] eqn:E0; simpl.
+    2: discriminate.
+    erewrite IH; eauto.
+  Qed.
+
+  Local Tactic Notation "injection_last_pair" "in_" hyp(E) "as_" ident(E1) ident(E2) :=
+    match type of E with (?l1 ++ ?y1, ?l2 ++ ?y2) = (?l1' ++ ?y1', ?l2' ++ ?y2') =>
+      assert (l1 ++ y1 = l1' ++ y1') as E1 by congruence;
+      assert (l2 ++ y2 = l2' ++ y2') as E2 by congruence;
+      rewrite -> app_inj_tail_iff in E1, E2 end.
+
+  Local Tactic Notation "waitlist_align" hyp(E) "as_" ident(H) :=
+    match type of E with 
+    | tr_trav_waitlist ?tr ?l = _ => 
+      pose proof (tr_trav_waitlist_align tr l) as H;
+      rewrite -> E in H; simpl in H
+    end.
+
+  Local Tactic Notation "list_rev_codestruct" hyp(H) "as_" simple_intropattern(p1) simple_intropattern(p2) := 
+    match type of H with 
+    | length ?l1 = length ?l2 => 
+      destruct (list_rev_destruct l1) as [ -> | p1 ]; 
+      [ destruct l2 |
+        destruct (list_rev_destruct l2) as [ -> | p2 ]; 
+        [ subst; rewrite -> app_length, -> Nat.add_1_r in H | ] ]; 
+      simpl in H; try discriminate
+    end.
+
+  (* the proofs about stack are tedious (requiring much manual manipulation), but maybe no much better way ... *)
+
+  Local Fact tr_trav_waitlist_continue_pre [chn : list tree] [y res1 l' res2 sub']
+    (Hle : y <= length chn)
+    (E : (map (fun i => i :: nil) (seq 0 y), firstn y chn) = 
+      (res1 ++ l' :: nil, res2 ++ sub' :: nil)) :
+    exists y', y = S y' /\ l' = y' :: nil /\ res1 = map (fun i => i :: nil) (seq 0 y') /\
+      nth_error chn y' = Some sub' /\ res2 = firstn y' chn.
+  Proof.
+    destruct y as [ | y ].
+    1: simpl in E; inversion E; now destruct res1.
+    rewrite seq_last, map_app in E.
+    simpl in E.
+    destruct (firstn_last Hle) as (? & EE & E2).
+    rewrite EE in E.
+    injection_last_pair in_ E as_ EE1 EE2.
+    destruct EE1 as (<- & <-), EE2 as (<- & <-).
+    now exists y.
+  Qed.
+
+  (* the stack top node gives the correct result of the rest of the stack *)
+  Lemma tr_trav_waitlist_continue [tr] : forall [l] (H : isSome (tr_locate tr l) = true) 
+    [res1 l' res2 sub'] (E : tr_trav_waitlist tr l = (res1 ++ l' :: nil, res2 ++ sub' :: nil)),
+    tr_locate tr l' = Some sub' /\ tr_trav_waitlist tr l' = (res1, res2).
+  Proof.
+    induction tr as [ni chn IH] using tree_ind_2'; intros.
+    destruct l as [ | x l ]; simpl in E.
+    1: inversion E; now destruct res1.
+    simpl in H.
+    destruct (nth_error chn x) as [ ch | ] eqn:E0; try discriminate.
+    destruct (tr_trav_waitlist ch l) as (res1', res2') eqn:EE; simpl.
+    waitlist_align EE as_ Hlen.
+    (* check if "tr_trav_waitlist ch l" gives nil or not *)
+    list_rev_codestruct Hlen as_ (res1'' & l'' & ->) (res2'' & sub'' & ->).
+    + simpl in E.
+      rewrite ! app_nil_r in E.
+      apply tr_trav_waitlist_continue_pre in E.
+      2: now eapply nth_error_some_inrange_le; eassumption.
+      destruct E as (y & -> & -> & -> & E0' & ->).
+      simpl; now rewrite E0', ! app_nil_r.
+    + rewrite -> map_app, -> ! app_assoc in E.
+      simpl in E.
+      specialize (IH _ (nth_error_In _ _ E0) _ H _ _ _ _ EE).
+      destruct IH as (IH1 & IH2).
+      injection_last_pair in_ E as_ EE1 EE2.
+      destruct EE1 as (? & <-), EE2 as (? & <-).
+      simpl.
+      rewrite E0, IH1, IH2.
+      split; congruence.
+  Qed.
+
+  Lemma tr_vsplitr_continue [l] : forall [tr]
+    [res1 l' res2 sub'] (E : tr_trav_waitlist tr l = (res1 ++ l' :: nil, res2 ++ sub' :: nil)),
+    tr_vsplitr true tr l = tr_vsplitr true tr (pos_succ l') /\
+    (* proof goal merged, just for reducing repeating proof preparation; 
+      and this is not quite compatible with tr_trav_waitlist_continue, so merge to here *)
+    (base.fmap tr_rootchn (tr_locate tr l) = Some nil -> isSome (tr_locate tr (pos_succ l')) = true).
+  Proof.
+    induction l as [ | x l IH ]; intros [ni chn]; intros; simpl in E |- *.
+    1: inversion E; now destruct res1.
+    destruct (nth_error chn x) as [ ch | ] eqn:E0; simpl.
+    - destruct (tr_trav_waitlist ch l) as (res1', res2') eqn:EE; simpl.
+      waitlist_align EE as_ Hlen.
+      list_rev_codestruct Hlen as_ (res1'' & l'' & ->) (res2'' & sub'' & ->).
+      + simpl in E.
+        rewrite -> ! app_nil_r in E.
+        apply tr_trav_waitlist_continue_pre in E.
+        2: now eapply nth_error_some_inrange_le; eassumption.
+        destruct E as (y & -> & -> & -> & E0' & ->).
+        cbn delta -[nth_error] iota beta.
+        rewrite E0, tr_vsplitr_full_trav_term by (rewrite EE; reflexivity).
+        split; [ now destruct ch | auto ].
+      + rewrite -> map_app, -> ! app_assoc in E.
+        simpl in E.
+        injection_last_pair in_ E as_ EE1 EE2.
+        destruct EE1 as (? & <-), EE2 as (? & <-).
+        destruct (list_rev_destruct l'') as [ El'' | (y & l''' & ->) ].
+        * (* impossible *)
+          pose proof (tr_trav_waitlist_pos_notnil ch l) as HH.
+          rewrite EE in HH.
+          simpl in HH.
+          now apply Forall_app, proj2, Forall_inv in HH.
+        * rewrite app_comm_cons, ! pos_succ_last, <- app_comm_cons.
+          simpl.
+          rewrite E0.
+          specialize (IH ch _ _ _ _ EE).
+          rewrite pos_succ_last in IH.
+          destruct IH as (IH1 & IH2).
+          split; auto; congruence.
+    - split; [ | intros [=] ].
+      destruct (list_rev_destruct chn) as [ -> | (chn' & ch & Echn) ].
+      1: inversion E; now destruct res1.
+      rewrite <- (firstn_all chn) in E at 2.
+      apply tr_trav_waitlist_continue_pre in E; auto.
+      destruct E as (? & El & -> & -> & E0' & ->).
+      cbn delta -[nth_error] iota beta.
+      pose proof (le_n (length chn)) as Htmp%nth_error_None.
+      now rewrite <- El, Htmp.
+  Qed.
+
+  (* the invariant template *)
+
+  Inductive traversal_invariant (tr : tree) : list B -> tree -> Prop :=
+    | TInv_terminate : traversal_invariant tr nil tr
+    | TInv_intermediate : forall stk pos sub pf, 
+      tr_locate tr pos = Some sub ->
+      stk = (map tr_rootid (snd (tr_trav_waitlist tr pos) ++ (sub :: nil))) ->
+      pf = pre_iter_visited_prefix tr pos ->
+      traversal_invariant tr stk pf.
+
+  Fact traversal_invariant_stacknil [tr pf]
+    (H : traversal_invariant tr nil pf) : tr = pf.
+  Proof.
+    inversion H; subst.
+    - reflexivity.
+    - match goal with HH : nil = map _ _ |- _ => 
+        rewrite -> map_app in HH; simpl in HH; symmetry in HH; apply app_eq_nil in HH; eqsolve
+      end.
+  Qed.
+
+  Fact traversal_invariant_stacknotnil [tr stk pf] (E : stk <> nil)
+    (H : traversal_invariant tr stk pf) : 
+    exists pos sub, tr_locate tr pos = Some sub /\
+      stk = (map tr_rootid (snd (tr_trav_waitlist tr pos) ++ (sub :: nil))) /\
+      pf = pre_iter_visited_prefix tr pos.
+  Proof.
+    inversion H; subst.
+    - contradiction.
+    - now exists pos, sub.
+  Qed.
+
+  (* two ways to re-establish the invariant after an iteration, corresponding to
+      two possible transitions during traversal: the current node has/has no child *)
+
+  Lemma traversal_invariant_trans_children [tr pos sub]
+    (Hsub : tr_locate tr pos = Some sub) (Echn : tr_rootchn sub <> nil) :
+    traversal_invariant tr 
+      (map tr_rootid (snd (tr_trav_waitlist tr pos) ++ tr_rootchn sub))
+      (post_iter_visited_prefix tr pos).
+  Proof.
+    destruct sub as [ni chn].
+    simpl in Echn |- *.
+    destruct (list_rev_destruct chn) as [ -> | (chn' & lst_ch & Echn') ]; try contradiction.
+    assert (nth_error chn (length chn') = Some lst_ch) as Enth
+      by (subst chn; rewrite nth_error_app2, Nat.sub_diag; auto).
+    apply TInv_intermediate with (pos:=pos ++ (length chn' :: nil)) (sub:=lst_ch).
+    - erewrite tr_locate_pos_app by eassumption.
+      simpl.
+      now rewrite Enth.
+    - erewrite tr_trav_waitlist_pos_app by eassumption.
+      simpl.
+      rewrite Enth, ! app_nil_r.
+      simpl.
+      rewrite <- app_assoc, ! map_app with (l:=snd _).
+      do 2 f_equal.
+      subst.
+      now rewrite list.take_app.
+    - unfold pre_iter_visited_prefix, post_iter_visited_prefix.
+      rewrite -> pos_succ_last.
+      (* slightly troublesome *)
+      replace (S (length chn')) with (length chn) 
+        by (subst chn; rewrite app_length, <- Nat.add_1_r; reflexivity).
+      erewrite tr_locate_pos_app by eassumption.
+      simpl.
+      pose proof (proj2 (nth_error_None chn (length chn)) (le_n (length chn))) as Hex.
+      rewrite Hex; simpl.
+      rewrite -> tr_vsplitr_leaf_lastover with (l:=pos ++ (length chn) :: nil).
+      2: erewrite tr_locate_pos_app by eassumption; simpl; now rewrite Hex.
+      now rewrite removelast_last.
+  Qed.
+
+  Lemma traversal_invariant_trans_nochild [tr pos sub]
+    (Hsub : tr_locate tr pos = Some sub) (Echn : tr_rootchn sub = nil) :
+    traversal_invariant tr 
+      (map tr_rootid (snd (tr_trav_waitlist tr pos))) 
+      (* essentially for full = true, though *)
+      (post_iter_visited_prefix tr pos).
+  Proof.
+    destruct sub as [ni chn].
+    simpl in Echn |- *.
+    subst chn.
+    (* trick here *)
+    rewrite -> tr_vsplitr_leaf2full.
+    2: left; now rewrite Hsub.
+    destruct (tr_trav_waitlist tr pos) as (res1, res2) eqn:EE.
+    waitlist_align EE as_ Hlen.
+    (* two possibilities: this is/is not the last iteration *)
+    list_rev_codestruct Hlen as_ (res1' & l' & ->) (res2' & sub' & ->); simpl.
+    - rewrite tr_vsplitr_full_trav_term.
+      2: now rewrite EE.
+      apply TInv_terminate.
+    - pose proof EE as (Hcont_t1 & Hcont_t2)%tr_vsplitr_continue.
+      pose proof EE as (Hcont_w1 & Hcont_w2)%tr_trav_waitlist_continue.
+      2: now rewrite Hsub.
+      apply TInv_intermediate with (pos:=l') (sub:=sub').
+      + assumption.
+      + now rewrite -> Hcont_w2.
+      + unfold pre_iter_visited_prefix.
+        rewrite Hcont_t2 by (rewrite Hsub; reflexivity).
+        assumption.
+  Qed.
+
+  Corollary traversal_invariant_trans [tr pos sub] (Hsub : tr_locate tr pos = Some sub) :
+    traversal_invariant tr 
+      (map tr_rootid (snd (tr_trav_waitlist tr pos) ++ tr_rootchn sub))
+      (post_iter_visited_prefix tr pos).
+  Proof.
+    destruct (list_ifnil_destruct (tr_rootchn sub)) as [ H | H ].
+    - rewrite H, app_nil_r.
+      eapply traversal_invariant_trans_nochild; eauto.
+    - eapply traversal_invariant_trans_children; eauto.
+  Qed.
+
+  (* initial condition *)
+
+  Lemma traversal_invariant_init tr : 
+    traversal_invariant tr (map tr_rootid (tr_rootchn tr)) (Node (tr_rootinfo tr) nil).
+  Proof.
+    destruct tr as [ni chn].
+    simpl.
+    destruct (list_ifnil_destruct chn) as [ -> | Hnn ].
+    - now apply TInv_terminate.
+    - now apply (@traversal_invariant_trans_children (Node ni chn) nil _ eq_refl Hnn).
+  Qed.
 
 End Reversed_Preorder_Traversal_Theory.
 

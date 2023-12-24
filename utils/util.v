@@ -335,10 +335,26 @@ Section Forall2_Additional_Lemmas.
     (H : Forall2 P l1 l2) : Forall2 (fun b a => P a b) l2 l1.
   Proof. induction H; auto. Qed.
 
+  Fact Forall2_pointwise [A B : Type] [P : A -> B -> Prop] [l1 l2]
+    (H : Forall2 P l1 l2) :
+    forall n a (Ha : nth_error l1 n = Some a),
+      exists b, nth_error l2 n = Some b /\ P a b.
+  Proof.
+    induction H as [ | x0 y0 l1 l2 Hp H IH ]; intros.
+    - destruct n; discriminate.
+    - destruct n; simpl in Ha.
+      + exists y0.
+        simpl.
+        split; congruence.
+      + revert Ha.
+        apply IH.
+  Qed.
+
   Fact Forall2_forall_exists_l [A B : Type] [P : A -> B -> Prop] [l1 l2]
     (H : Forall2 P l1 l2) [x : A] (Hin : In x l1) :
     exists y, In y l2 /\ P x y.
   Proof.
+    (* directly by induction is easier? *)
     induction H as [ | x0 y0 l1 l2 Hp H IH ].
     - inversion Hin.
     - simpl in Hin |- *.
@@ -633,12 +649,27 @@ Proof.
   now apply Permutation_middle.
 Qed.
 
+Fact seq_last n : seq 0 (S n) = seq 0 n ++ n :: nil.
+Proof. rewrite <- Nat.add_1_r at 1. now rewrite -> seq_app with (len2:=1). Qed.
+
 Fact in_pre_suf [A : Type] [pre suf : list A] (sub : A) : In sub (pre ++ sub :: suf).
 Proof. rewrite -> in_app_iff. simpl In. tauto. Qed.
 
 Section List_Slice_Index_Additional_Lemmas.
 
-  (* FIXME: these proofs are long and weird ... *)
+  (* FIXME: these proofs are long, weird and non-systematic ... *)
+
+  Fact firstn_all2_iff [A : Type] (l : list A) (n : nat) :
+    length l <= n <-> firstn n l = l.
+  Proof.
+    split; [ apply firstn_all2 | ].
+    revert n.
+    induction l; intros; simpl; auto.
+    - apply Nat.le_0_l.
+    - destruct n; [ discriminate | ].
+      apply le_n_S, IHl.
+      now injection H.
+  Qed.
 
   Fact firstn_skipn_onemore {A : Type} (l : list A) (i : nat) (x : A) (suf : list A)
     (H : skipn i l = x :: suf) :
@@ -677,18 +708,16 @@ Section List_Slice_Index_Additional_Lemmas.
     (H : nth_error al i = Some a) : (i <= length al)%nat.
   Proof. apply nth_error_some_inrange in H. now apply Nat.lt_le_incl. Qed.
 
-  Fact firstn_last {A : Type} (l : list A) (i : nat) (H : S i <= length l) :
-    list.last (firstn (S i) l) = nth_error l i.
+  Fact firstn_last {A : Type} [l : list A] [i : nat] (H : S i <= length l) :
+    exists a, firstn (S i) l = firstn i l ++ a :: nil /\ nth_error l i = Some a.
   Proof.
     revert i H.
     induction l as [ | x l IH ]; intros; simpl in *.
     - now destruct i.
-    - destruct i as [ | i ]; simpl; auto.
-      apply le_S_n in H.
-      rewrite <- IH; auto.
-      destruct l; simpl in *.
-      1: inversion H.
-      reflexivity.
+    - destruct i as [ | i ]; simpl; eauto.
+      apply le_S_n, IH in H.
+      destruct H as (a & -> & E).
+      eauto.
   Qed.
 
   Fact nth_error_mixin : forall [A : Type] (l : list A) (n : nat) [a : A],
@@ -743,6 +772,12 @@ Definition isSome [A : Type] (o : option A) : bool :=
   match o with Some _ => true | _ => false end.
 
 Global Arguments isSome [_] !_.
+
+Fact isSome_true_not_None [A : Type] (o : option A) : isSome o = true <-> o <> None.
+Proof. destruct o; intuition. Qed.
+
+Fact isSome_false_is_None [A : Type] (o : option A) : isSome o = false <-> o = None.
+Proof. destruct o; simpl; intuition. Qed.
 
 (* although this can be defined with firstn and lastn, now use this anyway *)
 Fixpoint upd_nth [A : Type] (n : nat) (l : list A) (a : A) :=
