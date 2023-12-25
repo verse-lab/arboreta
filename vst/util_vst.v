@@ -1,39 +1,9 @@
 Require Import VST.floyd.proofauto.
-From Coq Require Import List Bool Lia ssrbool PeanoNat Sorting RelationClasses.
+From Coq Require Import List Bool Lia PeanoNat Sorting RelationClasses.
 From Coq Require ssreflect.
 Import ssreflect.SsrSyntax.
 
 From arboreta.utils Require Import util.
-
-Section Short_Integer_Type.
-
-Definition short_max_signed := two_power_nat 15 - 1.
-
-(* TODO why so tedious *)
-Fact Zpower_nat_gt_0 b n : b > 0 -> 0 < Zpower_nat b n.
-Proof. induction n; intros; simpl; try nia. Qed.
-
-Fact short_max_signed_le_int_max_signed : short_max_signed <= Int.max_signed.
-Proof. 
-  unfold Int.max_signed, Int.half_modulus, Int.modulus, short_max_signed, Int.wordsize, Wordsize_32.wordsize.
-  unfold two_power_nat. 
-  rewrite -> ! shift_nat_correct, -> ! Z.mul_1_r.
-  rewrite -> Zaux.Zpower_nat_S with (e:=31%nat), -> Z.mul_comm, -> Z_div_mult; try lia.
-  replace 31%nat with (16+15)%nat by lia.
-  rewrite -> Zpower_nat_is_exp.
-  pose proof (Zpower_nat_gt_0 2%Z 15) as H.
-  pose proof (Zpower_nat_gt_0 2%Z 16) as H0. 
-  nia.
-Qed.
-
-Fact short_max_signed_gt_0 : 0 < short_max_signed.
-Proof. 
-  unfold short_max_signed, two_power_nat. 
-  rewrite -> shift_nat_correct, -> Zaux.Zpower_nat_S.
-  pose proof (Zpower_nat_gt_0 2%Z 14) as H. lia.
-Qed.
-
-End Short_Integer_Type.
 
 Fact nth_error_some_inrange_Z {A : Type} (i : nat) (al : list A) a : 
   nth_error al i = Some a -> Z.of_nat i < Zlength al.
@@ -65,8 +35,6 @@ Proof.
   pose proof (int_cmp_repr Cne _ _ Hx Hy) as H0.
   simpl in H, H0.
   destruct (Int.eq (Int.repr x) (Int.repr y)) eqn:E; intuition.
-  (* - now apply Z.eqb_eq.
-  - now apply Z.eqb_neq. *)
 Qed.
 
 Fact upto_seq n : upto n = map Z.of_nat (seq 0%nat n).

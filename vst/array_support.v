@@ -1,17 +1,5 @@
 Require Import VST.floyd.proofauto.
 
-(* allp is not easy to work with ... so turn to fold sepcon *)
-
-(*
-Lemma data_at_array_to_forall (lclk : list (reptype t_struct_clock)) plclk dim
-  (Hdim : 0 < dim) (Hlen : Zlength lclk = dim) :
-  data_at Tsh (tarray t_struct_clock dim) lclk plclk |--
-  ALL i : Z, !! (0 <= i < dim) -->
-    data_at Tsh t_struct_clock (Znth i lclk) 
-    (offset_val (sizeof t_struct_clock * i) plclk).
-Proof.
-*)
-
 Fact fold_right_fold_right_sepcon_eq l : 
   fold_right sepcon emp l = fold_right_sepcon l.
 Proof. induction l as [ | m l IH ]; auto. Qed.
