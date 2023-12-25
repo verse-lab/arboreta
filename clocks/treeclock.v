@@ -1233,6 +1233,7 @@ Qed.
 Lemma tc_detach_nodes_tcs_app_snd tcs1 tcs2 tc :
   Permutation (snd (tc_detach_nodes (tcs1 ++ tcs2) tc))
   (snd (tc_detach_nodes tcs2 (fst (tc_detach_nodes tcs1 tc))) ++
+    (* FIXME: will putting the following fst/snd inside the function after map make proof easier? *)
     map fst (map (tc_detach_nodes tcs2) (snd (tc_detach_nodes tcs1 tc))) ++
     flat_map snd (map (tc_detach_nodes tcs2) (snd (tc_detach_nodes tcs1 tc)))).
 Proof.
@@ -1512,56 +1513,7 @@ Proof.
   now apply tc_respect_sub.
 Qed.
 
-Lemma tc_detach_nodes_forest_recombine_pre [tcs tc]
-  (Hnodup : tr_NoDupId tc) (Hnodup' : trs_roots_NoDupId tcs) :
-  Permutation
-    (map Some (snd (tc_detach_nodes tcs tc)))
-    (filter (@isSome _) (map
-      (fun t => trs_find_node t (snd (tc_detach_nodes tcs tc))) 
-        (map tr_rootid tcs))).
-Proof.
-  apply trs_find_rearrangement.
-  - pose proof (tc_detach_nodes_tid_nodup tcs tc Hnodup) as Hnodup_forest.
-    now apply proj1, id_nodup_root_chn_split, proj1 in Hnodup_forest.
-  - assumption.
-  - (* use dom incl *)
-    hnf.
-    intros t (sub & <- & Hin)%in_map_iff.
-    apply trs_find_in_iff.
-    revert sub Hin.
-    apply Forall_forall, tc_detach_nodes_dom_incl.
-Qed.
-
-(* simulation *)
-
-Lemma forest_chn_recombine [tcs l]
-  (Hperm : Permutation (map Some tcs) 
-    (filter (@isSome _) (map (fun t => trs_find_node t tcs) l))) :
-  Permutation (flat_map tr_rootchn tcs)
-    (flat_map (fun t => match trs_find_node t tcs with
-      | Some res => tr_rootchn res
-      | None => nil
-      end) l).
-Proof.
-  pose (f:=fun ot : option treeclock => match ot with Some tc => tr_rootchn tc | None => nil end).
-  apply Permutation_flat_map with (g:=f) in Hperm.
-  etransitivity; [ | etransitivity ].
-  2: apply Hperm.
-  - clear -thread_eqdec tcs.
-    induction tcs as [ | tc tcs IH ].
-    1: reflexivity.
-    simpl.
-    now rewrite IH.
-  - clear -thread_eqdec l.
-    induction l as [ | x l IH ].
-    1: reflexivity.
-    simpl.
-    destruct (trs_find_node x tcs) eqn:E; simpl.
-    + now rewrite IH.
-    + assumption.
-Qed.
-
-Corollary tc_detach_nodes_forest_recombine tcs tc 
+Corollary tc_detach_nodes_forest_recombine [tcs tc]
   (Hnodup : tr_NoDupId tc) (Hnodup' : trs_roots_NoDupId tcs) :
   Permutation
     (flat_map tr_rootchn (snd (tc_detach_nodes tcs tc)))
@@ -1572,8 +1524,16 @@ Corollary tc_detach_nodes_forest_recombine tcs tc
       | None => nil
       end) (map tr_rootid tcs)).
 Proof.
-  pose proof (tc_detach_nodes_forest_recombine_pre Hnodup Hnodup') as Hperm.
-  now apply forest_chn_recombine.
+  apply trs_find_rearrangement_flat_map.
+  - pose proof (tc_detach_nodes_tid_nodup tcs tc Hnodup) as Hnodup_forest.
+    now apply proj1, id_nodup_root_chn_split, proj1 in Hnodup_forest.
+  - assumption.
+  - (* use dom incl *)
+    hnf.
+    intros t (sub & <- & Hin)%in_map_iff.
+    apply trs_find_in_iff.
+    revert sub Hin.
+    apply Forall_forall, tc_detach_nodes_dom_incl.
 Qed.
 
 End TC_Detach_Nodes.
@@ -2089,255 +2049,6 @@ Proof.
   congruence.
 Qed.
 
-(* FIXME: why so long? *)
-
-Lemma tc_detach_attach_distr1_fst tc forest nd 
-  (Hnotin : ~ In (tr_rootid nd) (map tr_rootid (tr_flatten tc))) :
-  fst (tc_detach_nodes (nd :: nil) (tc_attach_nodes forest tc)) =
-  tc_attach_nodes (map fst (map (tc_detach_nodes (nd :: nil)) forest)) tc.
-Proof.
-  induction tc as [ni chn IH] using tree_ind_2; intros.
-  simpl.
-  remember (match trs_find_node (info_tid ni) forest with Some u => tr_rootchn u | None => nil end) as old_chn eqn:Eold_chn.
-  remember (map (tc_attach_nodes forest) chn) as app_chn eqn:Eapp_chn.
-  rewrite map_app, split_app.
-  destruct (List.split (map (tc_detach_nodes (nd :: nil)) app_chn)) as (new_chn1, res1) eqn:Esplit1, 
-    (List.split (map (tc_detach_nodes (nd :: nil)) old_chn)) as (new_chn2, res2) eqn:Esplit2, 
-    (partition (fun tc' : treeclock => isSome (if has_same_id (tr_rootid tc') nd then Some nd else None)) (new_chn1 ++ new_chn2))
-    as (res', new_chn') eqn:Epar.
-  (* bad isSome *)
-  rewrite -> partition_ext_Forall with (g:=fun tc' => has_same_id (tr_rootid tc') nd) in Epar.
-  2: apply Forall_forall; intros x ?; now destruct (has_same_id (tr_rootid x) nd).
-  simpl.
-  f_equal.
-  rewrite -> split_map_fst_snd, -> ! map_map in Esplit1, Esplit2.
-  rewrite -> partition_filter in Epar.
-  apply pair_equal_split in Esplit1, Esplit2, Epar.
-  destruct Epar as (Eres' & Enew_chn'), Esplit1 as (Enew_chn1 & Eres1), 
-    Esplit2 as (Enew_chn2 & Eres2).
-  simpl in Hnotin.
-  apply Forall_impl_impl with (P:=fun tc => ~ In (tr_rootid nd) (map tr_rootid (tr_flatten tc))) in IH.
-  2:{
-    apply Forall_forall.
-    intros ch Hin_ch Hin.
-    (* TODO streamline? *)
-    apply Hnotin.
-    right.
-    eapply map_flat_map_In_conv; eauto.
-  }
-  rewrite <- (map_ext_Forall _ _ IH).
-  subst.
-  rewrite -> ! map_map, -> filter_app.
-  f_equal.
-  - apply filter_all_true.
-    intros ? (ch & <- & Hin)%in_map_iff.
-    apply negb_true_iff, not_true_is_false.
-    intros HH.
-    rewrite -> has_same_id_true in HH.
-    apply Hnotin.
-    right.
-    eapply map_flat_map_In_conv; eauto.
-    rewrite <- HH.
-    unfold tr_rootid at 1.
-    rewrite (prefixtr_rootinfo_same (tc_detach_nodes_fst_is_prefix _ _)).
-    destruct ch; simpl; auto.
-  - (* ? *)
-    clear -forest.
-    induction forest as [ | tc' forest IH ]; simpl; auto.
-    erewrite -> tr_rootinfo_has_same_id_congr with (x:=(fst (tc_detach_nodes (nd :: nil) tc'))).
-    2: apply tc_detach_nodes_fst_rootinfo_same.
-    destruct (has_same_id (info_tid ni) tc') eqn:E.
-    + destruct tc' as [ ni' chn' ].
-      simpl.
-      (* TODO ... *)
-      destruct (List.split (map (tc_detach_nodes (nd :: nil)) chn'))
-        as (new_chn, forest') eqn:Esplit, 
-        (partition (fun tc' : treeclock => isSome (if has_same_id (tr_rootid tc') nd then Some nd else None)) new_chn)
-        as (res', new_chn') eqn:Epar.
-      simpl.
-      (* bad isSome *)
-      rewrite -> partition_ext_Forall with (g:=fun tc' => has_same_id (tr_rootid tc') nd) in Epar.
-      2: apply Forall_forall; intros x ?; now destruct (has_same_id (tr_rootid x) nd).
-      rewrite -> split_map_fst_snd, -> ! map_map in Esplit.
-      rewrite -> partition_filter in Epar.
-      apply pair_equal_split in Esplit, Epar.
-      destruct Esplit as (Enew_chn & Eres), Epar as (Eres' & Enew_chn').
-      now subst.
-    + apply IH.
-Qed.
-
-Lemma tc_detach_attach_distr1_snd tc forest nd 
-  (Hnotin : ~ In (tr_rootid nd) (map tr_rootid (tr_flatten tc))) :
-  Permutation
-  (snd (tc_detach_nodes (nd :: nil) (tc_attach_nodes forest tc)))
-  (flat_map snd (map (fun tc' => tc_detach_nodes (nd :: nil) 
-    (match trs_find_node (tr_rootid tc') forest with 
-      | Some u => u | None => Node (mkInfo (tr_rootid tc') 0%nat 0%nat) nil end)) (tr_flatten tc))).
-Proof.
-  induction tc as [ni chn IH] using tree_ind_2; intros.
-  simpl.
-  remember (match trs_find_node (info_tid ni) forest with Some u => tr_rootchn u | None => nil end) as old_chn eqn:Eold_chn.
-  remember (map (tc_attach_nodes forest) chn) as app_chn eqn:Eapp_chn.
-  rewrite map_app, split_app.
-  destruct (List.split (map (tc_detach_nodes (nd :: nil)) app_chn)) as (new_chn1, res1) eqn:Esplit1, 
-    (List.split (map (tc_detach_nodes (nd :: nil)) old_chn)) as (new_chn2, res2) eqn:Esplit2, 
-    (partition (fun tc' : treeclock => isSome (if has_same_id (tr_rootid tc') nd then Some nd else None)) (new_chn1 ++ new_chn2))
-    as (res', new_chn') eqn:Epar.
-  (* bad isSome *)
-  rewrite -> partition_ext_Forall with (g:=fun tc' => has_same_id (tr_rootid tc') nd) in Epar.
-  2: apply Forall_forall; intros x ?; now destruct (has_same_id (tr_rootid x) nd).
-  simpl.
-  rewrite -> split_map_fst_snd, -> ! map_map in Esplit1, Esplit2.
-  rewrite -> partition_filter in Epar.
-  apply pair_equal_split in Esplit1, Esplit2, Epar.
-  destruct Epar as (Eres' & Enew_chn'), Esplit1 as (Enew_chn1 & Eres1), 
-    Esplit2 as (Enew_chn2 & Eres2).
-  simpl in Hnotin.
-  apply Forall_impl_impl with (P:=fun tc => ~ In (tr_rootid nd) (map tr_rootid (tr_flatten tc))) in IH.
-  2:{
-    apply Forall_forall.
-    intros ch Hin_ch Hin.
-    apply Hnotin.
-    right.
-    eapply map_flat_map_In_conv; eauto.
-  }
-  rewrite -> ! flat_map_concat_map, -> concat_map, -> map_map, <- ! flat_map_concat_map.
-
-  subst.
-  rewrite -> concat_app, -> ! map_map, <- flat_map_concat_map.
-  etransitivity.
-  1: apply Permutation_app; [ apply Permutation_app; 
-    [ eapply Permutation_Forall_flat_map; apply IH | reflexivity ] | reflexivity ].
-  erewrite -> map_ext_Forall with (l:=chn).
-  2:{
-    apply Forall_forall.
-    intros ch Hin_ch.
-    apply tc_detach_attach_distr1_fst.
-    intros Hin.
-    apply Hnotin.
-    right.
-    eapply map_flat_map_In_conv; eauto.
-  }
-  rewrite -> map_map with (g:=fst), -> filter_app.
-  match goal with |- Permutation (_ ++ ?al ++ _) _ => 
-    replace al with (@nil treeclock) end.
-  2:{
-    rewrite -> filter_all_false; auto.
-    intros ? (ch & <- & Hin)%in_map_iff.
-    apply not_true_is_false.
-    intros HH.
-    rewrite -> has_same_id_true in HH.
-    apply Hnotin.
-    right.
-    eapply map_flat_map_In_conv; eauto.
-    rewrite <- HH.
-    destruct ch; simpl; auto.
-  }
-  simpl.
-
-  (* ? *)
-  assert (forall [A B C D : Type] (l : list A) (f : B -> C) (g : C -> list D) (h : A -> list B), 
-    flat_map g (flat_map (fun x => map f (h x)) l) = 
-    flat_map (fun x => flat_map g (map f (h x))) l) as Htmp.
-  {
-    intros. 
-    induction l as [ | a l IHH ]; simpl; auto.
-    now rewrite flat_map_app, IHH.
-  }
-  rewrite Htmp; clear Htmp.
-  rewrite <- app_assoc.
-  etransitivity; [ | apply Permutation_app_comm ].
-  apply Permutation_app_head.
-
-  change info_id with info_tid.
-  destruct (trs_find_node (info_tid ni) forest) as [ [ ni' chn' ] | ] eqn:E.
-  2: now simpl.
-  clear -chn'.
-  cbn delta [tr_rootchn] beta iota.
-  (* TODO this is a simple equation for the result of tc_detach_nodes only? *)
-  simpl.
-  destruct (List.split (map (tc_detach_nodes (nd :: nil)) chn')) as (new_chn, res) eqn:Esplit,  
-    (partition (fun tc' : treeclock => isSome (if has_same_id (tr_rootid tc') nd then Some nd else None)) new_chn)
-    as (res', new_chn') eqn:Epar.
-  (* bad isSome *)
-  rewrite -> partition_ext_Forall with (g:=fun tc' => has_same_id (tr_rootid tc') nd) in Epar.
-  2: apply Forall_forall; intros x ?; now destruct (has_same_id (tr_rootid x) nd).
-  simpl.
-  rewrite -> split_map_fst_snd, -> ! map_map in Esplit.
-  rewrite -> partition_filter in Epar.
-  apply pair_equal_split in Esplit, Epar.
-  destruct Epar as (Eres' & Enew_chn'), Esplit as (Enew_chn & Eres).
-  now subst.
-Qed.
-
-(* TODO can we prove this from the beginning? this seems to be the only thing we want. *)
-(* FIXME: something must be repeating here. what is it? *)
-Corollary tc_detach_attach_distr1_snd' tc forest nd 
-  (Hnotin : ~ In (tr_rootid nd) (map tr_rootid (tr_flatten tc))) 
-  (Hdomincl : Forall (fun tc' => In (tr_rootid tc') (map tr_rootid (tr_flatten tc))) forest)
-  (Hnodup_forest : NoDup (map tr_rootid forest))
-  (Hnodup : NoDup (map tr_rootid (tr_flatten tc))) :
-  Permutation
-    (snd (tc_detach_nodes (nd :: nil) (tc_attach_nodes forest tc)))
-    (flat_map snd (map (tc_detach_nodes (nd :: nil)) forest)).
-Proof.
-  rewrite tc_detach_attach_distr1_snd; try assumption.
-  match goal with |- _ (flat_map snd (map ?ff _)) _ =>
-    rewrite -> map_ext_Forall with (l:=forest) (f:=(tc_detach_nodes (nd :: nil))) (g:=ff) end.
-  2:{
-    pose proof (id_nodup_find_self Hnodup_forest) as Htmp.
-    rewrite -> Forall_forall in Htmp |- *.
-    intros x Hin.
-    specialize (Htmp _ Hin).
-    now rewrite Htmp.
-  }
-  etransitivity.
-  1: apply Permutation_flat_map, Permutation_map, 
-    Permutation_split_combine with (f:=fun tc' => isSome (trs_find_node (tr_rootid tc') forest)).
-  rewrite -> map_app, -> flat_map_app.
-  match goal with |- _ (?aa ++ ?bb) _ => replace bb with (@nil treeclock) end.
-  2:{
-    rewrite -> flat_map_concat_map.
-    apply eq_sym, concat_nil_Forall, Forall_map, Forall_map, Forall_forall.
-    intros x (Hin & HH%negb_true_iff)%filter_In.
-    destruct (trs_find_node _ _) eqn:E in |- *.
-    1: rewrite E in HH; discriminate.
-    rewrite -> tc_detach_nodes_intact; try reflexivity.
-    auto.
-  }
-  rewrite app_nil_r.
-  (* ... *)
-  pose proof (map_map tr_rootid (fun t => tc_detach_nodes (nd :: nil)
-    match trs_find_node t forest with Some u => u | None => Node (mkInfo t 0%nat 0%nat) nil end)) as Htmp.
-  simpl in Htmp.
-  rewrite <- ! Htmp.
-  clear Htmp.
-  apply Permutation_flat_map, Permutation_map.
-  (* ... have to use map_filter_comm *)
-  pose proof (map_filter_comm tr_rootid (fun t => isSome (trs_find_node t forest)) (tr_flatten tc)) as Htmp.
-  simpl in Htmp.
-  rewrite <- ! Htmp.
-  clear Htmp.
-  (* ... *)
-  apply NoDup_Permutation; try assumption.
-  1: now apply NoDup_filter.
-  intros t.
-  rewrite filter_In.
-  rewrite -> Forall_forall in Hdomincl.
-  split.
-  - match goal with |- context[trs_find_node ?a ?b] => destruct (trs_find_node a b) as [ res | ] eqn:Eres end.
-    2: intros (? & ?); discriminate.
-    intros (Hin & _).
-    apply trs_find_in_iff.
-    now rewrite Eres.
-  - intros Hin.
-    split.
-    + rewrite -> in_map_iff in Hin.
-      destruct Hin as (sub & <- & Hin).
-      now apply Hdomincl.
-    + now rewrite -> trs_find_in_iff in Hin.
-Qed.
-
 End TC_Attach_Nodes.
 
 (* purely computational *)
@@ -2507,12 +2218,12 @@ Section TC_Join_Partial.
     rewrite -> tc_getclk_as_fmap, -> Htmp.
     fold (tr_getnode t tc').
     destruct (tr_getnode t tc') as [ res | ] eqn:Eres; simpl; auto.
-    apply tr_getnode_none in Eres.
+    apply tr_getnode_in_iff_neg in Eres.
     destruct (find _ _) as [ res' | ] eqn:Eres' in |- *; simpl.
     - apply trs_find_has_id in Eres'.
       destruct Eres' as (Hin'%filter_In%proj1 & <-).
       rewrite tc_getclk_as_fmap, id_nodup_find_self_subtr; auto.
-    - apply trs_find_none in Eres'.
+    - apply trs_find_in_iff_neg in Eres'.
       (* have to use "map_filter_comm" in the reverse way *)
       pose proof (map_filter_comm tr_rootid (fun t => negb (isSome (trs_find_node t (tr_flatten tc')))) (tr_flatten tc)) as Htmp'.
       simpl in Htmp'.
@@ -2677,6 +2388,141 @@ Section TC_Join.
 End TC_Join.
 
 End TC_Join_Partial_And_Join.
+
+(* The following section is for showing the equivalence between the functional join
+    and the imperative join (implemented as a series of node removal and prepending). *)
+
+Section TC_Join_Iterative.
+
+(* We start by proving all auxiliary things. *)
+
+Lemma tc_detach_attach_distr1_fst tc forest tcs
+  (Hnotin : forall t, In t (map tr_rootid tcs) -> ~ In t (map tr_rootid (tr_flatten tc))) :
+  fst (tc_detach_nodes tcs (tc_attach_nodes forest tc)) =
+  tc_attach_nodes (map (fun tc' => fst (tc_detach_nodes tcs tc')) forest) tc.
+Proof.
+  induction tc as [ni chn IH] using tree_ind_2; intros.
+  simpl in Hnotin.
+  cbn delta [tc_attach_nodes] iota beta zeta.
+  remember (match trs_find_node (info_tid ni) forest with Some u => tr_rootchn u | None => nil end) as app_chn eqn:Eapp_chn.
+  remember (map (tc_attach_nodes forest) chn) as old_chn eqn:Eold_chn.
+  pose proof (tc_detach_nodes_eta ni (old_chn ++ app_chn) tcs) as (new_chn & res & res' & new_chn' & Esplit & Epar & Enew_chn & Eres & Eres' & Enew_chn' & Edetach).
+  rewrite Edetach.
+  simpl.
+  f_equal.
+  subst new_chn' new_chn.
+  (* split *)
+  rewrite map_app, filter_app.
+  f_equal.
+  - subst old_chn.
+    rewrite map_map.
+    rewrite filter_all_true.
+    + apply map_ext_Forall.
+      revert IH.
+      apply Forall_impl_impl, Forall_forall.
+      intros ch Hin_ch HH.
+      apply HH.
+      intros t Hin Htmp.
+      eapply Hnotin; eauto.
+      right.
+      eapply map_flat_map_In_conv; eauto.
+    + intros ? (ch & <- & Hin)%in_map_iff.
+      rewrite tc_detach_nodes_fst_rootid_same, negb_true_iff, isSome_false_is_None, 
+        <- trs_find_in_iff_neg, (tr_rootinfo_id_inj (tc_attach_nodes_rootinfo_same _ _)).
+      intros HH.
+      eapply Hnotin; eauto.
+      right.
+      now apply in_map, trs_flatten_self_in.
+  - subst app_chn.
+    (* just do induction *)
+    clear -forest.
+    induction forest as [ | tc' forest IH ]; simpl; auto.
+    erewrite -> tr_rootinfo_has_same_id_congr with (x:=(fst (tc_detach_nodes tcs tc'))).
+    2: apply tc_detach_nodes_fst_rootinfo_same.
+    destruct (has_same_id (info_tid ni) tc') eqn:E.
+    + destruct tc' as [ ni' chn' ].
+      pose proof (tc_detach_nodes_eta ni' chn' tcs) as (new_chn & res & res' & new_chn' & Esplit & Epar & Enew_chn & Eres & Eres' & Enew_chn' & Edetach).
+      rewrite Edetach.
+      simpl.
+      now subst.
+    + apply IH.
+Qed.
+
+(* FIXME: there are some parts (about In) repeating the proof above *)
+Lemma tc_detach_attach_distr1_snd tc forest tcs
+  (Hnotin : forall t, In t (map tr_rootid tcs) -> ~ In t (map tr_rootid (tr_flatten tc))) :
+  Permutation 
+    (snd (tc_detach_nodes tcs (tc_attach_nodes forest tc)))
+    (flat_map (fun tc' =>
+      match trs_find_node (tr_rootid tc') forest with 
+      | Some u => snd (tc_detach_nodes tcs u) | None => nil end) (tr_flatten tc)).
+Proof.
+  induction tc as [ni chn IH] using tree_ind_2; intros.
+  simpl in Hnotin.
+  cbn delta [tc_attach_nodes] iota beta zeta.
+  remember (match trs_find_node (info_tid ni) forest with Some u => tr_rootchn u | None => nil end) as app_chn eqn:Eapp_chn.
+  remember (map (tc_attach_nodes forest) chn) as old_chn eqn:Eold_chn.
+  pose proof (tc_detach_nodes_eta ni (old_chn ++ app_chn) tcs) as (new_chn & res & res' & new_chn' & Esplit & Epar & Enew_chn & Eres & Eres' & Enew_chn' & Edetach).
+  rewrite Edetach.
+  simpl.
+  subst res res' new_chn.
+  rewrite <- flat_map_concat_map, flat_map_app, map_app, filter_app.
+  (* permute *)
+  match goal with |- Permutation ((?l1 ++ ?l2) ++ ?l3 ++ ?l4) _ => 
+    replace l3 with (@nil treeclock); 
+    [ simpl; transitivity ((l2 ++ l4) ++ l1); [ list.solve_Permutation | ] | ] end.
+  2:{
+    subst old_chn.
+    rewrite map_map, filter_all_false; try reflexivity.
+    intros ? (ch & <- & Hin)%in_map_iff.
+    rewrite tc_detach_nodes_fst_rootid_same, isSome_false_is_None, 
+      <- trs_find_in_iff_neg, (tr_rootinfo_id_inj (tc_attach_nodes_rootinfo_same _ _)).
+    intros HH.
+    eapply Hnotin; eauto.
+    right.
+    now apply in_map, trs_flatten_self_in.
+  }
+  apply Permutation_app.
+  - subst app_chn.
+    destruct (trs_find_node _ _) as [ [ni' chn'] | ] eqn:E; auto.
+    simpl tr_rootchn.
+    clear.
+    pose proof (tc_detach_nodes_eta ni' chn' tcs) as (new_chn & res & res' & new_chn' & Esplit & Epar & Enew_chn & Eres & Eres' & Enew_chn' & Edetach).
+    rewrite Edetach.
+    simpl.
+    subst; now rewrite flat_map_concat_map.
+  - subst old_chn.
+    rewrite flat_map_concat_map, map_map, <- flat_map_concat_map, <- flat_map_flat_map.
+    apply Permutation_Forall_flat_map.
+    revert IH.
+    apply Forall_impl_impl, Forall_forall.
+    intros ch Hin_ch HH.
+    apply HH.
+    intros t Hin Htmp.
+    eapply Hnotin; eauto.
+    right.
+    eapply map_flat_map_In_conv; eauto.
+Qed.
+
+Corollary tc_detach_attach_distr1_snd' tc forest tcs 
+  (Hnotin : forall t, In t (map tr_rootid tcs) -> ~ In t (map tr_rootid (tr_flatten tc)))
+  (Hdomincl : Forall (fun tc' => isSome (tr_getnode (tr_rootid tc') tc) = true) forest)
+  (Hnodup_forest : trs_roots_NoDupId forest)
+  (Hnodup : tr_NoDupId tc) :
+  Permutation
+    (snd (tc_detach_nodes tcs (tc_attach_nodes forest tc)))
+    (flat_map (fun tc' => snd (tc_detach_nodes tcs tc')) forest).
+Proof.
+  rewrite tc_detach_attach_distr1_snd by assumption.
+  rewrite (trs_find_rearrangement_flat_map (trs:=forest) (l:=map tr_rootid (tr_flatten tc))); try assumption.
+  1: now rewrite ! flat_map_concat_map, ! map_map.
+  intros ? (tc' & <- & Hin)%in_map_iff.
+  apply tr_getnode_in_iff.
+  revert tc' Hin.
+  now apply Forall_forall.
+Qed.
+
+End TC_Join_Iterative.
 
 End TreeClock.
 

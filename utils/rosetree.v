@@ -332,6 +332,15 @@ Section Core_Auxiliary_Functions.
       end
     end.
 
+  Fact tr_locate_upd_pos_app [pos1] : forall [tr res] (H : tr_locate tr pos1 = Some res) pos2 sub,
+    tr_locate_upd tr (pos1 ++ pos2) sub = tr_locate_upd tr pos1 (tr_locate_upd res pos2 sub).
+  Proof.
+    induction pos1 as [ | x pos1 IH ]; intros [ni chn]; intros; simpl in *.
+    - congruence.
+    - destruct (nth_error chn x) eqn:E; try discriminate.
+      erewrite IH; eauto.
+  Qed.
+
   Fact tr_locate_upd_locate_pos_app [pos1] : forall [tr res] (H : tr_locate tr pos1 = Some res) pos2 sub,
     tr_locate (tr_locate_upd tr pos1 sub) (pos1 ++ pos2) = tr_locate sub pos2.
   Proof.
@@ -972,9 +981,17 @@ Section Tree_Find.
       eauto.
   Qed.
 
+  Fact trs_find_in_iff_neg t trs : 
+    ~ In t (map tr_rootid trs) <-> trs_find_node t trs = None.
+  Proof. rewrite trs_find_in_iff, not_true_iff_false, <- isSome_false_is_None. reflexivity. Qed.
+
   Fact tr_getnode_in_iff t tr : 
     In t (map tr_rootid (tr_flatten tr)) <-> isSome (tr_getnode t tr) = true.
   Proof. apply trs_find_in_iff. Qed.
+
+  Fact tr_getnode_in_iff_neg t tr : 
+    ~ In t (map tr_rootid (tr_flatten tr)) <-> tr_getnode t tr = None.
+  Proof. apply trs_find_in_iff_neg. Qed.
 
   Fact trs_find_some [t trs res] (H : trs_find_node t trs = Some res) :
     In t (map tr_rootid trs).
@@ -983,17 +1000,6 @@ Section Tree_Find.
   Fact tr_getnode_some [t tr res] (H : tr_getnode t tr = Some res) :
     In t (map tr_rootid (tr_flatten tr)).
   Proof. now apply trs_find_some in H. Qed.
-
-  Fact trs_find_none [t trs] (H : trs_find_node t trs = None) :
-    ~ In t (map tr_rootid trs).
-  Proof.
-    apply (f_equal (@isSome _)), not_true_iff_false in H.
-    now rewrite <- trs_find_in_iff in H.
-  Qed.
-
-  Fact tr_getnode_none [t tr] (H : tr_getnode t tr = None) :
-    ~ In t (map tr_rootid (tr_flatten tr)).
-  Proof. now apply trs_find_none in H. Qed.
 
   Fact tr_getnode_res_Foralltr (P : tree -> Prop) [t tr res]
     (Hp : Foralltr P tr) (Hres : tr_getnode t tr = Some res) : 
@@ -1131,7 +1137,7 @@ Section Tree_Find.
 
   (* a lemma about rearrangement; using "map Some" and "filter isSome" since we have to skip the "None"s *)
 
-  Lemma trs_find_rearrangement trs l
+  Lemma trs_find_rearrangement [trs l]
     (Hnodup : trs_roots_NoDupId trs) (Hnodup' : NoDup l) 
     (Hdomincl : incl (map tr_rootid trs) l) :
     Permutation (map Some trs) 
@@ -1164,6 +1170,29 @@ Section Tree_Find.
         intros.
         unfold has_same_id.
         rewrite eqdec_must_right; congruence.
+  Qed.
+
+  Corollary trs_find_rearrangement_flat_map [trs l] (h : tree -> list tree)
+    (Hnodup : trs_roots_NoDupId trs) (Hnodup' : NoDup l) 
+    (Hdomincl : incl (map tr_rootid trs) l) :
+    Permutation (flat_map h trs)
+      (flat_map (fun t => match trs_find_node t trs with
+       | Some res => h res
+       | None => nil
+       end) l).
+  Proof.
+    pose proof (trs_find_rearrangement Hnodup Hnodup' Hdomincl) as Hperm.
+    pose (f:=fun ot : option tree => match ot with Some tc => h tc | None => nil end).
+    apply Permutation_flat_map with (g:=f) in Hperm.
+    rewrite flat_map_concat_map, map_map, <- flat_map_concat_map in Hperm.
+    simpl in Hperm.
+    rewrite Hperm.
+    subst f.
+    clear Hperm Hnodup' Hdomincl.
+    induction l as [ | x l IH ]; auto; simpl.
+    destruct (trs_find_node x trs) eqn:E; simpl.
+    + now rewrite IH.
+    + assumption.
   Qed.
 
 End Tree_Find.
