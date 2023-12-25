@@ -1,8 +1,9 @@
 From Coq Require Import List Bool Lia PeanoNat Sorting RelationClasses Permutation.
 From Coq Require ssreflect.
+Import ssreflect.SsrSyntax.
+
 From arboreta.utils Require Import util.
 From arboreta.utils Require Export rosetree.
-Import ssreflect.SsrSyntax.
 
 From stdpp Require list.
 
@@ -11,9 +12,9 @@ Section TreeClock.
 (* Sometimes using auto with * is affordable. *)
 Local Ltac intuition_solver ::= auto with *.
 
-Variable thread : Type.
+Local Notation isSome := ssrbool.isSome.
 
-Context `{thread_eqdec : EqDec thread}.
+Context {thread : Type} `{thread_eqdec : EqDec thread}.
 
 Record nodeinfo : Type := mkInfo {
   info_tid : thread;
@@ -765,7 +766,7 @@ Proof.
         simpl.
         intros; lia.
     + apply Nat.leb_gt in Ecmp_clk_v'.
-      pose proof (contra_not (Haclk_impl_clk _ (or_introl eq_refl))) as Ecmp_clk_v'_lt.
+      pose proof (ssrbool.contra_not (Haclk_impl_clk _ (or_introl eq_refl))) as Ecmp_clk_v'_lt.
       rewrite 2 Nat.nle_gt in Ecmp_clk_v'_lt.
       simpl in Ecmp_clk_v'_lt.
       specialize (Ecmp_clk_v'_lt Ecmp_clk_v').
@@ -881,7 +882,7 @@ Proof.
   pose proof (imono Hrespect) as Himono.
   apply Foralltr_cons_iff, proj1 in Himono.
   pose proof (imono_single_aclk_impl_clk Himono) as Haclk_impl_clk.
-  pose proof (fun tc' H => contra_not (Haclk_impl_clk tc' H)) as Haclk_impl_clk'.
+  pose proof (fun tc' H => ssrbool.contra_not (Haclk_impl_clk tc' H)) as Haclk_impl_clk'.
   repeat setoid_rewrite -> Nat.nle_gt in Haclk_impl_clk'.
   pose proof (tc_get_updated_nodes_join_aux_result tc (tc_getclk u' tc) chn_u' 
     Haclk_impl_clk (Foralltr_self (aclk_decsorted Hshape_tc'))) as (chn_u'' & Hsub & Hres & Halllt & Hinsub).
@@ -2678,3 +2679,8 @@ End TC_Join.
 End TC_Join_Partial_And_Join.
 
 End TreeClock.
+
+Global Arguments nodeinfo : clear implicits.
+
+#[export] Existing Instance EqDec_nodeinfo.
+#[export] Existing Instance nodeinfo_IdGetter.

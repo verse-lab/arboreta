@@ -21,6 +21,8 @@ Local Ltac intuition_solver ::= auto. (* follow the modification in stdpp *)
 Local Tactic Notation "eqsolve" := 
   intuition congruence; intuition discriminate.
 
+Local Notation isSome := ssrbool.isSome.
+
 Context {A : Type}.
 
 (* A rosetree is a node with some information of type A, and some rosetrees as children. *)
@@ -320,17 +322,31 @@ Section Core_Auxiliary_Functions.
         destruct pos; [ reflexivity | simpl; now rewrite E ].
   Qed.
 
-  Fixpoint tr_locate_update (tr : tree) (pos : list nat) (sub : tree) : tree :=
+  Fixpoint tr_locate_upd (tr : tree) (pos : list nat) (sub : tree) : tree :=
     match pos with
     | nil => sub
     | x :: pos' => 
       match nth_error (tr_rootchn tr) x with
-      | Some ch => Node (tr_rootinfo tr) (upd_nth x (tr_rootchn tr) (tr_locate_update ch pos' sub))
+      | Some ch => Node (tr_rootinfo tr) (upd_nth x (tr_rootchn tr) (tr_locate_upd ch pos' sub))
       | None => tr
       end
     end.
 
-  (* TODO update related things? or put them below? *)
+  Fact tr_locate_upd_locate_pos_app [pos1] : forall [tr res] (H : tr_locate tr pos1 = Some res) pos2 sub,
+    tr_locate (tr_locate_upd tr pos1 sub) (pos1 ++ pos2) = tr_locate sub pos2.
+  Proof.
+    induction pos1 as [ | x pos1 IH ]; intros [ni chn]; intros; simpl in *.
+    - reflexivity.
+    - destruct (nth_error chn x) eqn:E; try discriminate.
+      simpl.
+      (* length trick *)
+      pose proof E as (pre & suf & -> & <-)%nth_error_split.
+      rewrite upd_nth_exact by reflexivity.
+      rewrite nth_error_app2 by apply le_n.
+      rewrite Nat.sub_diag.
+      simpl.
+      eapply IH; eauto.
+  Qed.
 
 End Core_Auxiliary_Functions.
 
@@ -1152,12 +1168,6 @@ Section Tree_Find.
 
 End Tree_Find.
 
-Section Tree_Locate_Update.
-
-(* TODO *)
-
-End Tree_Locate_Update.
-
 Section Reversed_Preorder_Traversal_Theory.
 
   (* vertical split *)
@@ -1384,6 +1394,17 @@ Section Reversed_Preorder_Traversal_Theory.
     - destruct (nth_error chn x) as [ ch | ] eqn:E0; simpl.
       + now erewrite -> IH; eauto.
       + reflexivity.
+  Qed.
+
+  Fact tr_vsplitr_full_by_locate_upd [l] : forall [tr sub] (H : tr_locate tr l = Some sub), 
+    tr_vsplitr true tr l = tr_locate_upd (tr_vsplitr false tr l) (List.repeat 0%nat (length l)) sub.
+  Proof.
+    induction l as [ | x l IH ]; intros [ni chn]; intros; simpl in *.
+    - now injection H as <-.
+    - destruct (nth_error chn x) as [ ch | ] eqn:Enth; try discriminate.
+      simpl.
+      specialize (IH _ _ H).
+      congruence.
   Qed.
 
   (* may use this to trace on the original tree (i.e., tr) *)

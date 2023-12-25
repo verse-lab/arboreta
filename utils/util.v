@@ -1,4 +1,5 @@
 From Coq Require Import List Bool Lia PeanoNat Sorting RelationClasses Permutation.
+From Coq Require ssrbool.
 (* From Coq Require ssreflect.
 Import ssreflect.SsrSyntax. *)
 
@@ -461,8 +462,6 @@ Section Flatmap_Additional_Lemmas.
 
 End Flatmap_Additional_Lemmas.
 
-(* TODO did not find a good union operation for this *)
-
 Lemma find_app [A : Type] (f : A -> bool) (l1 l2 : list A) : 
   find f (l1 ++ l2) = 
   match find f l1 with
@@ -764,7 +763,7 @@ Proof. destruct (eqd _ _); auto; try contradiction. Qed.
 Fact eqdec_must_right [A B : Type] (eqd : forall (a1 a2 : A), {a1 = a2} + {a1 <> a2}) [b1 b2 : B] [a1 a2 : A] (H : a1 <> a2) :
   (if eqd a1 a2 then b1 else b2) = b2.
 Proof. destruct (eqd _ _); auto; try contradiction. Qed.
-
+(*
 Fact contra_not [P Q : Prop] (H : P -> Q) : ~ Q -> ~ P.
 Proof. intuition. Qed.
 
@@ -772,6 +771,9 @@ Definition isSome [A : Type] (o : option A) : bool :=
   match o with Some _ => true | _ => false end.
 
 Global Arguments isSome [_] !_.
+*)
+(* slightly depend on ssrbool to avoid defining new symbols *)
+Local Notation isSome := ssrbool.isSome.
 
 Fact isSome_true_not_None [A : Type] (o : option A) : isSome o = true <-> o <> None.
 Proof. destruct o; intuition. Qed.
@@ -783,8 +785,17 @@ Proof. destruct o; simpl; intuition. Qed.
 Fixpoint upd_nth [A : Type] (n : nat) (l : list A) (a : A) :=
   match l with
   | nil => nil
-  | x :: l' => match n with O => a :: l' | S n' => upd_nth n' l' a end
+  | x :: l' => match n with O => a :: l' | S n' => x :: upd_nth n' l' a end
   end.
+
+Lemma upd_nth_exact [A : Type] (n : nat) (l1 : list A) (a : A) (l2 : list A) (a' : A)
+  (Hlen : length l1 = n) : upd_nth n (l1 ++ a :: l2) a' = l1 ++ a' :: l2.
+Proof.
+  revert n Hlen.
+  induction l1 as [ | aa l1 IH ]; simpl; intros; subst n; simpl; auto.
+  rewrite IH by reflexivity.
+  reflexivity.
+Qed.
 
 (*
 Fact upd_Znth_upd_nth [A : Type] n (l : list A) a (H : (n < length l)%nat):
