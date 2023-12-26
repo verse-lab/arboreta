@@ -2522,6 +2522,123 @@ Proof.
   now apply Forall_forall.
 Qed.
 
+(* show that detaching nodes with a single target is equal to removing a single subtree
+    by a series of analytic proofs *)
+
+Lemma tc_detach_nodes_single_fst_pre [tc] :
+  forall [l sub] (Hsub : tr_locate tc l = Some sub)
+    [tcs] (Hin : In (tr_rootid sub) (map tr_rootid tcs)),
+  prefixtr (fst (tc_detach_nodes tcs tc)) (tr_remove_node tc l).
+Proof.
+  induction tc as [ni chn IH] using tree_ind_2'; intros.
+  destruct l as [ | x l ].
+  - change (tr_remove_node _ _) with (Node ni chn).
+    apply tc_detach_nodes_fst_is_prefix.
+  - pose proof (tc_detach_nodes_eta ni chn tcs) as (new_chn & res & res' & new_chn' & Esplit & Epar & Enew_chn & Eres & Eres' & Enew_chn' & Edetach).
+    rewrite Edetach.
+    simpl in Hsub |- *.
+    destruct (nth_error chn x) as [ ch | ] eqn:E; try discriminate.
+    pose proof (nth_error_mixin E) as (Hle & Hlen & Echn & Esuf).
+    (* unfold tr_locate_apply. *)
+    destruct (list_rev_destruct l) as [ -> | (l' & y & ->) ]; simpl.
+    + unfold tr_remove_node, tr_locate_apply.
+      simpl.
+      injection Hsub as ->.
+      subst.
+      eapply prefixtr_by_sublist_map.
+      1: apply list.Forall_true, (tc_detach_nodes_fst_is_prefix tcs).
+      rewrite Echn at 1. 
+      rewrite map_app, filter_app at 1.
+      simpl.
+      rewrite tc_detach_nodes_fst_rootid_same, (proj1 (trs_find_in_iff (tr_rootid sub) tcs)) by assumption.
+      simpl.
+      rewrite <- filter_app, <- map_app.
+      apply filter_sublist.
+    + erewrite tr_remove_node_unfold; eauto.
+      subst new_chn' new_chn.
+      rewrite Echn, upd_nth_exact by assumption.
+      rewrite map_filter_comm.
+      match goal with |- context[filter ?ff _] => set (f:=ff) end.
+      (* need to be very precise here *)
+      apply prefixtr_intro with (chn_sub:=filter f (firstn x chn) ++ 
+        (if f ch then tr_remove_node ch (l' ++ y :: nil) :: nil else nil) ++ filter f (skipn (S x) chn)).
+      1: apply list.sublist_app; [ apply filter_sublist 
+          | destruct (f ch); [ apply list.sublist_skip | apply list.sublist_cons ]; apply filter_sublist ].
+      rewrite filter_app, map_app.
+      apply Forall2_app.
+      1: apply Forall2_mapself_l, list.Forall_true, tc_detach_nodes_fst_is_prefix.
+      simpl.
+      destruct (f ch); simpl.
+      1: constructor.
+      2-3: apply Forall2_mapself_l, list.Forall_true, tc_detach_nodes_fst_is_prefix.
+      eapply IH; eauto.
+      eapply nth_error_In; eauto.
+Qed.
+
+Lemma tc_detach_nodes_single_snd [tc l sub] (Hsub : tr_locate tc l = Some sub)
+  (Hnodup : tr_NoDupId tc) (Hnotnil : l <> nil) :
+  snd (tc_detach_nodes (sub :: nil) tc) = sub :: nil.
+Proof.
+  assert (tr_rootid sub <> tr_rootid tc) as Hneq.
+  1: eapply id_nodup_diff_by_pos; eauto; reflexivity.
+  pose proof Hsub as Hsub'%subtr_witness_subtr.
+  (* two steps: show that the list only contains one thing, and then unify it with "sub" *)
+  assert (exists res, snd (tc_detach_nodes (sub :: nil) tc) = res :: nil) as (res & E).
+  - pose proof (tc_detach_nodes_dom_partition'' (sub :: nil) tc
+      ltac:(simpl; unfold has_same_id; now rewrite eqdec_must_right) Hnodup) as (_ & Hperm%Permutation_length).
+    rewrite ! map_length in Hperm.
+    simpl in Hperm.
+    rewrite filter_ext with (g:=fun sub0 => has_same_id (tr_rootid sub0) sub) in Hperm.
+    2: intros; destruct (has_same_id _ _); reflexivity.
+    rewrite id_nodup_filter_self in Hperm; auto.
+    simpl in Hperm.
+    destruct (snd _) as [ | res [ | ] ]; simpl in Hperm; try discriminate.
+    eauto.
+  - rewrite E; f_equal.
+    pose proof (tc_detach_nodes_snd2fst (sub :: nil) tc) as H1.
+    pose proof (tc_detach_nodes_dom_incl (sub :: nil) tc) as H2.
+    rewrite E in H1, H2.
+    apply Forall_inv in H1, H2.
+    simpl in H2.
+    destruct (has_same_id (tr_rootid res) sub) eqn:EE; try discriminate.
+    apply has_same_id_true in EE.
+    destruct H1 as (sub' & Hin' & ->).
+    (* unify "sub" and "sub'" *)
+    rewrite tc_detach_nodes_fst_rootid_same in EE.
+    eapply id_nodup_unify_by_id in EE; eauto.
+    subst sub'.
+    (* use intact *)
+    rewrite tc_detach_nodes_intact; try reflexivity.
+    simpl.
+    intros t Hin [ <- | [] ].
+    now apply (id_nodup_rootid_neq' (id_nodup_subtr Hsub' Hnodup)) in Hin.
+Qed.
+
+Corollary tc_detach_nodes_single_fst [tc l sub] (Hsub : tr_locate tc l = Some sub)
+  (Hnodup : tr_NoDupId tc) (Hnotnil : l <> nil) :
+  fst (tc_detach_nodes (sub :: nil) tc) = tr_remove_node tc l.
+Proof.
+  eapply prefixtr_size_eq_tr_eq.
+  1: eapply tc_detach_nodes_single_fst_pre; eauto.
+  1: simpl; tauto.
+  (* play with info list *)
+  pose proof (tc_detach_nodes_dom_partition (sub :: nil) tc) as Hperm.
+  erewrite tc_detach_nodes_single_snd in Hperm; eauto.
+  simpl in Hperm.
+  rewrite app_nil_r, tr_remove_node_dom_partition, map_app in Hperm; eauto.
+  apply Permutation_app_inv_r, Permutation_length in Hperm.
+  now rewrite ! map_length in Hperm.
+Qed.
+
+Corollary tc_detach_nodes_single [tc l sub] (Hsub : tr_locate tc l = Some sub)
+  (Hnodup : tr_NoDupId tc) (Hnotnil : l <> nil) :
+  tc_detach_nodes (sub :: nil) tc = (tr_remove_node tc l, sub :: nil).
+Proof.
+  erewrite <- tc_detach_nodes_single_fst; eauto.
+  erewrite <- tc_detach_nodes_single_snd at 3; eauto.
+  now destruct (tc_detach_nodes _ _).
+Qed.
+
 End TC_Join_Iterative.
 
 End TreeClock.

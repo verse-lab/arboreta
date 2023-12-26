@@ -357,6 +357,63 @@ Section Core_Auxiliary_Functions.
       eapply IH; eauto.
   Qed.
 
+  Definition tr_locate_apply tr pos (f : tree -> tree) :=
+    match tr_locate tr pos with
+    | Some sub => tr_locate_upd tr pos (f sub)
+    | None => tr
+    end.
+
+  Definition tr_remove_node tr pos :=
+    match list.last pos with
+    | Some x => tr_locate_apply tr (removelast pos) 
+      (fun '(Node ni chn) => Node ni (firstn x chn ++ skipn (S x) chn))
+    | None => tr  (* do not return an empty tree *)
+    end.
+
+  Fact tr_remove_node_unfold a l y [ch chn x] (E : nth_error chn x = Some ch) :
+    tr_remove_node (Node a chn) (x :: l ++ y :: nil) = 
+    Node a (upd_nth x chn (tr_remove_node ch (l ++ y :: nil))).
+  Proof.
+    unfold tr_remove_node, tr_locate_apply.
+    simpl.
+    rewrite list.last_cons, list.last_snoc, removelast_last, list_snoc_notnil_match.
+    simpl.
+    rewrite E.
+    destruct (tr_locate ch l); [ reflexivity | now rewrite upd_nth_intact ].
+  Qed.
+
+  Lemma tr_remove_node_dom_partition [tr] :
+    forall [l sub] (Hsub : tr_locate tr l = Some sub) (Hnotnil : l <> nil),
+    Permutation (map tr_rootinfo (tr_flatten tr))
+      (map tr_rootinfo (tr_flatten (tr_remove_node tr l)) ++ map tr_rootinfo (tr_flatten sub)).
+  Proof.
+    induction tr as [a chn IH] using tree_ind_2'; intros.
+    destruct l as [ | x l ]; try contradiction.
+    simpl in Hsub.
+    destruct (nth_error chn x) as [ res | ] eqn:E; try discriminate.
+    pose proof E as (Hle & Elen & Echn & Esuf)%nth_error_mixin.
+    destruct (list_rev_destruct l) as [ -> | (l' & y & ->) ].
+    - unfold tr_remove_node.
+      simpl in Hsub |- *.
+      injection Hsub as <-.
+      rewrite Echn at 1.
+      rewrite ! flat_map_app, ! map_app.
+      simpl.
+      rewrite map_app.
+      list.solve_Permutation.
+    - erewrite tr_remove_node_unfold; eauto.
+      simpl.
+      rewrite Echn at 1 2.
+      rewrite upd_nth_exact by assumption.
+      rewrite ! flat_map_app, ! map_app.
+      simpl.
+      rewrite map_app, IH; eauto.
+      2: eapply nth_error_In; eauto.
+      2: now destruct l'.
+      rewrite map_app.
+      list.solve_Permutation.
+  Qed.
+
 End Core_Auxiliary_Functions.
 
 Section Tree_Size.
@@ -823,6 +880,9 @@ Section NoDup_Indices_Theory.
     eapply NoDup_map_inv; eauto.
   Qed.
 
+  Lemma id_nodup_tr_chn [tr] (H : tr_NoDupId tr) : trs_NoDupId (tr_rootchn tr).
+  Proof. rewrite tree_recons in H. hnf in H |- *. simpl in H. now inversion H. Qed.
+
   Lemma id_nodup_trs_each [trs] (H : trs_NoDupId trs)
     [tr] (Hin : In tr trs) : tr_NoDupId tr.
   Proof.
@@ -908,6 +968,107 @@ Section NoDup_Indices_Theory.
     apply Foralltr_Forall_flat_map_In.
     intros ? H%(in_map tr_rootid).
     congruence.
+  Qed.
+
+  Corollary id_nodup_rootid_neq' [tr] (Hnodup : tr_NoDupId tr) :
+    ~ In (tr_rootid tr) (map tr_rootid (flat_map tr_flatten (tr_rootchn tr))).
+  Proof.
+    pose proof (id_nodup_rootid_neq Hnodup) as H.
+    rewrite Foralltr_Forall_flat_map_In in H.
+    intros (sub & E & Hin)%in_map_iff.
+    revert E.
+    now apply not_eq_sym, H.
+  Qed.
+
+  Lemma id_nodup_diff_by_index [trs] (Hnodup : trs_NoDupId trs)
+    [x y chx chy] (Hx : nth_error trs x = Some chx) (Hy : nth_error trs y = Some chy)
+    (Hneq : x <> y) : forall t, In t (map tr_rootid (tr_flatten chx)) -> 
+      In t (map tr_rootid (tr_flatten chy)) -> False.
+  Proof.
+    pose proof (two_nth_pick_Permutation Hx Hy Hneq) as (rest & Hperm).
+    assert (trs_NoDupId (chx :: chy :: rest)) as Hnodup'
+      by (eapply Permutation_NoDup; [ apply Permutation_map, Permutation_flat_map; eassumption | ]; assumption).
+    hnf in Hnodup'.
+    simpl in Hnodup'.
+    rewrite ! map_app, ! NoDup_app_ in Hnodup'.
+    setoid_rewrite in_app_iff in Hnodup'.
+    apply proj2, proj1 in Hnodup'.
+    firstorder.
+  Qed.
+
+  Lemma id_nodup_diff_by_pos : forall [tr] (Hnodup : tr_NoDupId tr) [pos1 pos2 sub1 sub2]
+    (Hsub1 : tr_locate tr pos1 = Some sub1) (Hsub2 : tr_locate tr pos2 = Some sub2)
+    (Hneq : pos1 <> pos2), tr_rootid sub1 <> tr_rootid sub2.
+  Proof.
+    (* avoid defining a separate pre lemma *)
+    enough (forall tr : tree,
+      tr_NoDupId tr -> forall pos1 pos2, length pos1 <= length pos2 -> 
+      forall sub1 sub2,
+      tr_locate tr pos1 = Some sub1 ->
+      tr_locate tr pos2 = Some sub2 ->
+      pos1 <> pos2 -> tr_rootid sub1 <> tr_rootid sub2) as Hgoal.
+    1:{
+      intros tr Hnodup pos1 pos2.
+      destruct (Compare_dec.le_lt_dec (length pos1) (length pos2)) as [ Hle | Hlt%Nat.lt_le_incl ].
+      - eapply Hgoal; eauto.
+      - intros.
+        apply not_eq_sym.
+        eapply Hgoal; eauto.
+    }
+    intros tr Hnodup pos1 pos2 Hle sub1 sub2 Hsub1 Hsub2 Hneq.
+    (* seems like induction is easy here *)
+    revert tr Hnodup sub1 Hsub1 pos2 sub2 Hsub2 Hneq Hle.
+    induction pos1 as [ | x pos1 IH ]; intros [a chn]; intros.
+    - injection Hsub1 as <-.
+      destruct pos2 as [ | y pos2 ]; try contradiction.
+      simpl in Hsub2.
+      destruct (nth_error chn y) as [ ch | ] eqn:E; try discriminate.
+      eapply nth_error_In, Forall_forall in E.
+      2: apply (id_nodup_rootid_neq (tr:=Node a chn)); try assumption.
+      eapply subtr_witness_subtr, Foralltr_subtr in Hsub2; eauto.
+      now cbn beta in Hsub2.
+    - simpl in Hle.
+      destruct pos2 as [ | y pos2 ]; [ inversion Hle | simpl in Hle ].
+      apply le_S_n in Hle.
+      simpl in Hsub1, Hsub2.
+      destruct (nth_error chn x) as [ chx | ] eqn:Ex, 
+        (nth_error chn y) as [ chy | ] eqn:Ey; try discriminate.
+      destruct (Nat.eq_dec x y) as [ <- | Hneqxy ].
+      + rewrite Ex in Ey.
+        injection Ey as <-.
+        eapply id_nodup_ch in Hnodup.
+        2: simpl; eapply nth_error_In; eauto.
+        eapply IH; eauto.
+        congruence.
+      + apply subtr_witness_subtr, (in_map tr_rootid) in Hsub1, Hsub2.
+        intros EE.
+        rewrite EE in Hsub1.
+        revert Hsub1 Hsub2.
+        eapply id_nodup_diff_by_index; eauto.
+        apply (id_nodup_tr_chn Hnodup).
+  Qed.
+
+  Corollary id_nodup_unifypos_by_id [tr] (Hnodup : tr_NoDupId tr) [pos1 pos2 sub1 sub2]
+    (Hsub1 : tr_locate tr pos1 = Some sub1) (Hsub2 : tr_locate tr pos2 = Some sub2)
+    (E : tr_rootid sub1 = tr_rootid sub2) : pos1 = pos2.
+  Proof.
+    (* exploit the fact that list nat has decidable equality *)
+    destruct (list_eq_dec Nat.eq_dec pos1 pos2) as [ | Hneq ]; auto.
+    eapply id_nodup_diff_by_pos in Hneq; eauto.
+    contradiction.
+  Qed.
+
+  Corollary id_nodup_unify_by_id [tr] (Hnodup : tr_NoDupId tr) [sub1 sub2]
+    (Hin1 : subtr sub1 tr) (Hin2 : subtr sub2 tr)
+    (E : tr_rootid sub1 = tr_rootid sub2) : sub1 = sub2.
+  Proof.
+    apply subtr_subtr_witness in Hin1, Hin2.
+    destruct Hin1 as (? & H1), Hin2 as (? & H2).
+    eapply id_nodup_unifypos_by_id in E; eauto.
+    rewrite E in H1.
+    hnf in H1, H2.
+    rewrite H1 in H2.
+    now inversion H2.
   Qed.
 
 End NoDup_Indices_Theory.
@@ -1036,6 +1197,27 @@ Section Tree_Find.
   Corollary id_nodup_find_self' [tr] (Hnodup : tr_NoDupId tr) :
     Foralltr (fun tr0 => tr_getnode (tr_rootid tr0) tr = Some tr0) tr.
   Proof. now apply Foralltr_Forall_subtree, id_nodup_find_self. Qed.
+
+  Fact id_nodup_filter_self [trs] (Hnodup : trs_roots_NoDupId trs) 
+    [tr] (Hin : In tr trs) :
+    filter (fun tr' => has_same_id (tr_rootid tr') tr) trs = tr :: nil.
+  Proof.
+    apply in_split in Hin.
+    destruct Hin as (pre & suf & ->).
+    rewrite filter_app.
+    simpl.
+    rewrite has_same_id_refl.
+    eapply Permutation_NoDup in Hnodup.
+    2: rewrite <- Permutation_middle; reflexivity.
+    simpl in Hnodup.
+    apply NoDup_cons_iff, proj1 in Hnodup.
+    setoid_rewrite map_app in Hnodup.
+    setoid_rewrite in_app_iff in Hnodup.
+    rewrite ! filter_all_false; try reflexivity.
+    all: intros ? Hin%(in_map tr_rootid); rewrite has_same_id_false.
+    all: intros E; rewrite E in Hin.
+    all: intuition.
+  Qed.
 
   (* fully parameterized; B' can be regarded as the type of a portion of information *)
   (* FIXME: is this related with fmap, or something else about category theory? *)

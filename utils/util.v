@@ -719,7 +719,7 @@ Section List_Slice_Index_Additional_Lemmas.
       eauto.
   Qed.
 
-  Fact nth_error_mixin : forall [A : Type] (l : list A) (n : nat) [a : A],
+  Fact nth_error_mixin : forall [A : Type] [l : list A] [n : nat] [a : A],
     nth_error l n = Some a ->
     n <= length l /\ length (firstn n l) = n /\
     l = firstn n l ++ a :: skipn (S n) l /\ skipn n l = a :: skipn (S n) l.
@@ -743,6 +743,34 @@ Section List_Slice_Index_Additional_Lemmas.
     now apply proj2, firstn_skipn_onemore in Echn.
   Qed.
 
+  Fact two_nth_pick_Permutation : forall [A : Type] [l : list A] [x y] [ax ay : A]
+    (Hx : nth_error l x = Some ax) (Hy : nth_error l y = Some ay)
+    (Hneq : x <> y), exists rest, Permutation l (ax :: ay :: rest).
+  Proof.
+    enough (forall (A : Type) (l : list A) (x y : nat),
+      x < y -> forall (ax ay : A),
+      nth_error l x = Some ax ->
+      nth_error l y = Some ay ->
+      exists rest : list A, Permutation l (ax :: ay :: rest)).
+    - intros.
+      destruct (Compare_dec.le_lt_dec y x) as [ Hle | Hlt ].
+      + assert (y < x) as Hlt by (clear -Hle Hneq; lia).
+        destruct (H _ _ _ _ Hlt _ _ Hy Hx) as (rest & HH).
+        exists rest.
+        rewrite HH.
+        constructor.
+      + eapply H; eauto.
+    - intros A l x y Hlt ax ay Hx Hy.
+      pose proof (nth_error_mixin Hy) as (Hley & Eleny & Ely & Esufy).
+      rewrite Ely, nth_error_app1 in Hx by congruence.
+      pose proof (nth_error_mixin Hx) as (Hlex & Elenx & Elx & Esufx).
+      rewrite Elx in Ely.
+      match type of Ely with l = (?l1 ++ _ :: ?l2) ++ _ :: ?l3 => 
+        exists (l1 ++ l2 ++ l3) end.
+      rewrite Ely at 1.
+      list.solve_Permutation.
+  Qed.
+
 End List_Slice_Index_Additional_Lemmas.
 
 Fact list_rev_destruct [A : Type] (l : list A) : {l = nil} + {exists l' x, l = l' ++ x :: nil}.
@@ -755,6 +783,10 @@ Qed.
 
 Fact list_ifnil_destruct [A : Type] (l : list A) : {l = nil} + {l <> nil}.
 Proof. destruct l; [ now left | now right ]. Qed.
+
+Fact list_snoc_notnil_match [A B : Type] (l : list A) (x : A) (b1 b2 : B) : 
+  match l ++ x :: nil with | nil => b1 | _ :: _ => b2 end = b2.
+Proof. destruct l; auto. Qed.
 
 Fact eqdec_must_left [A B : Type] (eqd : forall (a1 a2 : A), {a1 = a2} + {a1 <> a2}) [b1 b2 : B] (a : A) :
   (if eqd a a then b1 else b2) = b1.
@@ -794,6 +826,15 @@ Proof.
   revert n Hlen.
   induction l1 as [ | aa l1 IH ]; simpl; intros; subst n; simpl; auto.
   rewrite IH by reflexivity.
+  reflexivity.
+Qed.
+
+Fact upd_nth_intact [A : Type] [n : nat] [l : list A] [a : A]
+  (E : nth_error l n = Some a) : upd_nth n l a = l.
+Proof.
+  apply nth_error_mixin in E.
+  destruct E as (Hle & Elen & El & Esuf).
+  rewrite El, upd_nth_exact by assumption.
   reflexivity.
 Qed.
 
