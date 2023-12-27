@@ -357,29 +357,49 @@ Section Core_Auxiliary_Functions.
       eapply IH; eauto.
   Qed.
 
+End Core_Auxiliary_Functions.
+
+Section Structure_Changing_Functions.
+
+  (* some common derived definitions from "tr_locate_upd" *)
+
+  (* this might be defined as a separate recursive functions, but that would incur 
+      repetitive proof? *)
   Definition tr_locate_apply tr pos (f : tree -> tree) :=
     match tr_locate tr pos with
     | Some sub => tr_locate_upd tr pos (f sub)
     | None => tr
     end.
 
+  (* this should be used whenever possible, instead of unfolding every time *)
+  Fact tr_locate_apply_iota a chn x l f :
+    tr_locate_apply (Node a chn) (x :: l) f = 
+    Node a (match nth_error chn x with
+            | Some ch => upd_nth x chn (tr_locate_apply ch l f)
+            | None => chn
+            end).
+  Proof.
+    unfold tr_locate_apply. 
+    simpl.
+    destruct (nth_error chn x) as [ ch | ] eqn:E; try reflexivity. 
+    destruct (tr_locate ch l); [ reflexivity | now rewrite upd_nth_intact ].
+  Qed.
+
   Definition tr_remove_node tr pos :=
     match list.last pos with
     | Some x => tr_locate_apply tr (removelast pos) 
-      (fun '(Node ni chn) => Node ni (firstn x chn ++ skipn (S x) chn))
+      (fun '(Node a chn) => Node a (firstn x chn ++ skipn (S x) chn))
     | None => tr  (* do not return an empty tree *)
     end.
 
-  Fact tr_remove_node_unfold a l y [ch chn x] (E : nth_error chn x = Some ch) :
+  Fact tr_remove_node_iota a l y [ch chn x] (E : nth_error chn x = Some ch) :
     tr_remove_node (Node a chn) (x :: l ++ y :: nil) = 
     Node a (upd_nth x chn (tr_remove_node ch (l ++ y :: nil))).
   Proof.
-    unfold tr_remove_node, tr_locate_apply.
+    unfold tr_remove_node.
     simpl.
-    rewrite list.last_cons, list.last_snoc, removelast_last, list_snoc_notnil_match.
-    simpl.
-    rewrite E.
-    destruct (tr_locate ch l); [ reflexivity | now rewrite upd_nth_intact ].
+    now rewrite list.last_cons, list.last_snoc, removelast_last, 
+      list_snoc_notnil_match, tr_locate_apply_iota, E.
   Qed.
 
   Lemma tr_remove_node_dom_partition [tr] :
@@ -401,7 +421,7 @@ Section Core_Auxiliary_Functions.
       simpl.
       rewrite map_app.
       list.solve_Permutation.
-    - erewrite tr_remove_node_unfold; eauto.
+    - erewrite tr_remove_node_iota; eauto.
       simpl.
       rewrite Echn at 1 2.
       rewrite upd_nth_exact by assumption.
@@ -414,7 +434,30 @@ Section Core_Auxiliary_Functions.
       list.solve_Permutation.
   Qed.
 
-End Core_Auxiliary_Functions.
+  Definition tr_prepend_node tr pos new :=
+    tr_locate_apply tr pos (fun '(Node a chn) => Node a (new :: chn)).
+
+  Lemma tr_prepend_node_dom_addition [l] :
+    forall [tr] (Hsub : isSome (tr_locate tr l) = true) new,
+    Permutation (map tr_rootinfo (tr_flatten (tr_prepend_node tr l new)))
+      (map tr_rootinfo (tr_flatten tr) ++ map tr_rootinfo (tr_flatten new)).
+  Proof.
+    unfold tr_prepend_node.
+    induction l as [ | x l IH ]; intros [a chn]; intros; simpl in Hsub |- *.
+    - rewrite map_app.
+      list.solve_Permutation.
+    - destruct (nth_error chn x) as [ ch | ] eqn:E; try discriminate.
+      rewrite tr_locate_apply_iota, E.
+      simpl.
+      pose proof E as (Hle & Elen & Echn & Esuf)%nth_error_mixin.
+      rewrite Echn, upd_nth_exact by assumption.
+      rewrite ! flat_map_app, ! map_app.
+      simpl.
+      rewrite ! map_app, IH by eauto.
+      list.solve_Permutation.
+  Qed.
+
+End Structure_Changing_Functions.
 
 Section Tree_Size.
 
@@ -853,6 +896,10 @@ Fact prefixtr_rootid_same [tr tr'] (Hprefix : prefixtr tr tr') :
   tr_rootid tr = tr_rootid tr'.
 Proof. unfold tr_rootid. erewrite prefixtr_rootinfo_same; eauto. Qed.
 
+Corollary prefixtr_flatten_id_incl [tr1 tr2] (Hprefix : prefixtr tr1 tr2) :
+  incl (map tr_rootid (tr_flatten tr1)) (map tr_rootid (tr_flatten tr2)).
+Proof. apply prefixtr_flatten_info_incl, (incl_map info_id) in Hprefix. now rewrite ! map_map in Hprefix. Qed.
+
 Fact Permutation_rootinfo2rootid_pre [B' : Type] (g : tree -> B') (h : B' -> B) 
   (Hh : forall tr, h (g tr) = tr_rootid tr) [trs1 trs2]
   (Hperm : Permutation (map g trs1) (map g trs2)) :
@@ -866,6 +913,9 @@ Fact Permutation_rootinfo2rootid [trs1 trs2]
   (H : Permutation (map tr_rootinfo trs1) (map tr_rootinfo trs2)) :
   Permutation (map tr_rootid trs1) (map tr_rootid trs2).
 Proof. eapply Permutation_rootinfo2rootid_pre with (h:=info_id); eauto. Qed.
+
+Fact tr_self_id_in tr : In (tr_rootid tr) (map tr_rootid (tr_flatten tr)).
+Proof. rewrite (tree_recons tr) at 2. simpl. now left. Qed.
 
 Section NoDup_Indices_Theory.
 
@@ -1434,6 +1484,10 @@ Section Reversed_Preorder_Traversal_Theory.
     reflexivity.
   Qed.
 
+  Fact pos_succ_cons' x [l] (Hnotnil : l <> nil) :
+    pos_succ (x :: l) = x :: pos_succ l.
+  Proof. destruct l; try contradiction. apply pos_succ_cons. Qed.
+
   Fact tr_trav_waitlist_align tr l : 
     length (fst (tr_trav_waitlist tr l)) = length (snd (tr_trav_waitlist tr l)).
   Proof.
@@ -1639,6 +1693,12 @@ Section Reversed_Preorder_Traversal_Theory.
         * reflexivity.
   Qed.
 
+  Corollary pre_iter_visited_is_prefix tr l : prefixtr (pre_iter_visited_prefix tr l) tr.
+  Proof. apply tr_vsplitr_is_prefix. Qed.
+
+  Corollary post_iter_visited_is_prefix tr l : prefixtr (post_iter_visited_prefix tr l) tr.
+  Proof. apply tr_vsplitr_is_prefix. Qed.
+
   Fact tr_vsplitr_locate [l] :
     forall [tr sub] full (H : tr_locate tr l = Some sub),
       tr_locate (tr_vsplitr full tr l) (List.repeat 0%nat (length l)) = 
@@ -1649,6 +1709,68 @@ Section Reversed_Preorder_Traversal_Theory.
     destruct (nth_error chn x) as [ ch | ] eqn:E0; simpl.
     2: discriminate.
     erewrite IH; eauto.
+  Qed.
+
+  Lemma visited_prefix_pre2post [l] :
+    forall [tr sub] (H : tr_locate tr l = Some sub) (Hnotnil : l <> nil),
+      isSome (tr_locate (pre_iter_visited_prefix tr l) (List.repeat 0%nat (length l - 1))) = true /\
+      post_iter_visited_prefix tr l = tr_prepend_node (pre_iter_visited_prefix tr l)
+        (List.repeat 0%nat (length l - 1)) (Node (tr_rootinfo sub) nil).
+  Proof.
+    induction l as [ | x l IH ]; intros [ni chn]; intros; simpl in H |- *.
+    1: contradiction.
+    destruct (nth_error chn x) as [ ch | ] eqn:E; try discriminate.
+    rewrite Nat.sub_0_r.
+    clear Hnotnil.
+    destruct (list_ifnil_destruct l) as [ -> | Hnotnil ].
+    - injection H as <-.
+      split; [ reflexivity | ].
+      cbn delta -[nth_error] beta iota.
+      rewrite E.
+      destruct (nth_error chn (S x)) as [ ch' | ] eqn:E'.
+      + simpl.
+        pose proof E' as (_ & _ & _ & ->)%nth_error_mixin.
+        now destruct ch'.
+      + apply nth_error_None in E'.
+        now rewrite skipn_all2 by assumption.
+    - specialize (IH _ _ H Hnotnil).
+      unfold pre_iter_visited_prefix in *.
+      rewrite pos_succ_cons' by assumption.
+      cbn delta -[nth_error] beta iota.
+      rewrite E.
+      destruct l eqn:El; try contradiction.
+      simpl length in *.
+      rewrite Nat.sub_succ, Nat.sub_0_r in *.
+      rewrite <- El in *.
+      cbn.
+      split; try tauto.
+      unfold tr_prepend_node, tr_locate_apply in *.
+      cbn.
+      fold (post_iter_visited_prefix ch l).
+      rewrite (proj2 IH).
+      now destruct (tr_locate _ _).
+  Qed.
+
+  Corollary visited_prefix_dom [l tr sub] 
+    (H : tr_locate tr l = Some sub) (Hnotnil : l <> nil) :
+    Permutation (map tr_rootinfo (tr_flatten (post_iter_visited_prefix tr l)))
+      (tr_rootinfo sub :: map tr_rootinfo (tr_flatten (pre_iter_visited_prefix tr l))).
+  Proof.
+    pose proof (visited_prefix_pre2post H Hnotnil) as (H1 & H2).
+    rewrite H2, tr_prepend_node_dom_addition; eauto.
+    simpl.
+    list.solve_Permutation.
+  Qed.
+
+  Corollary stack_top_not_visited [l tr sub] 
+    (H : tr_locate tr l = Some sub) (Hnotnil : l <> nil) (Hnodup : tr_NoDupId tr) :
+    ~ In (tr_rootid sub) (map tr_rootid (tr_flatten (pre_iter_visited_prefix tr l))).
+  Proof.
+    pose proof (id_nodup_prefix_preserve (post_iter_visited_is_prefix tr l) Hnodup) as HH.
+    eapply Permutation_NoDup with (l':=map tr_rootid (sub :: tr_flatten (pre_iter_visited_prefix tr l))) in HH.
+    2: apply Permutation_rootinfo2rootid; simpl; rewrite visited_prefix_dom; eauto.
+    simpl in HH.
+    now inversion HH.
   Qed.
 
   Local Tactic Notation "injection_last_pair" "in_" hyp(E) "as_" ident(E1) ident(E2) :=
