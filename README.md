@@ -2,7 +2,7 @@
 
 A small library for facilitating proofs about (rooted) labeled trees in Coq, and helping verifying C code that involves the use of array-based trees with VST (still, in Coq). 
 
-## Install Requirements
+## Building Requirements
 
 Coq:
 - 8.16.1
@@ -24,7 +24,7 @@ The requirements above might be satisfied by installing [this version of Coq pla
 - `vst`: VST verification of tree clock (in C). 
 - `race-detector`: The data race detectors used in evaluation. 
 
-Currently, the library related definitions described in the paper are intermixed with those about tree clocks. The pure part of the library (including **Arboreta-P** and the loop invariant template for non-recursive traversals) is in `clocks/treeclock.v`, and the separation logic related part is mainly in `vst/`. 
+The pure part of the library (including **Arboreta-P** and the loop invariant template for non-recursive traversals) is in the monolithic file `utils/rosetree.v`. For the separation logic related part, it is in `vst/verif_treeclock.v`. Currently we have only instantiated the separation logic related part for tree clock; we will later decouple it from tree clock and make it reusable for different tree data structures. 
 
 ## Building Instructions
 
