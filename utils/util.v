@@ -813,6 +813,10 @@ Proof. destruct o; intuition. Qed.
 Fact isSome_false_is_None [A : Type] (o : option A) : isSome o = false <-> o = None.
 Proof. destruct o; simpl; intuition. Qed.
 
+Fact isSome_by_fmap [A B : Type] [o : option A] [f : A -> B] [b : B] 
+  (H : base.fmap f o = Some b) : isSome o = true.
+Proof. now destruct o. Qed.
+
 (* although this can be defined with firstn and lastn, now use this anyway *)
 Fixpoint upd_nth [A : Type] (n : nat) (l : list A) (a : A) :=
   match l with

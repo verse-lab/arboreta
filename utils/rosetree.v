@@ -217,16 +217,32 @@ Section Core_Auxiliary_Functions.
       end
     end.
 
-  Fact tr_locate_pos_app [pos1] : forall [tr sub] (H : tr_locate tr pos1 = Some sub) pos2,
-    tr_locate tr (pos1 ++ pos2) = tr_locate sub pos2.
+  Fact tr_locate_pos_app tr pos1 pos2 :
+    tr_locate tr (pos1 ++ pos2) = base.mbind (fun tr' => tr_locate tr' pos2) (tr_locate tr pos1).
   Proof.
-    induction pos1 as [ | x pos1 IH ]; intros; simpl in *.
-    - injection H as <-.
-      reflexivity.
-    - destruct tr as [ni chn].
-      simpl in *.
-      destruct (nth_error chn x) eqn:E; try discriminate.
-      now apply IH.
+    revert tr pos2.
+    induction pos1 as [ | x pos1 IH ]; intros [a chn]; intros; simpl; try reflexivity.
+    destruct (nth_error chn x) eqn:E; try reflexivity.
+    now rewrite IH.
+  Qed.
+
+  Corollary tr_locate_pos_app' [tr pos1 sub] (H : tr_locate tr pos1 = Some sub) pos2 :
+    tr_locate tr (pos1 ++ pos2) = tr_locate sub pos2.
+  Proof. now rewrite tr_locate_pos_app, H. Qed.
+
+  Corollary tr_locate_parent [tr pos ch] (H : tr_locate tr pos = Some ch) (Hnotnil : pos <> nil) :
+    exists par, tr_locate tr (removelast pos) = Some par /\ In ch (tr_rootchn par).
+  Proof.
+    destruct (list_rev_destruct pos) as [ -> | (pos' & x & ->) ]; try contradiction.
+    rewrite tr_locate_pos_app in H.
+    simpl in H.
+    rewrite removelast_last.
+    destruct (tr_locate tr pos') as [ par | ]; try discriminate.
+    simpl in H.
+    destruct (nth_error _ _) eqn:E in H; try discriminate.
+    injection H as ->.
+    exists par.
+    split; [ reflexivity | eapply nth_error_In; eauto ].
   Qed.
 
   Fixpoint tr_pos_valid_depth (tr : tree) (pos : list nat) : nat :=
@@ -434,17 +450,17 @@ Section Structure_Changing_Functions.
       list.solve_Permutation.
   Qed.
 
-  Definition tr_prepend_node tr pos new :=
-    tr_locate_apply tr pos (fun '(Node a chn) => Node a (new :: chn)).
+  Definition tr_prepend_nodes tr pos new :=
+    tr_locate_apply tr pos (fun '(Node a chn) => Node a (new ++ chn)).
 
-  Lemma tr_prepend_node_dom_addition [l] :
+  Lemma tr_prepend_nodes_dom_addition [l] :
     forall [tr] (Hsub : isSome (tr_locate tr l) = true) new,
-    Permutation (map tr_rootinfo (tr_flatten (tr_prepend_node tr l new)))
-      (map tr_rootinfo (tr_flatten tr) ++ map tr_rootinfo (tr_flatten new)).
+    Permutation (map tr_rootinfo (tr_flatten (tr_prepend_nodes tr l new)))
+      (map tr_rootinfo (tr_flatten tr) ++ map tr_rootinfo (flat_map tr_flatten new)).
   Proof.
-    unfold tr_prepend_node.
+    unfold tr_prepend_nodes.
     induction l as [ | x l IH ]; intros [a chn]; intros; simpl in Hsub |- *.
-    - rewrite map_app.
+    - rewrite flat_map_app, map_app.
       list.solve_Permutation.
     - destruct (nth_error chn x) as [ ch | ] eqn:E; try discriminate.
       rewrite tr_locate_apply_iota, E.
@@ -518,6 +534,9 @@ Section Subtree_Theory.
 
   Global Arguments subtr _ _/.
 
+  #[export] Instance subtr_refl : Reflexive subtr.
+  Proof tr_flatten_self_in.
+
   Fact subtr_chn [tr ch] : In ch (tr_rootchn tr) -> subtr ch tr.
   Proof.
     intros H.
@@ -529,8 +548,10 @@ Section Subtree_Theory.
     split; [ assumption | apply tr_flatten_self_in ].
   Qed.
 
-  Lemma subtr_trans [tr tr' tr''] : subtr tr'' tr' -> subtr tr' tr -> subtr tr'' tr.
+  #[export] Instance subtr_trans : Transitive subtr.
   Proof.
+    hnf.
+    intros tr'' tr' tr.
     revert tr'' tr'.
     induction tr as [ni chn IH] using tree_ind_2'; intros.
     simpl in H, H0. 
@@ -554,7 +575,7 @@ Section Subtree_Theory.
     - destruct (nth_error (tr_rootchn tr) x) as [ res | ] eqn:E; try eqsolve.
       apply IH in H.
       apply nth_error_In in E.
-      eapply subtr_trans; [ apply H | ].
+      etransitivity; [ apply H | ].
       now apply subtr_chn.
   Qed.
 
@@ -731,6 +752,8 @@ End Forall_Tree_Theory.
 
 Section Tree_Prefix_Theory.
 
+  (* in the future, we may use bit mask to achieve the most precise characterization of prefix? *)
+
   Inductive prefixtr : tree -> tree -> Prop :=
     prefixtr_intro : forall a chn chn_sub prefix_chn, 
       list.sublist chn_sub chn ->
@@ -895,6 +918,10 @@ Proof. intros [ni ?] [ni' ?]. unfold tr_rootid. now intros ->. Qed.
 Fact prefixtr_rootid_same [tr tr'] (Hprefix : prefixtr tr tr') :
   tr_rootid tr = tr_rootid tr'.
 Proof. unfold tr_rootid. erewrite prefixtr_rootinfo_same; eauto. Qed.
+
+Corollary prefixtr_rootid_same_map [trs trs'] (Hprefix : Forall2 prefixtr trs trs') :
+  map tr_rootid trs = map tr_rootid trs'.
+Proof. unfold tr_rootid. rewrite <- ! map_map with (g:=info_id) (f:=tr_rootinfo). f_equal. now apply prefixtr_rootinfo_same_map. Qed.
 
 Corollary prefixtr_flatten_id_incl [tr1 tr2] (Hprefix : prefixtr tr1 tr2) :
   incl (map tr_rootid (tr_flatten tr1)) (map tr_rootid (tr_flatten tr2)).
@@ -1122,6 +1149,65 @@ Section NoDup_Indices_Theory.
   Qed.
 
 End NoDup_Indices_Theory.
+
+(* a by-product *)
+Lemma prefixtr_concatenate [tr tr'] (H : prefixtr tr tr')
+  (Hnodup : tr_NoDupId tr') :
+  forall [l sub'] (Hsub : tr_locate tr l = Some (Node (tr_rootinfo sub') nil))
+  (Hsub' : subtr sub' tr'),
+  forall sub_prefix' (Hpf : prefixtr sub_prefix' sub'),
+    prefixtr (tr_prepend_nodes tr l (tr_rootchn sub_prefix')) tr'.
+Proof.
+  induction H as [ni chn1 chn2_sub chn2 Hsl H IH] using prefixtr_ind_2; intros.
+  destruct l as [ | x l ].
+  - injection Hsub as ->.
+    subst chn1.
+    unfold tr_prepend_nodes, tr_locate_apply.
+    simpl.
+    rewrite app_nil_r.
+    hnf in Hsub'.
+    (* unify *)
+    destruct Hsub' as [ -> | Hin ].
+    1: now rewrite <- (prefixtr_rootinfo_same Hpf), <- tree_recons.
+    apply id_nodup_rootid_neq' in Hnodup.
+    exfalso.
+    apply (in_map tr_rootid) in Hin.
+    now apply Hnodup.
+  - pose proof (sublist_In Hsl) as Hsubin.
+    unfold tr_prepend_nodes.
+    rewrite tr_locate_apply_iota.
+    simpl in Hsub |- *.
+    destruct (nth_error chn1 x) as [ ch | ] eqn:E.
+    2: econstructor; eauto.
+    econstructor; eauto.
+    pose proof E as (_ & Elen & Echn1 & _)%nth_error_mixin.
+    pose proof E as Hlt%nth_error_some_inrange.
+    rewrite Echn1, upd_nth_exact by assumption.
+    eapply Forall2_pointwise in IH; eauto.
+    destruct IH as (ch' & E' & HH).
+    pose proof E' as (_ & Elen' & Echn2 & Esuf)%nth_error_mixin.
+    pose proof E' as Hin%nth_error_In%Hsubin.
+    rewrite Echn2, Echn1 in H.
+    apply list.Forall2_app_inv in H; try congruence.
+    destruct H as (Hq1 & (Hpf' & Hq2)%list.Forall2_cons_1).
+    apply list.Forall2_app_l; rewrite Elen; try assumption.
+    rewrite Esuf.
+    constructor; try assumption.
+    eapply HH; eauto.
+    + eapply id_nodup_ch; eauto.
+      simpl.
+      assumption.
+    + (* unify two children *)
+      apply prefixtr_flatten_id_incl in Hpf'.
+      apply subtr_witness_subtr, (in_map tr_rootid), Hpf' in Hsub.
+      simpl in Hsub.
+      fold (tr_rootid sub') in Hsub.
+      pose proof Hsub as (sub'' & Eid & Hsub'')%in_map_iff.
+      apply id_nodup_unify_by_id with (sub2:=sub'') in Hsub'; auto.
+      2: transitivity ch'; [ assumption | now apply subtr_chn  ].
+      subst sub''.
+      apply Hsub''.
+Qed.
 
 Section Tree_Find.
 
@@ -1414,7 +1500,7 @@ Section Tree_Find.
        end) l).
   Proof.
     pose proof (trs_find_rearrangement Hnodup Hnodup' Hdomincl) as Hperm.
-    pose (f:=fun ot : option tree => match ot with Some tc => h tc | None => nil end).
+    pose (f:=fun ot : option tree => match ot with Some tr => h tr | None => nil end).
     apply Permutation_flat_map with (g:=f) in Hperm.
     rewrite flat_map_concat_map, map_map, <- flat_map_concat_map in Hperm.
     simpl in Hperm.
@@ -1672,8 +1758,6 @@ Section Reversed_Preorder_Traversal_Theory.
       congruence.
   Qed.
 
-  (* may use this to trace on the original tree (i.e., tr) *)
-
   Lemma tr_vsplitr_is_prefix full l : forall tr, 
     prefixtr (tr_vsplitr full tr l) tr.
   Proof.
@@ -1713,9 +1797,11 @@ Section Reversed_Preorder_Traversal_Theory.
 
   Lemma visited_prefix_pre2post [l] :
     forall [tr sub] (H : tr_locate tr l = Some sub) (Hnotnil : l <> nil),
-      isSome (tr_locate (pre_iter_visited_prefix tr l) (List.repeat 0%nat (length l - 1))) = true /\
-      post_iter_visited_prefix tr l = tr_prepend_node (pre_iter_visited_prefix tr l)
-        (List.repeat 0%nat (length l - 1)) (Node (tr_rootinfo sub) nil).
+      (* FIXME: maybe strengthen the following into arbitrary proper prefix in the future? *)
+      base.fmap tr_rootinfo (tr_locate (pre_iter_visited_prefix tr l) (List.repeat 0%nat (length l - 1))) = 
+        base.fmap tr_rootinfo (tr_locate tr (removelast l)) /\
+      post_iter_visited_prefix tr l = tr_prepend_nodes (pre_iter_visited_prefix tr l)
+        (List.repeat 0%nat (length l - 1)) (Node (tr_rootinfo sub) nil :: nil).
   Proof.
     induction l as [ | x l IH ]; intros [ni chn]; intros; simpl in H |- *.
     1: contradiction.
@@ -1724,7 +1810,7 @@ Section Reversed_Preorder_Traversal_Theory.
     clear Hnotnil.
     destruct (list_ifnil_destruct l) as [ -> | Hnotnil ].
     - injection H as <-.
-      split; [ reflexivity | ].
+      split; [ simpl; rewrite (prefixtr_rootinfo_same (pre_iter_visited_is_prefix _ _)); reflexivity | ].
       cbn delta -[nth_error] beta iota.
       rewrite E.
       destruct (nth_error chn (S x)) as [ ch' | ] eqn:E'.
@@ -1743,8 +1829,9 @@ Section Reversed_Preorder_Traversal_Theory.
       rewrite Nat.sub_succ, Nat.sub_0_r in *.
       rewrite <- El in *.
       cbn.
+      rewrite E.
       split; try tauto.
-      unfold tr_prepend_node, tr_locate_apply in *.
+      unfold tr_prepend_nodes, tr_locate_apply in *.
       cbn.
       fold (post_iter_visited_prefix ch l).
       rewrite (proj2 IH).
@@ -1757,7 +1844,11 @@ Section Reversed_Preorder_Traversal_Theory.
       (tr_rootinfo sub :: map tr_rootinfo (tr_flatten (pre_iter_visited_prefix tr l))).
   Proof.
     pose proof (visited_prefix_pre2post H Hnotnil) as (H1 & H2).
-    rewrite H2, tr_prepend_node_dom_addition; eauto.
+    pose proof (tr_locate_parent H Hnotnil) as (par & Epar & _).
+    rewrite Epar in H1.
+    simpl in H1.
+    rewrite H2, tr_prepend_nodes_dom_addition.
+    2: now apply isSome_by_fmap in H1.
     simpl.
     list.solve_Permutation.
   Qed.
@@ -1901,6 +1992,7 @@ Section Reversed_Preorder_Traversal_Theory.
   Inductive traversal_invariant (tr : tree) : list B -> tree -> Prop :=
     | TInv_terminate : traversal_invariant tr nil tr
     | TInv_intermediate : forall stk pos sub pf, 
+      pos <> nil -> (* if this is not present, then we may allow that the traversal terminates immediately after popping the root *)
       tr_locate tr pos = Some sub ->
       stk = (map tr_rootid (snd (tr_trav_waitlist tr pos) ++ (sub :: nil))) ->
       pf = pre_iter_visited_prefix tr pos ->
@@ -1918,7 +2010,8 @@ Section Reversed_Preorder_Traversal_Theory.
 
   Fact traversal_invariant_stacknotnil [tr stk pf] (E : stk <> nil)
     (H : traversal_invariant tr stk pf) : 
-    exists pos sub, tr_locate tr pos = Some sub /\
+    exists pos sub, pos <> nil /\
+      tr_locate tr pos = Some sub /\
       stk = (map tr_rootid (snd (tr_trav_waitlist tr pos) ++ (sub :: nil))) /\
       pf = pre_iter_visited_prefix tr pos.
   Proof.
@@ -1942,7 +2035,8 @@ Section Reversed_Preorder_Traversal_Theory.
     assert (nth_error chn (length chn') = Some lst_ch) as Enth
       by (subst chn; rewrite nth_error_app2, Nat.sub_diag; auto).
     apply TInv_intermediate with (pos:=pos ++ (length chn' :: nil)) (sub:=lst_ch).
-    - erewrite tr_locate_pos_app by eassumption.
+    - now destruct pos.
+    - erewrite tr_locate_pos_app' by eassumption.
       simpl.
       now rewrite Enth.
     - erewrite tr_trav_waitlist_pos_app by eassumption.
@@ -1958,12 +2052,12 @@ Section Reversed_Preorder_Traversal_Theory.
       (* slightly troublesome *)
       replace (S (length chn')) with (length chn) 
         by (subst chn; rewrite app_length, <- Nat.add_1_r; reflexivity).
-      erewrite tr_locate_pos_app by eassumption.
+      erewrite tr_locate_pos_app' by eassumption.
       simpl.
       pose proof (proj2 (nth_error_None chn (length chn)) (le_n (length chn))) as Hex.
       rewrite Hex; simpl.
       rewrite -> tr_vsplitr_leaf_lastover with (l:=pos ++ (length chn) :: nil).
-      2: erewrite tr_locate_pos_app by eassumption; simpl; now rewrite Hex.
+      2: erewrite tr_locate_pos_app' by eassumption; simpl; now rewrite Hex.
       now rewrite removelast_last.
   Qed.
 
@@ -1991,6 +2085,10 @@ Section Reversed_Preorder_Traversal_Theory.
       pose proof EE as (Hcont_w1 & Hcont_w2)%tr_trav_waitlist_continue.
       2: now rewrite Hsub.
       apply TInv_intermediate with (pos:=l') (sub:=sub').
+      + pose proof (tr_trav_waitlist_pos_notnil tr pos) as Htmp.
+        rewrite EE in Htmp.
+        simpl in Htmp.
+        now rewrite Forall_app, Forall_cons_iff in Htmp.
       + assumption.
       + now rewrite -> Hcont_w2.
       + unfold pre_iter_visited_prefix.
@@ -2030,3 +2128,6 @@ Global Arguments tree : clear implicits.
 (* need some tweak, otherwise will need to put @ before when doing induction, or
     face the "Not the right number of induction arguments" error *)
 Global Arguments prefixtr_ind_2 [_].
+
+Global Arguments subtr_trans {_} [_ _ _] _ _.
+Global Arguments prefixtr_trans {_} [_ _ _] _ _.

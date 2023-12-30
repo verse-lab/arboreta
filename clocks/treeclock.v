@@ -806,29 +806,30 @@ Proof.
       now subst ch.
 Qed.
 
-Fact tc_get_updated_nodes_join_trace [tc'] : forall [tc sub_prefix]
-  (H : subtr sub_prefix (tc_get_updated_nodes_join tc tc')), 
+Fact tc_get_updated_nodes_join_trace [tc' tc sub_prefix]
+  (H : subtr sub_prefix (tc_get_updated_nodes_join tc tc')) :
   exists sub, subtr sub tc' /\ sub_prefix = tc_get_updated_nodes_join tc sub.
 Proof.
-  induction tc' as [(u', clk', aclk') chn' IH] using tree_ind_2; intros.
-  tc_get_updated_nodes_join_unfold in_ H.
-  simpl in H.
-  destruct H as [ <- | (ch & Hin_ch & H)%in_flat_map ].
-  - eexists. 
-    split; [ apply tr_flatten_self_in | ].
-    reflexivity.
-  - pose proof (tc_get_updated_nodes_join_aux_result_submap tc (tc_getclk u' tc) chn') 
+  apply subtr_subtr_witness in H.
+  destruct H as (l & H).
+  revert tc' sub_prefix H.
+  induction l as [ | x l IH ]; intros [ (u', clk', aclk') chn']; intros; auto.
+  - injection H as <-.
+    eexists.
+    split; [ apply tr_flatten_self_in | reflexivity ].
+  - hnf in H.
+    tc_get_updated_nodes_join_unfold in_ H.
+    simpl in H.
+    pose proof (tc_get_updated_nodes_join_aux_result_submap tc (tc_getclk u' tc) chn') 
       as (chn'' & Hsl & E).
-    rewrite -> E in Hin_ch.
-    apply in_map_iff in Hin_ch.
-    destruct Hin_ch as (ch'' & <- & Hin_ch).
-    pose proof (sublist_In Hsl Hin_ch) as Hin_ch'.
-    eapply Forall_forall in IH.
-    2: apply Hin_ch'.
+    rewrite E, nth_error_map in H.
+    destruct (nth_error chn'' x) as [ ch' | ] eqn:Enth; try discriminate.
+    simpl in H.
     destruct (IH _ _ H) as (sub & Hsub & ->).
     exists sub.
     split; [ | reflexivity ].
-    now eapply subtr_trans; [ | apply subtr_chn; simpl; apply Hin_ch' ].
+    apply nth_error_In in Enth.
+    eapply subtr_trans; [ eauto | now apply subtr_chn, (sublist_In Hsl) ].
 Qed.
 
 Corollary tc_get_updated_nodes_join_is_prefix tc tc' :
@@ -1554,26 +1555,6 @@ Qed.
 End TC_Detach_Nodes.
 
 Section TC_Attach_Nodes.
-
-(* there is some structure sharing *)
-(*
-Fact tc_attach_nodes_colocate forest tc :
-  forall l sub (H : tr_locate tc l = Some sub), 
-    base.fmap tr_rootinfo (tr_locate (tc_attach_nodes forest tc) l) = Some (tr_rootinfo sub).
-Proof.
-  induction tc as [ni chn IH] using tree_ind_2; intros.
-  destruct l as [ | x l ]; simpl in H |- *.
-  - now injection H as <-.
-  - destruct (nth_error chn x) as [ ch | ] eqn:Enth; try discriminate.
-    rewrite nth_error_app1.
-    2: rewrite map_length; apply nth_error_some_inrange in Enth; lia.
-    rewrite nth_error_map, Enth.
-    simpl.
-    rewrite -> Forall_forall in IH.
-    specialize (IH _ (nth_error_In _ _ Enth) _ _ H).
-    apply IH.
-Qed.
-*)
 
 (* a very special case for the overlay tree *)
 (* P can be considered as a function for tracking the right list of trees to be appended *)
@@ -2320,15 +2301,26 @@ Section TC_Join.
       lia.
   Qed.
 
-  Lemma tc_join_pointwise_max_pre
+  Fact tc_join_pointwise_max_pre_pre
     (Hroot_clk_lt : tc_getclk (tr_rootid tc') tc < tc_rootclk tc') t :
-    tc_getclk t (tc_join tc tc') = Nat.max (tc_getclk t tc) (tc_getclk t tc').
+    tc_getclk t (tc_join tc tc') = 
+      match tr_getnode t (tc_get_updated_nodes_join tc tc') with
+      | Some res => tc_rootclk res
+      | None => tc_getclk t tc
+      end.
   Proof.
     pose proof (tc_join_go tc tc' Hroot_clk_lt) as ->.
     pose proof (tc_join_partial_getclk (tid_nodup Hshape) 
       (id_nodup_prefix_preserve (tc_get_updated_nodes_join_is_prefix _ _) (tid_nodup Hshape')) 
       (tc_get_updated_nodes_root_notin Hshape' Hrespect Hroot_clk_lt Hroot_clk_le)) as Htmp.
-    rewrite -> Htmp.
+    rewrite Htmp; reflexivity.
+  Qed.
+
+  Lemma tc_join_pointwise_max_pre
+    (Hroot_clk_lt : tc_getclk (tr_rootid tc') tc < tc_rootclk tc') t :
+    tc_getclk t (tc_join tc tc') = Nat.max (tc_getclk t tc) (tc_getclk t tc').
+  Proof.
+    rewrite tc_join_pointwise_max_pre_pre by assumption.
     destruct (tr_getnode t _) as [ res | ] eqn:Eres.
     - pose proof Eres as Eres'%(f_equal (@isSome _))%tc_get_updated_nodes_join_sound; auto.
       enough (tc_getclk t tc' = tc_rootclk res) by lia.
@@ -2697,9 +2689,9 @@ Fact tc_attach_nodes_single (b : bool) [tc pos sub'] (Hnodup : tr_NoDupId tc)
   (H : tr_locate tc pos = Some sub') (Hnotnil : pos <> nil)
   [sub] (Eid : tr_rootid sub' = tr_rootid sub) [forest] 
   (Hnotin : if b then True else trs_find_node (tr_rootid sub') forest = None) :
-  tr_prepend_node
+  tr_prepend_nodes
     (tc_attach_nodes forest (pre_iter_visited_prefix tc pos)) (repeat 0 (length pos - 1))
-    (Node (tr_rootinfo sub') (if b then tr_rootchn sub else nil)) =
+    (Node (tr_rootinfo sub') (if b then tr_rootchn sub else nil) :: nil) =
   tc_attach_nodes ((if b then sub :: nil else nil) ++ forest) (post_iter_visited_prefix tc pos).
 Proof.
   unfold pre_iter_visited_prefix, post_iter_visited_prefix.
@@ -2754,7 +2746,7 @@ Proof.
     simpl.
     rewrite E. 
     simpl. 
-    unfold tr_prepend_node.
+    unfold tr_prepend_nodes.
     rewrite tr_locate_apply_iota.
     simpl.
     do 2 f_equal.
@@ -2765,7 +2757,7 @@ Qed.
 
 Section TC_Join_Iterative_Real.
 
-  Variable (tc tc' : treeclock).
+  Context [tc tc' : treeclock].
   Hypotheses (Hnodup : tr_NoDupId tc)
     (Hnotin : ~ In (tr_rootid tc) (map tr_rootid (tr_flatten tc'))).
 
@@ -2779,10 +2771,16 @@ Section TC_Join_Iterative_Real.
 
   Fact tc_join_partial_iterative_init :
     let: (pivot, forest) := tc_detach_nodes (tc' :: nil) tc in
+    let: targ := 
+      (* hd (Node (mkInfo (tr_rootid tc') 0%nat 0%nat) nil) forest in *)
+      option.from_option tr_rootchn (@nil treeclock) (hd_error forest) in
+    let: new_ch := Node (mkInfo (tr_rootid tc') (tc_rootclk tc') (tc_rootclk tc)) targ in
+    (* 
     let: Node (mkInfo w _ _) chn_w :=
       hd (Node (mkInfo (tr_rootid tc') 0%nat 0%nat) nil) forest in
     let: new_ch := Node (mkInfo w (tc_rootclk tc') (tc_rootclk tc)) chn_w in
-    let: pivot' := tr_prepend_node pivot nil new_ch in
+    *)
+    let: pivot' := tr_prepend_nodes pivot nil (new_ch :: nil) in
     pivot' = tc_join_partial tc (Node (tr_rootinfo tc') nil).
   Proof.
     unfold tc_join_partial.
@@ -2800,7 +2798,7 @@ Section TC_Join_Iterative_Real.
       change (info_tid (tr_rootinfo tc')) with (tr_rootid tc').
       rewrite <- Eid. simpl.
       rewrite has_same_id_refl.
-      unfold tr_prepend_node, tr_locate_apply. simpl.
+      unfold tr_prepend_nodes, tr_locate_apply. simpl.
       destruct sub as [ [] ] eqn:E1, (tr_remove_node tc l), (tr_rootinfo tc') eqn:E2.
       simpl in Eid |- *.
       unfold tr_rootid in Eid.
@@ -2814,7 +2812,7 @@ Section TC_Join_Iterative_Real.
       rewrite tc_detach_nodes_intact'.
       2: simpl; intros t Hin [ <- | [] ]; auto.
       simpl.
-      unfold tr_prepend_node, tr_locate_apply. simpl.
+      unfold tr_prepend_nodes, tr_locate_apply. simpl.
       destruct tc.
       unfold tr_rootid, tc_rootclk.
       destruct (tr_rootinfo tc') eqn:E2.
@@ -2824,16 +2822,31 @@ Section TC_Join_Iterative_Real.
   Hypothesis (Hnodup' : tr_NoDupId tc').
 
   Fact tc_join_partial_iterative_trans 
-    pos' sub' (H : tr_locate tc' pos' = Some sub') (Hnotnil' : pos' <> nil)
-    (Hneq_sub' : tr_rootid sub' <> tr_rootid tc) :
+    [pos' sub'] (H : tr_locate tc' pos' = Some sub') (Hnotnil' : pos' <> nil) :
     let: (pivot, forest) := tc_detach_nodes (sub' :: nil) 
       (tc_join_partial tc (pre_iter_visited_prefix tc' pos')) in
+    let: targ := 
+      (* hd (Node (mkInfo (tr_rootid tc') 0%nat 0%nat) nil) forest in *)
+      option.from_option tr_rootchn (@nil treeclock) (hd_error forest) in
+    let: new_ch := Node (tr_rootinfo sub') targ in
+    (*
     let: Node (mkInfo w _ _) chn_w :=
       hd (Node (mkInfo (tr_rootid sub') 0%nat 0%nat) nil) forest in
     let: new_ch := Node (mkInfo w (tc_rootclk sub') (tc_rootaclk sub')) chn_w in
-    let: pivot' := tr_prepend_node pivot (List.repeat 0%nat (length pos')) new_ch in
+    *)
+    let: pivot' := tr_prepend_nodes pivot (List.repeat 0%nat (length pos')) (new_ch :: nil) in
+    (* FIXME: this exposes something interesting: we need to know the parent when proving
+        about prepending child in C (since we need to reset the parent field and link the child to its new parent),
+        but we do not need to know the parent for detaching node! this is probably because that
+        for detaching node, we always assume the existence of the node to be detached and thus 
+        we know the existence of its parent, while here we assume nothing!
+      can this be fixed later? *)
+    base.fmap tr_rootid (tr_locate pivot (List.repeat 0%nat (length pos'))) = 
+      base.fmap tr_rootid (tr_locate tc' (removelast pos')) /\
     pivot' = tc_join_partial tc (post_iter_visited_prefix tc' pos').
   Proof.
+    assert (tr_rootid sub' <> tr_rootid tc) as Hneq_sub'.
+    { revert Hnotin. apply ssrbool.contra_not. intros <-. now apply subtr_witness_subtr, (in_map tr_rootid) in H. }
     assert (tr_rootid sub' <> tr_rootid tc') as Hneq_sub''
       by (eapply id_nodup_diff_by_pos; eauto; try reflexivity).
     unfold tc_join_partial.
@@ -2985,12 +2998,33 @@ Section TC_Join_Iterative_Real.
       simpl. rewrite eqdec_must_right; auto.
     }
 
-    (* small lemma *)
-    assert (forall (tr : treeclock) l ch, tr_prepend_node (f tr) l ch = f (tr_prepend_node tr l ch)) as prepend_f_comm.
-    { unfold tr_prepend_node. intros [ [] ] [ | ] ch. 1: reflexivity. simpl. rewrite ! tr_locate_apply_iota. reflexivity. }
-
     (* small preparation *)
+    assert (forall (tr : treeclock) l ch, tr_prepend_nodes (f tr) l ch = f (tr_prepend_nodes tr l ch)) as prepend_f_comm.
+    { unfold tr_prepend_nodes. intros [ [] ] [ | ] ch. 1: reflexivity. simpl. rewrite ! tr_locate_apply_iota. reflexivity. }    
+    assert (forall (tr : treeclock) l, base.fmap tr_rootid (tr_locate (f tr) l) = base.fmap tr_rootid (tr_locate tr l)) as locate_f_comm
+      by (intros [ [] ] [ | ]; reflexivity).
     replace (length pos') with (S (length pos' - 1)) by (destruct pos'; try contradiction; simpl; lia).
+    simpl repeat.
+    unfold tr_prepend_nodes. rewrite tr_locate_apply_iota. cbn delta [nth_error upd_nth] beta iota.
+    (* reduce to prepending node over the old result of attaching nodes *)
+    rewrite <- Epivot_da.
+    setoid_rewrite prepend_f_comm. clear prepend_f_comm.
+    simpl tr_locate. rewrite locate_f_comm. clear locate_f_comm.
+    rewrite Epivot_da'. 
+    split.
+    1:{ 
+      change tr_rootid with (Basics.compose info_id tr_rootinfo).
+      rewrite 2 option.option_fmap_compose. f_equal.
+      pose proof (visited_prefix_pre2post H Hnotnil') as (Htmp & _).
+      apply tr_locate_parent in H; try assumption.
+      destruct H as (tr_par & Epar & _).
+      rewrite Epar in Htmp |- *. simpl in Htmp |- *.
+      destruct (tr_locate _ _) as [ res | ] eqn:EE in Htmp; try discriminate.
+      subst prefix_pre.
+      erewrite tc_attach_nodes_colocate; eauto.
+    }
+
+    do 2 f_equal.
 
     (* now, discuss if we can find a node with "tr_rootid sub'" in "tc_join_partial tc prefix_pre" *)
     destruct (tr_getnode (tr_rootid sub') (tc_join_partial tc prefix_pre)) as [ sub | ] eqn:E.
@@ -3018,27 +3052,11 @@ Section TC_Join_Iterative_Real.
           simpl. intros t Hin' [ <- | [] ]. eapply Hdisjoint; eauto.
           rewrite <- Eid. eapply in_map, subtr_witness_subtr; eauto.
         }
-        apply pair_equal_split in Edp. destruct Edp as (<- & <-).
-        rewrite Epivot_pre in Epivot_dp. inversion Epivot_dp. subst chn_pdp. clear Epivot_dp.
-
-        simpl.
-        destruct sub as [(ww, clk_tmp, aclk_tmp) chn_sub] eqn:Esub.
-        simpl in Eid. subst ww. rewrite <- Esub in *.
-        rewrite Etc'. simpl.
-        replace (mkInfo (tr_rootid sub') _ _) with (tr_rootinfo sub') by now destruct sub' as [ [] ].
-
-        (* reduce to prepending node over the pivot of da *)
-        unfold tr_prepend_node. rewrite tr_locate_apply_iota. simpl nth_error. cbn.
-        f_equal.
-        replace (Node (mkInfo _ _ _) chn_pda) with (f pivot_da) in |- * by (now rewrite Epivot_da, Etc').
-        fold (tr_prepend_node (f pivot_da) (repeat 0 (length pos' - 1)) (Node (tr_rootinfo sub') chn_sub)) in |- *.
-        rewrite prepend_f_comm.
-        do 2 f_equal. rewrite Epivot_da'.
+        apply pair_equal_split in Edp. destruct Edp as (_ & <-).
 
         (* finally *)
         subst prefix_pre prefix_post.
         setoid_rewrite <- (tc_attach_nodes_single true); eauto.
-        all: now subst sub.
       + (* from "pivot_pre" *)
         (* use detach single on dp part, use detach intact on da part *)
         rewrite Eff in E'. apply trs_find_has_id in E.
@@ -3053,28 +3071,11 @@ Section TC_Join_Iterative_Real.
           simpl. intros t Hin'' [ <- | [] ]. eapply (Hdisjoint (tr_rootid sub')); eauto.
           rewrite <- Eid. eapply in_map, subtr_witness_subtr; eauto.
         }
-        apply pair_equal_split in Eda. destruct Eda as (Epivot_da''%eq_sym & <-).
-        rewrite Epivot_da'', Eattach_pre in Epivot_da. inversion Epivot_da. subst chn_pda. clear Epivot_da.
+        apply pair_equal_split in Eda. destruct Eda as (_ & <-).
 
         (* the following part is ALMOST THE SAME as the branch above; we come to the same proof goal *)
-        simpl.
-        destruct sub as [(ww, clk_tmp, aclk_tmp) chn_sub] eqn:Esub.
-        simpl in Eid. subst ww. rewrite <- Esub in *.
-        rewrite Etc'. simpl.
-        replace (mkInfo (tr_rootid sub') _ _) with (tr_rootinfo sub') by now destruct sub' as [ [] ].
-
-        (* reduce to prepending node over the pivot of da *)
-        unfold tr_prepend_node. rewrite tr_locate_apply_iota. simpl nth_error. cbn.
-        f_equal.
-        replace (Node (mkInfo _ _ _) chn_w_pre) with (f pivot_da) in |- * by (now rewrite Epivot_da'', Eattach_pre, Etc').
-        fold (tr_prepend_node (f pivot_da) (repeat 0 (length pos' - 1)) (Node (tr_rootinfo sub') chn_sub)) in |- *.
-        rewrite prepend_f_comm. 
-        do 2 f_equal. rewrite Epivot_da'.
-
-        (* finally *)
         subst prefix_pre prefix_post.
         setoid_rewrite <- (tc_attach_nodes_single true); eauto.
-        all: now subst sub.
     - (* reuse the decomposition *)
       apply trs_find_in_iff_neg in E.
       rewrite tc_detach_nodes_intact' in Edetach_decomp.
@@ -3084,18 +3085,6 @@ Section TC_Join_Iterative_Real.
 
       (* the following preparation is almost the same as the branch above *)
       (* but the proof goal is different! *)
-      simpl. rewrite Etc'. simpl.
-      replace (mkInfo (tr_rootid sub') _ _) with (tr_rootinfo sub') by now destruct sub' as [ [] ].
-
-      (* reduce to prepending node over the pivot of da *)
-      unfold tr_prepend_node. rewrite tr_locate_apply_iota. simpl nth_error. cbn.
-      f_equal.
-      replace (Node (mkInfo _ _ _) chn_pda) with (f pivot_da) in |- * by (now rewrite Epivot_da, Etc').
-      fold (tr_prepend_node (f pivot_da) (repeat 0 (length pos' - 1)) (Node (tr_rootinfo sub') nil)) in |- *.
-      rewrite prepend_f_comm. 
-      do 2 f_equal. rewrite Epivot_da'.
-
-      (* finally *)
       subst prefix_pre prefix_post.
       setoid_rewrite <- (tc_attach_nodes_single false); eauto.
       apply trs_find_in_iff_neg.
@@ -3105,6 +3094,51 @@ Section TC_Join_Iterative_Real.
       replace forest_pre with (snd (tc_detach_nodes (tr_flatten (pre_iter_visited_prefix tc' pos')) tc)) in Hin by now rewrite Edetach_pre.
       eapply (proj1 (Forall_forall _ _) (tc_detach_nodes_dom_incl _ _)), trs_find_in_iff in Hin.
       congruence.
+  Qed.
+
+  (* during join, clock will be obtained from partial join, so need some congruence lemmas *)
+  (* here we treat "tc'" as the original tree from which we get "tc_get_updated_nodes_join" prefix *)
+  Corollary tc_get_updated_nodes_join_aux_tc_congr_partialjoin
+    [pos' sub'] (H : tr_locate (tc_get_updated_nodes_join tc tc') pos' = Some sub') 
+    (Hnotin' : ~ In (tr_rootid tc) (map tr_rootid (tr_flatten (tc_get_updated_nodes_join tc tc'))))
+    [sub] (Hsub : subtr sub tc') (Esub' : sub' = tc_get_updated_nodes_join tc sub) clk :
+    map tr_rootinfo (tc_get_updated_nodes_join_aux 
+      (tc_join_partial tc (post_iter_visited_prefix (tc_get_updated_nodes_join tc tc') pos')) clk (tr_rootchn sub)) = 
+    map tr_rootinfo (tc_get_updated_nodes_join_aux tc clk (tr_rootchn sub)).
+  Proof using -Hnotin. clear Hnotin.
+    pose proof (fun tr1 tr2 (H : prefixtr tr1 tr2) t => ssrbool.contra_not (prefixtr_flatten_id_incl H t)) as Hnotin_pf.
+    pose proof (tc_get_updated_nodes_join_is_prefix tc tc') as Hpf1.
+    pose proof (post_iter_visited_is_prefix (tc_get_updated_nodes_join tc tc') pos') as Hpf2.
+    pose proof (prefixtr_trans Hpf2 Hpf1) as Hpf.
+    apply tc_get_updated_nodes_join_aux_tc_congr, Forall_forall.
+    intros x Hin.
+    rewrite tc_join_partial_getclk; auto.
+    3: eapply Hnotin_pf; auto using post_iter_visited_is_prefix.
+    2: eapply id_nodup_prefix_preserve; eauto.
+    destruct (tr_getnode _ _) eqn:E; [ | reflexivity ].
+    (* need to show that the disjointness of the id of any child of "sub"
+        and any id in "post_iter_visited_prefix tc' pos'" *)
+    (* do this by showing that (1) after adding all children of "sub" to "post_iter_visited_prefix tc' pos'", 
+        the result is still a prefix of "tc'" and thus enjoys the "tr_NoDupId" property; then
+        (2) the disjointness is derived by "NoDup (... ++ ...)", which is in turn by
+        the domain addition property of "tr_prepend_nodes" *)
+    pose proof (tr_vsplitr_locate false H) as Hloc.
+    simpl in Hloc.
+    rewrite Esub', (prefixtr_rootinfo_same (tc_get_updated_nodes_join_is_prefix tc sub)) in Hloc.
+    eapply prefixtr_concatenate with (l:=List.repeat 0%nat (length pos')) (sub_prefix':=sub) in Hpf.
+    5: reflexivity.
+    all: try assumption.
+    apply id_nodup_prefix_preserve in Hpf; try assumption.
+    pose proof (tr_prepend_nodes_dom_addition (f_equal (@isSome _) Hloc) (tr_rootchn sub)) as Hperm.
+    rewrite <- map_app in Hperm.
+    apply Permutation_rootinfo2rootid in Hperm.
+    eapply Permutation_NoDup in Hpf; [ | apply Hperm ].
+    rewrite map_app, NoDup_app_ in Hpf.
+    exfalso.
+    eapply (proj1 (proj2 Hpf)).
+    2: eapply map_flat_map_In_conv; [ apply Hin | apply in_map, tr_flatten_self_in ].
+    apply tr_getnode_in_iff.
+    now setoid_rewrite E.
   Qed.
 
 End TC_Join_Iterative_Real.
