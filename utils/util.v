@@ -1,49 +1,7 @@
 From Coq Require Import List Bool Lia PeanoNat Sorting RelationClasses Permutation.
 From Coq Require ssrbool.
-(* From Coq Require ssreflect.
-Import ssreflect.SsrSyntax. *)
 
 From stdpp Require list.
-
-(* Search "ind" inside PeanoNat. *)
-(*
-Lemma nat_ind_2 : forall P : nat -> Prop,
-  P 0 -> 
-  (forall n : nat, (forall m : nat, m <= n -> P m) -> P (S n)) -> 
-  forall n : nat, P n.
-Proof.
-  intros P H IH.
-  set (Q:=fun n => (forall m : nat, m <= n -> P m)).
-  assert (forall n, Q n) as Hfinal.
-  {
-    induction n; unfold Q in *; intros.
-    - inversion H0. subst. auto.
-    - inversion H0; subst.
-      + now apply IH.
-      + now apply IHn.
-  }
-  intros. unfold Q in Hfinal. now apply Hfinal with (n:=n).
-Qed.
-*)
-(*
-(* see "Wf_nat.lt_wf_ind" *)
-Lemma nat_ind_3 : forall P : nat -> Prop,
-  (forall n : nat, (forall m : nat, m < n -> P m) -> P n) -> 
-  forall n : nat, P n.
-Proof.
-  intros P IH.
-  set (Q:=fun n => (forall m : nat, m < n -> P m)).
-  assert (forall n, Q n) as Hfinal.
-  {
-    induction n; unfold Q in *; intros.
-    - lia.
-    - inversion H; subst.
-      + now apply IH.
-      + now apply IHn.
-  }
-  intros. unfold Q in Hfinal. apply Hfinal with (n:=S n). lia.
-Qed.
-*)
 
 Section Begin.
 
@@ -481,25 +439,7 @@ Qed.
 Fact pair_equal_split [A B : Type] (a b : A) (c d : B) 
   (E : (a, c) = (b, d)) : a = b /\ c = d.
 Proof. intuition congruence. Qed.
-(*
-Definition filtermap [A B : Type] (f : A -> bool) (g : A -> B) :=
-  fun (l : list A) => 
-  let fix filtermap l :=
-    match l with
-    | nil => nil
-    | a :: l' => if f a then (g a) :: filtermap l' else filtermap l'
-    end in filtermap l.
 
-Lemma filtermap_correct [A B : Type] (f : A -> bool) (g : A -> B) l :
-  filtermap f g l = map g (filter f l).
-Proof.
-  induction l as [ | x l IH ].
-  - reflexivity.
-  - simpl.
-    rewrite -> ! IH.
-    now destruct (f x).
-Qed.
-*)
 Fact filter_all_true {A : Type} (f : A -> bool) (l : list A) 
   (H : forall x, In x l -> f x = true) : filter f l = l.
 Proof.
@@ -578,12 +518,7 @@ Proof.
   rewrite -> ! app_length.
   now f_equal.
 Qed.
-(*
-Fact length_concat_le {A B : Type} (l1 : list (list A)) (l2 : list (list B))
-  (H : Forall2 (fun c1 c2 => length c1 <= length c2) l1 l2) :
-  length (concat l1) <= length (concat l2).
-Proof. rewrite -> ! length_concat_sum. now apply pointwise_le_sum_le, list.Forall2_fmap_2. Qed.
-*)
+
 (* really ad-hoc lemmas; not quite belong to sublist ones *)
 
 Fact sublist_sum_le l1 l2 (Hsub : list.sublist l1 l2) :
@@ -606,38 +541,6 @@ Fact Forall_impl_impl {A : Type} (P Q : A -> Prop) (l : list A) (H : Forall (fun
   (H0 : Forall P l) : Forall Q l.
 Proof. induction l as [ | x l IH ]; auto. rewrite -> Forall_cons_iff in *. intuition. Qed.
 
-Lemma list_ind_3 : forall (A : Type) (P : list A -> Prop),
-  P nil ->
-  (forall n, (forall l, length l = n -> P l) -> forall l, length l = S n -> P l) ->
-  forall l : list A, P l.
-Proof.
-  intros. 
-  remember (length l) as n eqn:E. 
-  revert l E.
-  induction n as [ | n IH ]; intros.
-  - destruct l; simpl in E; congruence.
-  - destruct l; try (simpl in E; congruence).
-    eapply H0.
-    2: now rewrite E.
-    auto.
-Qed.
-
-(* another way to prove rev_ind *)
-(*
-Lemma list_ind_2 : forall (A : Type) (P : list A -> Prop),
-  P nil ->
-  (forall (a : A) (l : list A), P l -> P (l ++ (a :: nil))) ->
-  forall l : list A, P l.
-Proof.
-  intros.
-  induction l using list_ind_3; intros; auto.
-  assert (l <> nil) as HH by (destruct l; simpl in *; congruence).
-  destruct (exists_last HH) as (l' & a & ->).
-  rewrite -> last_length in H2. 
-  injection H2 as <-.
-  auto.
-Qed.
-*)
 Fact Permutation_upto_pick m n (H : m < n) :
   Permutation (seq 0 n) (m :: ((seq 0 m) ++ (seq (S m) (n - (S m))))).
 Proof.
@@ -795,15 +698,7 @@ Proof. destruct (eqd _ _); auto; try contradiction. Qed.
 Fact eqdec_must_right [A B : Type] (eqd : forall (a1 a2 : A), {a1 = a2} + {a1 <> a2}) [b1 b2 : B] [a1 a2 : A] (H : a1 <> a2) :
   (if eqd a1 a2 then b1 else b2) = b2.
 Proof. destruct (eqd _ _); auto; try contradiction. Qed.
-(*
-Fact contra_not [P Q : Prop] (H : P -> Q) : ~ Q -> ~ P.
-Proof. intuition. Qed.
 
-Definition isSome [A : Type] (o : option A) : bool :=
-  match o with Some _ => true | _ => false end.
-
-Global Arguments isSome [_] !_.
-*)
 (* slightly depend on ssrbool to avoid defining new symbols *)
 Local Notation isSome := ssrbool.isSome.
 
@@ -841,10 +736,5 @@ Proof.
   rewrite El, upd_nth_exact by assumption.
   reflexivity.
 Qed.
-
-(*
-Fact upd_Znth_upd_nth [A : Type] n (l : list A) a (H : (n < length l)%nat):
-  upd_Znth (Z.of_nat n) l a = upd_nth n l a.
-*)
 
 End Begin.
