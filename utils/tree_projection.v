@@ -1,5 +1,6 @@
 From Coq Require Import List Bool Lia PeanoNat Sorting RelationClasses Permutation.
-From arboreta Require Import util rosetree.
+From arboreta Require Import util.
+From arboreta Require Export rosetree.
 
 From stdpp Require list.
 
@@ -38,6 +39,8 @@ Context {PN : Type}. (* the type of payload for node info *)
 
 Context {PS : Type}. (* the type of payload for tree structure *)
 
+Definition trs_headid trs := base.fmap tr_rootid (hd_error trs).
+
 (*
   Here, we distinguish between two types of payloads: the one for storing node 
     information, and the one for representing the spatial structure of tree.
@@ -58,18 +61,18 @@ Context `{PNProj : NodeInfoProjector A PN} `{PSProj : TreeStructProjector A B PS
 Definition infoarray_proj (l : list PN) (tr : tree) : Prop :=
   Foralltr (fun tr' => infoarray_proj_onto (nodeinfo_proj tr') (tr_rootid tr) l) tr.
 
-Definition nodearray_proj_chnaux (par : option B) (l : list PS) :
+Definition nodearray_proj_chnaux (par : B) (l : list PS) :
   forall (prev : option B) (chn : list tree), Prop := 
   fix aux prev chn {struct chn} : Prop := 
   match chn with
   | nil => True
-  | ch :: chn' => nodearray_proj_onto (tr_struct_proj par prev (base.fmap tr_rootid (hd_error chn')) ch)
+  | ch :: chn' => nodearray_proj_onto (tr_struct_proj (Some par) prev (trs_headid chn') ch)
       (tr_rootid ch) l /\
     aux (Some (tr_rootid ch)) chn'
   end.
 
 Definition nodearray_proj_chn (l : list PS) (tr : tree) : Prop :=
-  nodearray_proj_chnaux (Some (tr_rootid tr)) l None (tr_rootchn tr).
+  nodearray_proj_chnaux (tr_rootid tr) l None (tr_rootchn tr).
 
 Global Arguments nodearray_proj_chn _ _/.
 
