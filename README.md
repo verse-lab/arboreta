@@ -1,6 +1,6 @@
 # 🌲 Arboreta 🌲
 
-A small library for facilitating proofs about (rooted) labeled trees in Coq, and helping verifying C code that involves the use of array-based trees with VST (still, in Coq). 
+A small library for facilitating proofs about rooted labeled trees (or rose trees/generic trees) in Coq, and helping verifying C code that involves the use of array-based trees with VST (still, in Coq). 
 
 ## Building Requirements
 
